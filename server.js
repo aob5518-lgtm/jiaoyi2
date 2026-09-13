@@ -5,7 +5,26 @@ const url = require("url");
 const crypto = require("crypto");
 const TrendOnly = require("./trend_only");
 const { createTrendRuntime } = require("./trend_runtime");
-function isTrendOnly(acc) { return acc?.strategyType === "trend_only_v1"; }
+const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1"]);
+function getStrategyType(acc = {}) {
+  const explicit = String(acc?.strategyType || "").trim();
+  if (explicit) return STRATEGY_TYPES.has(explicit) ? explicit : "classic";
+  const legacyMode = String(acc?.strategyMode || "").trim();
+  if (legacyMode === "Trend Only V1") return "trend_only_v1";
+  if (legacyMode === "智能V1" || legacyMode === "趋势模式") return "smart_regime_v1";
+  return "classic";
+}
+function getStrategyLabel(acc = {}) {
+  const type = getStrategyType(acc);
+  if (type === "trend_only_v1") return "Trend Only V1";
+  if (type === "smart_regime_v1") return "智能趋势策略 V1";
+  return "经典补仓策略";
+}
+function getStrategyMode(acc = {}) {
+  const type = getStrategyType(acc);
+  return type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
+}
+function isTrendOnly(acc) { return getStrategyType(acc) === "trend_only_v1"; }
 const zlib = require("zlib");
 const { spawn } = require("child_process");
 const {
@@ -749,7 +768,7 @@ function isSimulationAccount(account) {
 }
 
 function isSmartStrategy(account) {
-  return account?.strategyType === "smart_regime_v1";
+  return getStrategyType(account) === "smart_regime_v1";
 }
 
 function persistSmartRuntime(account, st) {
@@ -954,13 +973,14 @@ function normalizeExistingSimulationDefaults() {
   let changed = false;
 
   for (const acc of config.accounts || []) {
-    const tc = TrendOnly.normalizeConfig(acc.trendOnlyConfig);
-    const mode = acc.strategyType === "trend_only_v1" ? "Trend Only V1" : acc.strategyType === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
-    if (JSON.stringify(acc.trendOnlyConfig) !== JSON.stringify(tc) || acc.strategyMode !== mode) { acc.trendOnlyConfig = tc; acc.strategyMode = mode; changed = true; }
-    if (!acc.strategyType) {
-      acc.strategyType = "classic";
+    const migratedType = getStrategyType(acc);
+    if (acc.strategyType !== migratedType) {
+      acc.strategyType = migratedType;
       changed = true;
     }
+    const tc = TrendOnly.normalizeConfig(acc.trendOnlyConfig);
+    const mode = getStrategyMode(acc);
+    if (JSON.stringify(acc.trendOnlyConfig) !== JSON.stringify(tc) || acc.strategyMode !== mode) { acc.trendOnlyConfig = tc; acc.strategyMode = mode; changed = true; }
     if (acc.strategyType === "smart_regime_v1") {
       const normalizedSmart = normalizeSmartConfig(acc);
       if (JSON.stringify(acc.smartStrategy || {}) !== JSON.stringify(normalizedSmart)) {
@@ -1568,12 +1588,13 @@ function validateAccountConfigPayload(next) {
   if (next.strategyType === "trend_only_v1") {
     next.strategyMode = "Trend Only V1";
     if (next.trendOnlyConfig) next.leverage = next.trendOnlyConfig.leverage;
+    next.maxAdds = 0;
   }
   delete next.confirmLive;
   const allowedPlatforms = new Set(["hyperliquid", "binance", "extended"]);
   const allowedSides = new Set(["long", "short"]);
   const allowedTradeModes = new Set(["live", "simulation"]);
-  const allowedStrategyTypes = new Set(["classic", "smart_regime_v1", "trend_only_v1"]);
+  const allowedStrategyTypes = STRATEGY_TYPES;
   if (next.platform && !allowedPlatforms.has(next.platform)) throw new Error("平台类型无效");
   if (next.side && !allowedSides.has(next.side)) throw new Error("方向无效");
   if (next.symbol) {
@@ -3131,13 +3152,14 @@ async function tickAccount(acc) {
   const st = stateMap[acc.id];
   if (!st) return;
   if (st.tickRunning) return;
-  const tradeLock = (isSmartStrategy(acc) || isTrendOnly(acc)) ? acquireAccountTradeLock(acc.id) : null;
-  if ((isSmartStrategy(acc) || isTrendOnly(acc)) && !tradeLock) return;
+  const activeStrategyType = getStrategyType(acc);
+  const tradeLock = activeStrategyType !== "classic" ? acquireAccountTradeLock(acc.id) : null;
+  if (activeStrategyType !== "classic" && !tradeLock) return;
   st.tickRunning = true;
   let accountSyncOk = true;
 
   try {
-    if (isTrendOnly(acc)) { await trendRuntime.tick(acc, st); return; }
+    if (activeStrategyType === "trend_only_v1") { await trendRuntime.tick(acc, st); return; }
     st.symbol = acc.symbol;
     st.currentPrice = await getMarketPrice(acc);
     st.updatedAt = new Date().toLocaleString("zh-CN");
@@ -3333,7 +3355,7 @@ async function tickAccount(acc) {
       return;
     }
 
-    if (isSmartStrategy(acc)) {
+    if (activeStrategyType === "smart_regime_v1") {
       await tickSmartStrategy(acc, st);
       return;
     }
@@ -4103,14 +4125,17 @@ function serveFile(res, filePath) {
 }
 
 function getPublicAccountPayload(acc, st) {
+  const strategyType = getStrategyType(acc);
   return {
     id: acc.id,
     name: acc.name,
     platform: acc.platform,
     symbol: acc.symbol,
     quoteAsset: acc.quoteAsset,
-    side: isSmartStrategy(acc) ? (st.smartSide || "auto") : acc.side,
-    strategyType: acc.strategyType || "classic",
+    side: isTrendOnly(acc) ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : isSmartStrategy(acc) ? (st.smartSide || "auto") : acc.side,
+    strategyType,
+    strategyMode: getStrategyMode(acc),
+    strategyLabel: getStrategyLabel(acc),
     tradeMode: isSimulationAccount(acc) ? "simulation" : "live",
     simulationEnabled: isSimulationAccount(acc),
     running: st.running,
@@ -4122,6 +4147,7 @@ function getPublicAccountPayload(acc, st) {
 }
 
 function getPublicStatePayload(acc, st) {
+  const strategyType = getStrategyType(acc);
   return {
     account: {
       id: acc.id,
@@ -4130,12 +4156,19 @@ function getPublicStatePayload(acc, st) {
       symbol: acc.symbol,
       quoteAsset: acc.quoteAsset,
       side: acc.side,
-      effectiveSide: isSmartStrategy(acc) ? (st.smartSide || "auto") : acc.side,
-      strategyType: acc.strategyType || "classic",
+      effectiveSide: isTrendOnly(acc) ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : isSmartStrategy(acc) ? (st.smartSide || "auto") : acc.side,
+      strategyType,
+      strategyMode: getStrategyMode(acc),
+      strategyLabel: getStrategyLabel(acc),
       tradeMode: isSimulationAccount(acc) ? "simulation" : "live",
       simulationEnabled: isSimulationAccount(acc)
     },
     state: {
+      activeStrategyType: strategyType,
+      activeStrategyLabel: getStrategyLabel(acc),
+      isTrendOnly: strategyType === "trend_only_v1",
+      isSmartStrategy: strategyType === "smart_regime_v1",
+      isClassicStrategy: strategyType === "classic",
       running: st.running,
       currentPrice: st.currentPrice,
       entryPrice: st.entryPrice,
@@ -4156,6 +4189,29 @@ function getPublicStatePayload(acc, st) {
       lastAction: st.lastAction,
       lastError: st.lastError,
       updatedAt: st.updatedAt
+    }
+  };
+}
+
+function buildDashboardPayload(acc, st) {
+  const strategyType = getStrategyType(acc);
+  if (strategyType === "trend_only_v1") trendRuntime.publish(acc, st);
+  const { profitHistory: _profitHistory, ...state } = st;
+  return {
+    config: {
+      ...acc,
+      strategyType,
+      strategyMode: getStrategyMode(acc),
+      strategyLabel: getStrategyLabel(acc)
+    },
+    state: {
+      ...state,
+      activeStrategyType: strategyType,
+      activeStrategyLabel: getStrategyLabel(acc),
+      isTrendOnly: strategyType === "trend_only_v1",
+      isSmartStrategy: strategyType === "smart_regime_v1",
+      isClassicStrategy: strategyType === "classic",
+      ...(strategyType === "trend_only_v1" ? { trendOnly: state.trendOnly } : {})
     }
   };
 }
@@ -4481,6 +4537,7 @@ const server = http.createServer((req, res) => {
           target.trendOnlyConfig = TrendOnly.normalizeConfig(data.config);
           target.strategyType = "trend_only_v1"; target.strategyMode = "Trend Only V1";
           target.leverage = target.trendOnlyConfig.leverage;
+          target.maxAdds = 0;
           // Initial activation is Paper. Live remains an explicit separate account setting.
           if (!isTrendOnly(acc)) { target.tradeMode = "simulation"; target.simulationEnabled = true; }
           saveConfig(cfg); config = cfg; trendRuntime.clearApproval(acc.id);
@@ -4590,7 +4647,7 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/status" && req.method === "GET") {
     const currentAccount = getCurrentAccount();
     const currentState = stateMap[currentAccount.id];
-    const { profitHistory: _profitHistory, ...dashboardState } = currentState;
+    const dashboard = buildDashboardPayload(currentAccount, currentState);
 
     const accountSummaries = config.accounts.map(acc => {
       const st = stateMap[acc.id];
@@ -4601,8 +4658,10 @@ const server = http.createServer((req, res) => {
         address: acc.address,
         symbol: acc.symbol,
         quoteAsset: acc.quoteAsset,
-        side: isSmartStrategy(acc) ? (st.smartSide || "auto") : acc.side,
-        strategyType: acc.strategyType || "classic",
+        side: isTrendOnly(acc) ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : isSmartStrategy(acc) ? (st.smartSide || "auto") : acc.side,
+        strategyType: getStrategyType(acc),
+        strategyMode: getStrategyMode(acc),
+        strategyLabel: getStrategyLabel(acc),
         tradeMode: isSimulationAccount(acc) ? "simulation" : "live",
         simulationEnabled: isSimulationAccount(acc),
         running: st.running,
@@ -4618,19 +4677,20 @@ const server = http.createServer((req, res) => {
     return jsonRes(res, 200, {
       currentAccountId: config.currentAccountId,
       accounts: accountSummaries,
-      config: currentAccount,
-      state: dashboardState
+      config: dashboard.config,
+      state: dashboard.state
     });
   }
 
   if (pathname === "/api/mobile-status" && req.method === "GET") {
     const currentAccount = getCurrentAccount();
     const currentState = stateMap[currentAccount.id];
+    const dashboard = buildDashboardPayload(currentAccount, currentState);
 
     return jsonRes(res, 200, {
       ok: true,
-      config: currentAccount,
-      state: currentState
+      config: dashboard.config,
+      state: dashboard.state
     });
   }
 
@@ -4643,7 +4703,10 @@ const server = http.createServer((req, res) => {
         platform: acc.platform,
         symbol: acc.symbol,
         quoteAsset: acc.quoteAsset,
-        side: acc.side,
+        side: isTrendOnly(acc) ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : acc.side,
+        strategyType: getStrategyType(acc),
+        strategyMode: getStrategyMode(acc),
+        strategyLabel: getStrategyLabel(acc),
         tradeMode: isSimulationAccount(acc) ? "simulation" : "live",
         simulationEnabled: isSimulationAccount(acc),
         running: st.running,
@@ -4671,7 +4734,7 @@ const server = http.createServer((req, res) => {
 
         const current = cfg.accounts[idx];
         const currentState = stateMap[current.id];
-        if (isTrendOnly(next)) { next.trendOnlyConfig = TrendOnly.normalizeConfig(next.trendOnlyConfig || current.trendOnlyConfig); next.leverage = next.trendOnlyConfig.leverage; }
+        if (isTrendOnly(next)) { next.trendOnlyConfig = TrendOnly.normalizeConfig(next.trendOnlyConfig || current.trendOnlyConfig); next.leverage = next.trendOnlyConfig.leverage; next.maxAdds = 0; }
         if ((isTrendOnly(current) || isTrendOnly(next)) && (currentState.tickRunning || currentState.running || trendRuntime.busy(current))) throw new Error("趋势策略运行、持仓或订单未确认时禁止修改配置");
         if (isTrendOnly(next) && !isTrendOnly(current)) { next.tradeMode = "simulation"; next.simulationEnabled = true; }
         if (isTrendOnly(current) && !next.strategyType) next.leverage = (next.trendOnlyConfig || current.trendOnlyConfig).leverage;
@@ -4815,7 +4878,7 @@ const server = http.createServer((req, res) => {
 
         await runWithConcurrency(cfg.accounts || [], ACCOUNT_START_SYNC_CONCURRENCY, async (current) => {
           try {
-            if (isTrendOnly(current)) { results.push({ id: current.id, ok: false, error: "趋势账户请单独启动" }); return; }
+            if (isTrendOnly(current)) { results.push({ id: current.id, name: current.name, ok: false, skipped: true, error: "Trend Only V1 账户需要单独启动，避免 Live 信号确认被批量绕过。" }); return; }
             validateAccountConfigPayload({
               platform: current.platform,
               strategyType: current.strategyType || "classic",
@@ -4883,7 +4946,9 @@ const server = http.createServer((req, res) => {
         saveConfig(cfg);
         config = cfg;
 
-        return jsonRes(res, 200, { ok: true, results });
+        const successCount = results.filter(item => item.ok).length;
+        const skipped = results.filter(item => !item.ok).map(item => ({ id: item.id, name: item.name, reason: item.error || "未知原因" }));
+        return jsonRes(res, 200, { ok: true, results, successCount, skippedCount: skipped.length, skipped });
       } catch (e) {
         return jsonRes(res, 500, { ok: false, error: e.message, results });
       }
@@ -4916,7 +4981,7 @@ const server = http.createServer((req, res) => {
         const current = getCurrentAccount();
         if (isTrendOnly(current)) {
           stateMap[current.id].running = true; persistAccountRunning(current.id, true);
-          return jsonRes(res, 200, { ok: true, message: "趋势监控已启动；Live 每次新仓仍须确认" });
+          return jsonRes(res, 200, { ok: true, message: "趋势监控已启动；周末/震荡行情不会新开仓；Live 每次新仓仍须确认。" });
         }
         validateAccountConfigPayload({
           platform: current.platform,

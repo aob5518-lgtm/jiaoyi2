@@ -3091,6 +3091,8 @@
                 </div>
               </div>
 
+              <div class="block" id="trendOnlyBlock" hidden></div>
+
               <div class="block">
                 <div class="block-head">
                   <div class="block-title">操作说明</div>
@@ -3310,6 +3312,7 @@
     </div>
   </div>
 </div>
+  <script src="/strategy-view.js"></script>
   <script>
     const $ = id => document.getElementById(id);
 
@@ -3423,6 +3426,8 @@
       const smart = $("strategyType").value === "smart_regime_v1";
       const trendOnly = $("strategyType").value === "trend_only_v1";
       $("smartStrategyBlock").hidden = !smart;
+      $("trendOnlyBlock").hidden = !trendOnly;
+      window.TrendOnlyPanel?.setVisible(trendOnly);
       $("tab-config").classList.toggle("smart-active", smart);
       $("baseAmountLabel").textContent = smart ? "单次开仓上限（U）" : "首次开仓名义仓位（U）";
       $("baseAmountHelp").textContent = smart
@@ -3436,6 +3441,18 @@
       document.querySelectorAll(".classic-only").forEach(element => {
         element.hidden = smart || trendOnly;
       });
+      $("baseAmount").closest("label").hidden = trendOnly;
+      $("leverage").max = trendOnly ? "10" : "125";
+      if (trendOnly) {
+        $("leverage").value = 10;
+        $("maxAdds").value = 0;
+      }
+      for (const [id, message] of [
+        ["manualBtn", "Trend Only V1 禁止手动加仓，请使用趋势面板平仓。"],
+        ["resetBtn", "趋势状态不可通过重置清除，请使用趋势平仓或核对订单。"]
+      ]) {
+        const button = $(id); button.hidden = trendOnly; button.disabled = trendOnly; button.title = trendOnly ? message : "";
+      }
     }
 
     function parseNumberList(value, fallback) {
@@ -3594,14 +3611,16 @@
       $("simulationSlippageBps").value = cfg.simulationSlippageBps || 0;
       $("side").value = cfg.side || "long";
       $("strategyType").value = cfg.strategyType || "classic";
-      $("leverage").value = cfg.leverage || 10;
+      $("leverage").value = cfg.strategyType === "trend_only_v1" ? 10 : (cfg.leverage || 10);
       $("baseAmount").value = cfg.baseAmount || 1000;
       $("addAmount").value = cfg.addAmount || 1000;
       $("takeProfit").value = cfg.takeProfit || 0.01;
       $("addTrigger").value = cfg.addTrigger || 0.005;
-      $("maxAdds").value = cfg.maxAdds || 5;
+      $("maxAdds").value = cfg.strategyType === "trend_only_v1" ? 0 : (cfg.maxAdds ?? 5);
       $("interval").value = cfg.interval || 3000;
       setSmartFields(cfg.smartStrategy);
+      window.__pendingTrendOnlyConfig = cfg.trendOnlyConfig || window.TrendOnlyPanel?.defaults || {};
+      window.TrendOnlyPanel?.setConfig(window.__pendingTrendOnlyConfig);
       updateStrategyForm();
     }
 
@@ -3707,11 +3726,12 @@
     function renderOverview(cfg, st) {
       const smartMode = cfg.strategyType === "smart_regime_v1";
       const trendOnlyMode = cfg.strategyType === "trend_only_v1";
+      const trendView = trendOnlyMode ? window.StrategyView.buildTrendView(cfg, st) : null;
       const effectiveSide = trendOnlyMode ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : smartMode ? (st.smartSide || "auto") : cfg.side;
       const directionText = effectiveSide === "long" ? "做多" : effectiveSide === "short" ? "做空" : "自动多空";
       $("topbarAccountName").textContent = `当前账户：${cfg.name || "-"}`;
       $("topbarAccountMeta").textContent =
-        `平台 ${cfg.platform || "-"} ｜ 币种 ${cfg.symbol || "-"} / ${cfg.quoteAsset || "USDT"} ｜ 方向 ${directionText}`;
+        `平台 ${cfg.platform || "-"} ｜ 币种 ${cfg.symbol || "-"} / ${cfg.quoteAsset || "USDT"} ｜ 策略 ${cfg.strategyLabel || (trendOnlyMode ? "Trend Only V1" : smartMode ? "智能趋势策略 V1" : "经典补仓策略")} ｜ 方向 ${directionText}`;
 
       $("metricPnl").textContent = `${fmt(st.pnl, 2)} U`;
       $("metricPnl").className = `hero-v ${signClass(st.pnl)}`;
@@ -3731,7 +3751,7 @@
       $("balanceText").textContent = st.balance ?? "-";
       $("availableText").textContent = st.available ?? "-";
 
-      const positionRows = [
+      const positionRows = trendOnlyMode ? trendView.positionRows.map(([key, value, cls]) => row(key, value, cls)) : [
         row("运行状态", st.running ? "运行中" : "未运行", st.running ? "green" : "red"),
         row("当前价格", st.currentPrice || "-"),
         row("开仓均价", st.entryPrice || "-"),
@@ -3746,7 +3766,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       }
       $("positionInfo").innerHTML = positionRows.join("");
 
-      const strategyRows = [
+      const strategyRows = trendOnlyMode ? trendView.strategyRows.map(([key, value, cls]) => row(key, value, cls)) : [
         row("平台", cfg.platform || "-"),
         row("策略", smartMode ? "智能趋势策略 V1" : "经典补仓策略"),
         row("币种", `${cfg.symbol || "-"} / ${cfg.quoteAsset || "USDT"}`),
@@ -3756,7 +3776,9 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
         row("循环次数", st.cycleCount || 0),
         row("下次补仓价", st.nextAddPrice ? Number(st.nextAddPrice).toFixed(2) : "-")
       ];
-      if (smartMode) {
+      if (trendOnlyMode) {
+        // Trend Only rows are complete and deliberately contain no DCA targets.
+      } else if (smartMode) {
         strategyRows.splice(2, 0,
           row("行情状态", st.smartRegime || "WAITING", st.smartRiskOff ? "red" : "green"),
           row("信号评分", `${st.smartScore || 0} / ${cfg.smartStrategy?.entryThreshold || 75}`),
@@ -3777,13 +3799,15 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       const rightText = st.lastError ? "异常" : st.running ? "运行中" : "未运行";
       $("rightRunTag").outerHTML = inlineStatus(rightType, rightText).replace("<span ", '<span id="rightRunTag" ');
 
-      const rightStatusRows = [
+      const rightStatusRows = trendOnlyMode ? trendView.rightStatusRows.map(([key, value, cls]) => quick(key, value, cls)) : [
         quick("账户名称", cfg.name || "-"),
         quick("当前价格", st.currentPrice || "-"),
         quick("开仓均价", st.entryPrice || "-"),
         quick("下次补仓价", st.nextAddPrice ? Number(st.nextAddPrice).toFixed(2) : "-")
       ];
-      if (smartMode) {
+      if (trendOnlyMode) {
+        // Trend Only status rows are supplied by the strategy view.
+      } else if (smartMode) {
         rightStatusRows.push(
           quick("盈利保护启动价", st.smartTakeProfitPrice || "-"),
           quick("移动保护价", st.smartTrailingActive && st.smartTrailingPrice ? st.smartTrailingPrice : "-"),
@@ -3792,16 +3816,18 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       } else {
         rightStatusRows.push(quick("下次止盈价", st.nextTakeProfitPrice || "-"));
       }
-      rightStatusRows.push(quick("更新时间", st.updatedAt || "-"));
+      if (!trendOnlyMode) rightStatusRows.push(quick("更新时间", st.updatedAt || "-"));
       $("rightStatusList").innerHTML = rightStatusRows.join("");
 
-      const rightRiskRows = [
+      const rightRiskRows = trendOnlyMode ? trendView.rightRiskRows.map(([key, value, cls]) => quick(key, value, cls)) : [
         quick("账户余额", st.balance ?? "-"),
         quick("可用余额", st.available ?? "-"),
         quick("下一次补仓名义仓位", `${st.nextAddNotionalU || 0} U`),
         quick("下一次补仓保证金", `${st.nextAddAmountU || 0} U`)
       ];
-      if (smartMode) {
+      if (trendOnlyMode) {
+        // Trend Only risk rows are supplied by the strategy view.
+      } else if (smartMode) {
         rightRiskRows.push(
           quick("盈利保护启动浮盈", `${st.nextTakeProfitTargetU || 0} U`),
           quick("智能风控", st.smartRiskOff ? "风险规避" : st.smartReduceRisk ? "降低仓位" : "正常"),
@@ -3810,7 +3836,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       } else {
         rightRiskRows.push(quick("止盈目标盈利", `${st.nextTakeProfitTargetU || 0} U`));
       }
-      rightRiskRows.push(quick("错误信息", st.lastError || "-", st.lastError ? "red" : "muted"));
+      if (!trendOnlyMode) rightRiskRows.push(quick("错误信息", st.lastError || "-", st.lastError ? "red" : "muted"));
       $("rightRiskList").innerHTML = rightRiskRows.join("");
 
       const logs = Array.isArray(st.logs) ? st.logs : [];
@@ -3988,6 +4014,12 @@ window.closeVoucherModal = function() {
 
     async function saveConfig() {
       const btn = $("saveBtn");
+      const trendOnlySelected = $("strategyType").value === "trend_only_v1";
+      const pending = latestStatusData?.state?.trendOnly?.pendingOrder;
+      if (trendOnlySelected && pending) {
+        showToast("订单状态尚未确认，禁止保存关键参数。", "error");
+        return;
+      }
       setButtonLoading(btn, true, "保存中");
 
       try {
@@ -4009,13 +4041,14 @@ window.closeVoucherModal = function() {
           simulationSlippageBps: Number($("simulationSlippageBps").value || 0),
           side: $("side").value,
           strategyType: $("strategyType").value,
-          leverage: Number($("leverage").value),
+          leverage: trendOnlySelected ? 10 : Number($("leverage").value),
           baseAmount: Number($("baseAmount").value),
           addAmount: Number($("addAmount").value),
           takeProfit: Number($("takeProfit").value),
           addTrigger: Number($("addTrigger").value),
-          maxAdds: Number($("maxAdds").value),
+          maxAdds: trendOnlySelected ? 0 : Number($("maxAdds").value),
           interval: Number($("interval").value),
+          trendOnlyConfig: window.TrendOnlyPanel?.getConfig() || window.__pendingTrendOnlyConfig || {},
           smartStrategy: {
             directionMode: $("smartDirectionMode").value,
             entryTimeframe: $("smartEntryTimeframe").value,
@@ -4146,6 +4179,10 @@ window.closeVoucherModal = function() {
 
     async function manualOrder() {
       const btn = $("manualBtn");
+      if ($("strategyType").value === "trend_only_v1") {
+        showToast("Trend Only V1 禁止手动加仓，请使用趋势面板平仓。", "error");
+        return;
+      }
       const symbol = $("symbol").value;
       const side = $("side").value === "long" ? "buy" : "sell";
       const amountU = Number($("baseAmount").value || 0);
@@ -4187,13 +4224,17 @@ window.closeVoucherModal = function() {
 
     async function runSimpleAction(path, btnId, loadingText, successText, failText) {
       const btn = $(btnId);
+      if (path === "/api/reset" && $("strategyType").value === "trend_only_v1") {
+        showToast("趋势状态不可通过重置清除，请使用趋势平仓或核对订单。", "error");
+        return;
+      }
       setButtonLoading(btn, true, loadingText);
       try {
         const res = await api(path, { method: "POST" });
         if (!res.ok) {
           showToast(res.error || failText, "error");
         } else {
-          showToast(successText, "success");
+          showToast(res.message || successText, "success");
         }
         await loadAll(false);
       } catch (e) {
@@ -4214,6 +4255,10 @@ window.closeVoucherModal = function() {
 
     $("saveBtn").addEventListener("click", saveConfig);
     $("strategyType").addEventListener("change", updateStrategyForm);
+    document.addEventListener("trend-only-panel-ready", () => {
+      if (window.__pendingTrendOnlyConfig) window.TrendOnlyPanel?.setConfig(window.__pendingTrendOnlyConfig);
+      updateStrategyForm();
+    });
     $("platform").addEventListener("change", () => {
       const platform = $("platform").value;
       if (platform === "binance") $("quoteAsset").value = "USDT";
@@ -4466,10 +4511,10 @@ $("voucherModalMask").addEventListener("click", e => {
       }
 
       if (path === "/api/start-all") {
-        const success = Array.isArray(data.results)
-          ? data.results.filter(x => x.ok).length
-          : 0;
-        msg.textContent = "全部启动完成，成功账户：" + success;
+        const success = Number(data.successCount ?? (Array.isArray(data.results) ? data.results.filter(x => x.ok).length : 0));
+        const skipped = Number(data.skippedCount ?? (Array.isArray(data.results) ? data.results.filter(x => !x.ok).length : 0));
+        const reasons = Array.isArray(data.skipped) ? data.skipped.map(x => `${x.name || x.id}：${x.reason}`).join("；") : "";
+        msg.textContent = `批量启动完成：成功 ${success}，跳过 ${skipped}${reasons ? `；${reasons}` : ""}`;
       } else {
         msg.textContent = "全部停止完成，账户数：" + (data.count || 0);
       }

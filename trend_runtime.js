@@ -21,7 +21,27 @@ function createTrendRuntime(d) {
   }
   function publish(acc, st) {
     const s = get(acc), p = s.position;
-    st.trendOnly = { ...s, journal: undefined, submittedIds: undefined, position: p, weekendBlocked: T.isWeekendBlocked(Date.now(), T.normalizeConfig(acc.trendOnlyConfig)) };
+    const weekendBlocked = T.isWeekendBlocked(Date.now(), T.normalizeConfig(acc.trendOnlyConfig));
+    const signal = s.signal || {
+      regime: "data_insufficient",
+      direction: "none",
+      score: 0,
+      reasons: [weekendBlocked ? "周末过滤：当前为周六/周日，禁止新开仓" : (s.lastLog || "行情数据不足，等待已收盘 K 线")]
+    };
+    const indicators = s.indicators || { atr: null, adx: null, chop: null, trendDirection: "none", higherDirection: "none" };
+    st.trendOnly = {
+      weekendBlocked,
+      signal,
+      indicators,
+      position: p || null,
+      preview: s.preview || null,
+      pendingOrder: s.pendingOrder || null,
+      syncMismatch: !!s.syncMismatch,
+      lastLog: s.lastLog || "",
+      dailyLoss: Number(s.dailyLoss || 0),
+      consecutiveLosses: Number(s.consecutiveLosses || 0),
+      pauseUntil: Number(s.pauseUntil || 0)
+    };
     st.entryPrice = p?.entryPrice || 0; st.positionQty = p?.positionSize || 0;
     st.positionValueU = st.entryPrice * st.positionQty; st.marginUsedU = p ? st.positionValueU / p.leverage : 0;
     st.addCount = 0; st.nextAddPrice = 0; st.nextAddAmountU = 0; st.nextTakeProfitPrice = 0;
@@ -186,6 +206,7 @@ function createTrendRuntime(d) {
     const s = get(acc), c = T.normalizeConfig(acc.trendOnlyConfig);
     try {
       st.currentPrice = await d.price(acc); publish(acc, st); flushJournal(acc);
+      st.updatedAt = new Date().toLocaleString("zh-CN");
       if (s.pendingOrder) {
         if (!settle(acc, st, s.pendingOrder, await lookup(acc, s.pendingOrder))) { log(acc, st, "未知订单状态：查询中，禁止重复下单"); return; }
       }
