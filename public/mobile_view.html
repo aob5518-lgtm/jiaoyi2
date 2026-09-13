@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+  />
+  <title>账户展示</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    :root {
+      --bg: #06101f;
+      --panel: rgba(17, 31, 67, 0.88);
+      --panel-2: rgba(12, 24, 52, 0.96);
+      --line: rgba(92, 120, 198, 0.24);
+      --text: #ffffff;
+      --muted: #97a8d8;
+      --green: #33d17a;
+      --red: #ff6f88;
+      --shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(52, 97, 255, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(66, 180, 255, 0.10), transparent 32%),
+        linear-gradient(180deg, #071121 0%, #081224 46%, #050d1a 100%);
+      overflow-x: hidden;
+    }
+
+    .app {
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100vh;
+      padding: 12px 12px 88px;
+    }
+
+    .topbar {
+      margin-bottom: 10px;
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: 0.4px;
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .tab-page { display: none; }
+    .tab-page.active { display: block; }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px;
+      margin-bottom: 10px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 800;
+      margin-bottom: 10px;
+      letter-spacing: 0.2px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .hero-main {
+      grid-column: 1 / -1;
+      background:
+        linear-gradient(135deg, rgba(67, 111, 255, 0.22), rgba(14, 28, 62, 0.78)),
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+      border: 1px solid rgba(110, 168, 255, 0.24);
+      border-radius: 16px;
+      padding: 14px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .hero-main:active {
+      transform: scale(0.98);
+      filter: brightness(1.05);
+    }
+
+    .hero-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .hero-value {
+      font-size: 26px;
+      font-weight: 900;
+      line-height: 1.08;
+      word-break: break-word;
+      margin-bottom: 6px;
+    }
+
+    .hero-meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .metric {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 11px;
+      min-height: 82px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .metric-value {
+      font-size: 19px;
+      font-weight: 900;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .info-box {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 11px;
+      min-height: 74px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .info-box .k {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .info-box .v {
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+
+    .account-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .account-item {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      padding: 12px;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+
+    .account-item:active {
+      transform: scale(0.99);
+    }
+
+    .account-item.active {
+      border-color: rgba(110, 168, 255, 0.48);
+      box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.2) inset;
+      background:
+        linear-gradient(180deg, rgba(67, 111, 255, 0.10), rgba(9, 20, 50, 0.96));
+    }
+
+    .account-name {
+      font-size: 15px;
+      font-weight: 800;
+      margin-bottom: 5px;
+      line-height: 1.3;
+    }
+
+    .account-meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+      word-break: break-word;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .green { color: var(--green) !important; }
+    .red { color: var(--red) !important; }
+
+    .tip-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #cfd8f6;
+      border-radius: 14px;
+      padding: 11px 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+
+    .bottom-nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(6, 13, 26, 0.96);
+      border-top: 1px solid rgba(92, 120, 198, 0.16);
+      backdrop-filter: blur(12px);
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .nav-btn {
+      background: rgba(17, 29, 59, 0.9);
+      border: 1px solid rgba(92, 120, 198, 0.16);
+      color: var(--muted);
+      min-height: 42px;
+      border-radius: 13px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .nav-btn.active {
+      color: #fff;
+      border-color: rgba(110, 168, 255, 0.4);
+      box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.18) inset;
+      background: linear-gradient(180deg, rgba(67, 111, 255, 0.18), rgba(17, 29, 59, 0.92));
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">账户展示</div>
+      <div class="subtitle" id="topSub">客户查看版 ｜ 仅展示账户状态与收益表现</div>
+    </div>
+
+    <div id="page-overview" class="tab-page active">
+      <div class="card">
+        <div class="card-title">账户总览</div>
+
+        <div class="hero">
+          <div class="hero-main" onclick="openAccounts()">
+            <div class="hero-label">当前账户（点击切换）</div>
+            <div class="hero-value" id="ovAccountName">-</div>
+            <div class="hero-meta" id="ovAccountMeta">-</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">当前盈亏 (U)</div>
+            <div class="metric-value" id="ovPnl">-</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">收益率</div>
+            <div class="metric-value" id="ovRoi">-</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">当前余额</div>
+            <div class="metric-value" id="ovBalance">-</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">可用余额</div>
+            <div class="metric-value" id="ovAvailable">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">基础信息</div>
+        <div class="section-grid">
+          <div class="info-box">
+            <div class="k">平台</div>
+            <div class="v" id="ovPlatform">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">运行状态</div>
+            <div class="v" id="ovRunning">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">币种</div>
+            <div class="v" id="ovSymbol">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">方向</div>
+            <div class="v" id="ovSide">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">当前价格</div>
+            <div class="v" id="ovPrice">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">开仓均价</div>
+            <div class="v" id="ovEntry">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">当前仓位数量</div>
+            <div class="v" id="ovPositionSize">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">当前保证金 (U)</div>
+            <div class="v" id="ovMargin">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">状态说明</div>
+        <div id="ovErrorBox" class="tip-box">-</div>
+      </div>
+    </div>
+
+    <div id="page-accounts" class="tab-page">
+      <div class="card">
+        <div class="card-title">账户列表</div>
+        <div id="accountList" class="account-list"></div>
+      </div>
+    </div>
+
+    <div id="page-history" class="tab-page">
+      <div class="card">
+        <div class="card-title">历史盈利记录</div>
+        <div id="historyList" class="account-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" data-tab="overview">总览</button>
+    <button class="nav-btn" data-tab="accounts">账户</button>
+    <button class="nav-btn" data-tab="history">历史</button>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let currentAccountId = "";
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...options
+      });
+      return res.json();
+    }
+
+    function setTab(tab) {
+      document.querySelectorAll(".tab-page").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".nav-btn").forEach(el => el.classList.remove("active"));
+      $(`page-${tab}`).classList.add("active");
+      document.querySelector(`.nav-btn[data-tab="${tab}"]`).classList.add("active");
+    }
+
+    function openAccounts() {
+      setTab("accounts");
+    }
+    window.openAccounts = openAccounts;
+
+    document.querySelectorAll(".nav-btn").forEach(btn => {
+      btn.addEventListener("click", () => setTab(btn.dataset.tab));
+    });
+
+    function fmt(v, digits = 4) {
+      const n = Number(v);
+      if (!isFinite(n)) return "-";
+      return n.toFixed(digits).replace(/\.?0+$/, "");
+    }
+
+    function renderOverview(payload) {
+      const cfg = payload.account;
+      const st = payload.state;
+
+      $("topSub").textContent = `${cfg.name || "-"} ｜ ${cfg.platform || "-"} ｜ ${cfg.symbol || "-"} / ${cfg.quoteAsset || "-"}`;
+      $("ovAccountName").textContent = cfg.name || "-";
+      $("ovAccountMeta").textContent = `${cfg.platform || "-"} ｜ ${cfg.symbol || "-"} / ${cfg.quoteAsset || "-"} ｜ ${cfg.side === "long" ? "做多" : "做空"}`;
+      $("ovPnl").textContent = fmt(st.pnl || 0);
+      $("ovRoi").textContent = `${fmt(st.roi || 0, 2)}%`;
+      $("ovBalance").textContent = st.balance || "-";
+      $("ovAvailable").textContent = st.available || "-";
+      $("ovPlatform").textContent = cfg.platform || "-";
+
+      const runningEl = $("ovRunning");
+      runningEl.textContent = st.running ? "运行中" : "未运行";
+      runningEl.className = "v " + (st.running ? "green" : "red");
+
+      $("ovSymbol").textContent = `${cfg.symbol || "-"} / ${cfg.quoteAsset || "-"}`;
+      $("ovSide").textContent = cfg.side === "long" ? "做多" : "做空";
+      $("ovPrice").textContent = fmt(st.currentPrice || 0, 4);
+      $("ovEntry").textContent = st.entryPrice ? fmt(st.entryPrice, 4) : "-";
+      $("ovPositionSize").textContent = st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-");
+      $("ovMargin").textContent = fmt(st.marginUsedU || 0, 4);
+
+      const tipText = st.lastError || st.lastAction || "状态正常";
+      $("ovErrorBox").textContent = tipText;
+
+      $("ovPnl").className = "metric-value " + (Number(st.pnl || 0) >= 0 ? "green" : "red");
+      $("ovRoi").className = "metric-value " + (Number(st.roi || 0) >= 0 ? "green" : "red");
+    }
+
+    function renderAccounts(items, selectedId) {
+      $("accountList").innerHTML = items.map(acc => `
+        <div class="account-item ${acc.id === selectedId ? "active" : ""}" onclick="selectAccount('${acc.id}')">
+          <div class="account-name">${acc.name}</div>
+          <div class="account-meta">
+            平台：${acc.platform}<br>
+            币种：${acc.symbol}/${acc.quoteAsset || "-"}<br>
+            方向：${acc.side === "long" ? "做多" : "做空"}<br>
+            状态：${acc.running ? "运行中" : "未运行"}<br>
+            盈亏：${fmt(acc.pnl || 0)} U / ${fmt(acc.roi || 0, 2)}%
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderHistory(items) {
+      const el = $("historyList");
+      if (!items || items.length === 0) {
+        el.innerHTML = `<div class="muted">暂无历史盈利记录</div>`;
+        return;
+      }
+
+      el.innerHTML = items.map(item => {
+        const pnlNum = Number(item.pnl || 0);
+        const roiNum = Number(item.roi || 0);
+        const pnlClass = pnlNum >= 0 ? "green" : "red";
+        const roiClass = roiNum >= 0 ? "green" : "red";
+
+        return `
+          <div class="account-item">
+            <div class="account-name">${item.symbol || "-"} ｜ ${item.side || "-"}</div>
+            <div class="account-meta">
+              时间：${item.time || "-"}<br>
+              开仓价：${item.entryPrice ?? "-"}<br>
+              平仓价：${item.exitPrice ?? "-"}<br>
+              盈利：<span class="${pnlClass}">${item.pnl ?? "-"}</span> U<br>
+              收益率：<span class="${roiClass}">${item.roi ?? "-"}</span>%
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function selectAccount(id) {
+      currentAccountId = id;
+      await loadCurrent();
+      setTab("overview");
+    }
+    window.selectAccount = selectAccount;
+
+    async function loadAccounts() {
+      const data = await api("/api/public/accounts");
+      if (!data.ok) return [];
+
+      const items = data.items || [];
+      if (!currentAccountId) {
+        currentAccountId = data.currentAccountId || (items[0] && items[0].id) || "";
+      }
+
+      renderAccounts(items, currentAccountId);
+      return items;
+    }
+
+    async function loadCurrent() {
+      if (!currentAccountId) return;
+      const statusRes = await api(`/api/public/status?id=${encodeURIComponent(currentAccountId)}`);
+      if (statusRes.ok) {
+        renderOverview(statusRes);
+      }
+
+      const historyRes = await api(`/api/public/profit-history?id=${encodeURIComponent(currentAccountId)}`);
+      renderHistory(historyRes.items || []);
+    }
+
+    async function loadAll() {
+      await loadAccounts();
+      await loadCurrent();
+    }
+
+    loadAll();
+    setInterval(() => loadCurrent(), 5000);
+    setInterval(() => loadAccounts(), 15000);
+  </script>
+<script src="/trend-only-panel.js" defer></script></body>
+</html>

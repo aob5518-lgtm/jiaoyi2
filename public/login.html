@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理端登录</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at top left, rgba(52, 97, 255, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(66, 180, 255, 0.12), transparent 30%),
+        linear-gradient(180deg, #071121 0%, #081224 45%, #050d1a 100%);
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      color: #fff;
+      padding: 16px;
+    }
+
+    .box {
+      width: 100%;
+      max-width: 360px;
+      background: rgba(15, 29, 71, 0.92);
+      border: 1px solid rgba(92, 120, 198, 0.22);
+      border-radius: 18px;
+      padding: 24px 20px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.28);
+      backdrop-filter: blur(10px);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    .sub {
+      color: #9fb0e1;
+      font-size: 13px;
+      margin-bottom: 18px;
+      line-height: 1.6;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: #dce5ff;
+      margin-bottom: 12px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      margin-top: 6px;
+      min-height: 46px;
+      border-radius: 12px;
+      border: 1px solid #304488;
+      background: #091432;
+      color: #fff;
+      padding: 10px 12px;
+      font-size: 15px;
+      outline: none;
+    }
+
+    .remember {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0 0;
+      color: #dce5ff;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .remember input {
+      width: auto;
+      min-height: auto;
+      margin: 0;
+    }
+
+    button {
+      width: 100%;
+      min-height: 46px;
+      border: 0;
+      border-radius: 12px;
+      background: #4d7cff;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+
+    .msg {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #ff9e9e;
+      min-height: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>管理端登录</h1>
+    <div class="sub">登录后才能访问参数配置、启停控制和实盘操作。</div>
+
+    <label>用户名
+      <input id="username" type="text" autocomplete="username" />
+    </label>
+
+    <label>密码
+      <input id="password" type="password" autocomplete="current-password" />
+    </label>
+
+    <label class="remember">
+      <input id="rememberMe" type="checkbox" />
+      <span>记住密码并自动登录</span>
+    </label>
+
+    <button id="loginBtn">登录</button>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <script>
+    async function login(auto = false) {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      const rememberMe = document.getElementById("rememberMe").checked;
+      const msg = document.getElementById("msg");
+
+      msg.textContent = "";
+
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        if (rememberMe) {
+          localStorage.setItem("remember_username", username);
+          localStorage.setItem("remember_password", password);
+          localStorage.setItem("remember_me", "1");
+        } else {
+          localStorage.removeItem("remember_username");
+          localStorage.removeItem("remember_password");
+          localStorage.removeItem("remember_me");
+        }
+
+        const next = new URLSearchParams(location.search).get("next") || "/";
+        location.href = next;
+      } else {
+        if (!auto) {
+          msg.textContent = data.error || "登录失败";
+        }
+      }
+    }
+
+    function initRemember() {
+      const remember = localStorage.getItem("remember_me") === "1";
+      const username = localStorage.getItem("remember_username") || "";
+      const password = localStorage.getItem("remember_password") || "";
+
+      if (remember) {
+        document.getElementById("rememberMe").checked = true;
+        document.getElementById("username").value = username;
+        document.getElementById("password").value = password;
+
+        if (username && password) {
+          login(true);
+        }
+      }
+    }
+
+    document.getElementById("loginBtn").addEventListener("click", () => login(false));
+
+    document.getElementById("password").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") login(false);
+    });
+
+    initRemember();
+  </script>
+</body>
+</html>

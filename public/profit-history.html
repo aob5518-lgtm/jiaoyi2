@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>历史盈利记录</title>
+  <style>
+    body {
+      margin: 0;
+      background: #081224;
+      color: #fff;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      padding: 18px;
+    }
+
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: 28px;
+    }
+
+    .sub {
+      color: #9fb0e1;
+      font-size: 13px;
+      margin-bottom: 14px;
+      line-height: 1.6;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #0f1d47;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 13px 10px;
+      border-bottom: 1px solid #22336d;
+      text-align: center;
+      font-size: 14px;
+    }
+
+    th {
+      background: #132457;
+      color: #dce5ff;
+    }
+
+    .green { color: #43d37b; }
+    .red { color: #ff7f7f; }
+    .muted { color: #9fb0e1; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>历史盈利记录</h1>
+    <div class="sub">当前页面仅显示所选账户的历史记录。</div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>账户</th>
+          <th>币种</th>
+          <th>方向</th>
+          <th>开仓均价</th>
+          <th>平仓价格</th>
+          <th>盈亏（U）</th>
+          <th>收益率</th>
+          <th>补仓次数</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="9" class="muted">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    async function loadHistory() {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("id") || "";
+
+      const res = await fetch("/api/profit-history?id=" + encodeURIComponent(id));
+      const data = await res.json();
+      const tbody = document.getElementById("tbody");
+
+      if (!data.items || data.items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="muted">暂无历史盈利记录</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.items.map(item => `
+        <tr>
+          <td>${item.time || "-"}</td>
+          <td>${item.accountName || "-"}</td>
+          <td>${item.symbol || "-"}/${item.quoteAsset || "USDT"}</td>
+          <td>${item.side || "-"}</td>
+          <td>${item.entryPrice || "-"}</td>
+          <td>${item.exitPrice || "-"}</td>
+          <td class="${item.pnl >= 0 ? "green" : "red"}">${item.pnl || 0}</td>
+          <td class="${item.roi >= 0 ? "green" : "red"}">${item.roi || 0}%</td>
+          <td>${item.addCount || 0}</td>
+        </tr>
+      `).join("");
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>

@@ -1,0 +1,4501 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SUPER AGENT</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    :root{
+      --bg:#081224;
+      --bg-2:#0b1730;
+      --panel:#0f1d47;
+      --panel-2:#112356;
+      --card:#0d1a3d;
+      --card-2:#12265b;
+      --line:rgba(121,153,255,.14);
+      --line-strong:rgba(121,153,255,.24);
+      --text:#f5f8ff;
+      --text-2:#dbe5ff;
+      --muted:#96a9db;
+      --muted-2:#7f93c9;
+      --blue:#5d8dff;
+      --blue-2:#75a5ff;
+      --blue-soft:rgba(93,141,255,.16);
+      --green:#31d38b;
+      --green-soft:rgba(49,211,139,.14);
+      --red:#ff7b8b;
+      --red-soft:rgba(255,123,139,.14);
+      --orange:#ffba52;
+      --orange-soft:rgba(255,186,82,.14);
+      --shadow:0 18px 40px rgba(0,0,0,.28);
+      --shadow-soft:0 12px 26px rgba(0,0,0,.18);
+      --radius-xl:22px;
+      --radius-lg:18px;
+      --radius-md:14px;
+      --radius-sm:12px;
+    }
+
+    html, body{
+      margin:0;
+      min-height:100%;
+      color:var(--text);
+      font-family:"Microsoft YaHei","PingFang SC","Helvetica Neue",Arial,sans-serif;
+      background:
+        radial-gradient(circle at 92% -8%, rgba(117,165,255,.18), transparent 22%),
+        radial-gradient(circle at 8% 0%, rgba(93,141,255,.14), transparent 18%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    }
+
+    body{
+      padding:12px;
+      overflow:hidden;
+    }
+
+    ::-webkit-scrollbar{ width:8px; height:8px; }
+    ::-webkit-scrollbar-thumb{
+      background:rgba(255,255,255,.12);
+      border-radius:999px;
+    }
+    ::-webkit-scrollbar-track{ background:transparent; }
+
+    .app{
+      height:calc(100vh - 24px);
+      display:grid;
+      grid-template-columns:290px minmax(0,1fr) 340px;
+      gap:12px;
+    }
+
+    .panel{
+      min-width:0;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      background:
+        linear-gradient(180deg, rgba(16,29,70,.98), rgba(10,20,45,.98));
+      border:1px solid var(--line);
+      border-radius:var(--radius-xl);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.03),
+        var(--shadow);
+      overflow:hidden;
+    }
+
+    .panel-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:16px 16px 12px;
+      border-bottom:1px solid rgba(255,255,255,.04);
+    }
+
+    .panel-title{
+      margin:0;
+      font-size:18px;
+      font-weight:900;
+      letter-spacing:0;
+    }
+
+    .tag{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:28px;
+      padding:0 10px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:900;
+      color:#d8e4ff;
+      background:linear-gradient(180deg, rgba(93,141,255,.18), rgba(93,141,255,.08));
+      border:1px solid rgba(121,153,255,.18);
+      white-space:nowrap;
+    }
+
+    .left-top{
+      padding:18px;
+      background:
+        radial-gradient(circle at top right, rgba(117,165,255,.24), transparent 35%),
+        linear-gradient(180deg, rgba(19,36,86,.98), rgba(10,20,45,.98));
+      border-bottom:1px solid rgba(255,255,255,.04);
+    }
+
+    .brand{
+      font-size:26px;
+      line-height:1.1;
+      font-weight:1000;
+      letter-spacing:0;
+      margin:0 0 8px;
+    }
+
+    .brand-sub{
+      font-size:13px;
+      line-height:1.8;
+      color:var(--muted);
+      margin-bottom:14px;
+    }
+
+    .mini-stats{
+      display:grid;
+      gap:10px;
+    }
+
+    .mini-stat{
+      border-radius:16px;
+      padding:12px 14px;
+      background:rgba(255,255,255,.03);
+      border:1px solid rgba(255,255,255,.05);
+    }
+
+    .mini-stat-k{
+      font-size:11px;
+      color:rgba(255,255,255,.48);
+      margin-bottom:6px;
+      font-weight:700;
+    }
+
+    .mini-stat-v{
+      font-size:15px;
+      font-weight:900;
+      word-break:break-word;
+    }
+
+    .account-panel{
+      flex:1;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+    }
+
+    .account-list{
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      padding:14px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+
+    .account-item{
+      border-radius:18px;
+      padding:14px;
+      background:
+        linear-gradient(180deg, rgba(18,32,74,.98), rgba(11,22,48,.98));
+      border:1px solid rgba(255,255,255,.05);
+      box-shadow:var(--shadow-soft);
+      cursor:pointer;
+      transition:.16s ease;
+    }
+
+    .account-item:hover{
+      transform:translateY(-1px);
+      border-color:rgba(121,153,255,.22);
+    }
+
+    .account-item.active{
+      border-color:rgba(121,153,255,.34);
+      box-shadow:
+        inset 0 0 0 1px rgba(93,141,255,.12),
+        0 16px 30px rgba(0,0,0,.22);
+      background:
+        linear-gradient(180deg, rgba(20,36,84,.98), rgba(12,24,53,.98));
+    }
+
+    .account-top{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      margin-bottom:10px;
+    }
+
+    .account-name{
+      font-size:16px;
+      font-weight:900;
+      letter-spacing:0;
+    }
+
+    .status-pill{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:26px;
+      padding:0 10px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:900;
+      white-space:nowrap;
+    }
+
+    .status-run{
+      color:var(--green);
+      background:var(--green-soft);
+      border:1px solid rgba(49,211,139,.16);
+    }
+
+    .status-stop{
+      color:var(--red);
+      background:var(--red-soft);
+      border:1px solid rgba(255,123,139,.16);
+    }
+
+    .account-meta{
+      font-size:12px;
+      line-height:1.7;
+      color:var(--muted);
+    }
+
+    .account-grid{
+      margin-top:12px;
+      padding-top:12px;
+      border-top:1px dashed rgba(255,255,255,.06);
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+
+    .account-mini{
+      border-radius:12px;
+      padding:10px;
+      background:rgba(255,255,255,.024);
+      border:1px solid rgba(255,255,255,.04);
+    }
+
+    .account-mini-k{
+      font-size:11px;
+      color:rgba(255,255,255,.48);
+      margin-bottom:6px;
+    }
+
+    .account-mini-v{
+      font-size:14px;
+      font-weight:900;
+      word-break:break-word;
+    }
+
+    .left-actions{
+      padding:0 14px 14px;
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+
+    .left-note{
+      margin:0 14px 14px;
+      padding:12px 14px;
+      border-radius:16px;
+      background:rgba(255,255,255,.022);
+      border:1px solid rgba(255,255,255,.05);
+      color:rgba(255,255,255,.56);
+      font-size:12px;
+      line-height:1.8;
+    }
+
+    .center{
+      min-width:0;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      padding:16px 18px;
+      border-radius:var(--radius-xl);
+      border:1px solid var(--line);
+      background:
+        radial-gradient(circle at top right, rgba(117,165,255,.16), transparent 28%),
+        linear-gradient(180deg, rgba(18,34,82,.98), rgba(11,23,52,.98));
+      box-shadow:var(--shadow);
+    }
+
+    .topbar-left{
+      min-width:0;
+    }
+
+    .topbar-title{
+      margin:0 0 6px;
+      font-size:24px;
+      line-height:1.2;
+      font-weight:1000;
+      letter-spacing:0;
+    }
+
+    .topbar-sub{
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.8;
+      word-break:break-word;
+    }
+
+    .topbar-actions{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+
+    .trade-jump-btn{
+      min-height:42px;
+      padding:10px 20px;
+      border:1px solid rgba(124,164,255,.48);
+      border-radius:14px;
+      background:linear-gradient(180deg, #668fff, #4f75e8);
+      color:#fff;
+      font-size:13px;
+      font-weight:900;
+      box-shadow:0 10px 22px rgba(93,141,255,.24);
+      cursor:pointer;
+      transition:.16s ease;
+      white-space:nowrap;
+    }
+
+    .trade-jump-btn:hover{
+      transform:translateY(-1px);
+      filter:brightness(1.06);
+    }
+
+    .trade-jump-btn:active{
+      transform:translateY(0);
+    }
+
+    .tabs{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .tab-btn{
+      border:0;
+      min-height:42px;
+      padding:10px 16px;
+      border-radius:14px;
+      background:#16295e;
+      color:#dbe6ff;
+      font-size:13px;
+      font-weight:900;
+      cursor:pointer;
+      transition:.16s ease;
+    }
+
+    .tab-btn.active{
+      background:linear-gradient(180deg, #5d8dff, #4b79eb);
+      color:#fff;
+      box-shadow:0 10px 22px rgba(93,141,255,.22);
+    }
+
+    .main-panel{
+      flex:1;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      background:
+        linear-gradient(180deg, rgba(16,29,70,.98), rgba(10,20,45,.98));
+      border:1px solid var(--line);
+      border-radius:var(--radius-xl);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+
+    .main-content{
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      padding:16px;
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+
+    .hero-grid{
+      display:grid;
+      grid-template-columns:1.08fr .94fr .94fr 1.12fr;
+      gap:12px;
+    }
+
+    .hero-card{
+      border-radius:20px;
+      padding:18px;
+      background:
+        linear-gradient(180deg, rgba(20,37,84,.98), rgba(12,24,54,.98));
+      border:1px solid rgba(255,255,255,.05);
+      box-shadow:var(--shadow-soft);
+      position:relative;
+      overflow:hidden;
+    }
+
+    .hero-card::after{
+      content:"";
+      position:absolute;
+      right:-20px;
+      bottom:-38px;
+      width:130px;
+      height:130px;
+      background:radial-gradient(circle, rgba(117,165,255,.12), transparent 68%);
+      pointer-events:none;
+    }
+
+    .hero-k{
+      font-size:12px;
+      color:rgba(255,255,255,.56);
+      font-weight:700;
+      margin-bottom:12px;
+    }
+
+    .hero-v{
+      min-width:0;
+      font-size:32px;
+      line-height:1;
+      font-weight:1000;
+      letter-spacing:0;
+      margin-bottom:10px;
+      white-space:nowrap;
+      font-variant-numeric:tabular-nums;
+    }
+
+    #metricBalance{
+      font-size:29px;
+    }
+
+    .hero-sub{
+      font-size:11px;
+      color:rgba(255,255,255,.34);
+      text-transform:uppercase;
+      letter-spacing:1px;
+    }
+
+    .chips{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:10px;
+    }
+
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:28px;
+      padding:5px 10px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:900;
+      color:#dbe6ff;
+      background:rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.05);
+      white-space:nowrap;
+    }
+
+    .overview-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
+    }
+
+    .block{
+      border-radius:20px;
+      padding:14px;
+      background:
+        linear-gradient(180deg, rgba(19,35,81,.98), rgba(11,23,50,.98));
+      border:1px solid rgba(255,255,255,.05);
+      box-shadow:var(--shadow-soft);
+      min-height:0;
+    }
+
+    .block-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding-bottom:10px;
+      margin-bottom:14px;
+      border-bottom:1px solid rgba(255,255,255,.05);
+    }
+
+    .block-title{
+      font-size:17px;
+      font-weight:900;
+    }
+
+    .data-list{
+      display:grid;
+      gap:10px;
+    }
+
+    .data-row{
+      min-height:52px;
+      display:grid;
+      grid-template-columns:120px 1fr;
+      gap:12px;
+      align-items:center;
+      padding:10px 12px;
+      border-radius:14px;
+      background:rgba(255,255,255,.022);
+      border:1px solid rgba(255,255,255,.04);
+    }
+
+    .data-k{
+      color:rgba(255,255,255,.56);
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .data-v{
+      text-align:right;
+      font-size:15px;
+      font-weight:900;
+      word-break:break-word;
+    }
+
+    .form-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px 14px;
+    }
+
+    [hidden]{
+      display:none!important;
+    }
+
+    .form-grid .full{ grid-column:1 / -1; }
+
+    label{
+      display:block;
+      font-size:12px;
+      font-weight:700;
+      color:var(--text-2);
+    }
+
+    input, select, textarea{
+      width:100%;
+      margin-top:8px;
+      border-radius:12px;
+      border:1px solid rgba(121,153,255,.22);
+      background:#0a1635;
+      color:#fff;
+      padding:11px 12px;
+      font-size:13px;
+      outline:none;
+      transition:.16s ease;
+    }
+
+    input:focus, select:focus, textarea:focus{
+      border-color:rgba(121,153,255,.54);
+      box-shadow:0 0 0 3px rgba(93,141,255,.10);
+    }
+
+    textarea{
+      min-height:96px;
+      resize:vertical;
+    }
+
+    .address-balance-row{
+      display:grid;
+      grid-template-columns:1.55fr .75fr .75fr;
+      gap:10px;
+      align-items:stretch;
+      margin-top:8px;
+    }
+
+    .address-balance-row input{ margin-top:0; }
+
+    .mini-balance{
+      border-radius:14px;
+      padding:10px 12px;
+      background:#0a1635;
+      border:1px solid rgba(121,153,255,.22);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      min-height:52px;
+    }
+
+    .mini-balance-title{
+      font-size:11px;
+      color:var(--muted);
+      margin-bottom:6px;
+    }
+
+    .mini-balance-value{
+      font-size:14px;
+      font-weight:900;
+      word-break:break-word;
+    }
+
+    .sticky-actions{
+      position:sticky;
+      bottom:0;
+      z-index:5;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      flex-wrap:wrap;
+      padding:14px;
+      border-radius:18px;
+      background:
+        linear-gradient(180deg, rgba(18,33,75,.96), rgba(10,20,45,.98));
+      border:1px solid rgba(255,255,255,.06);
+      box-shadow:0 14px 28px rgba(0,0,0,.18);
+    }
+
+    .sticky-text{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .sticky-title{
+      font-size:15px;
+      font-weight:900;
+      color:#dfe7ff;
+    }
+
+    .sticky-sub{
+      font-size:12px;
+      color:rgba(255,255,255,.56);
+      line-height:1.7;
+    }
+
+    .sticky-buttons{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    button{
+      border:0;
+      border-radius:14px;
+      min-height:44px;
+      padding:10px 16px;
+      color:#fff;
+      font-size:14px;
+      font-weight:900;
+      cursor:pointer;
+      transition:.16s ease;
+      position:relative;
+    }
+
+    button:hover{
+      transform:translateY(-1px);
+      filter:brightness(1.03);
+    }
+
+    button:disabled{
+      opacity:.7;
+      cursor:not-allowed;
+      transform:none;
+    }
+
+    .create{ background:linear-gradient(180deg, #5d8dff, #4f7df0); }
+    .delete{ background:linear-gradient(180deg, #f06a7c, #df4f62); }
+    .save{ background:linear-gradient(180deg, #5d8dff, #4f7df0); }
+    .start{ background:linear-gradient(180deg, #32d58f, #21b976); }
+    .stop{ background:linear-gradient(180deg, #ff7b8b, #eb5e72); }
+    .reset{ background:linear-gradient(180deg, #6f7c9f, #5c6889); }
+    .manual{ background:linear-gradient(180deg, #ffbe58, #f0a936); color:#1d2230; }
+    .ghost{ background:linear-gradient(180deg, #173063, #132952); }
+
+    .btn-loading::after{
+      content:"";
+      width:14px;
+      height:14px;
+      border:2px solid rgba(255,255,255,.28);
+      border-top-color:#fff;
+      border-radius:50%;
+      display:inline-block;
+      margin-left:8px;
+      vertical-align:-2px;
+      animation:spin .8s linear infinite;
+    }
+
+    @keyframes spin{
+      to{ transform:rotate(360deg); }
+    }
+
+    .green{ color:var(--green); }
+    .red{ color:var(--red); }
+    .orange{ color:var(--orange); }
+    .muted{ color:var(--muted); }
+
+    .status-inline{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:28px;
+      padding:5px 10px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:900;
+      white-space:nowrap;
+    }
+
+    .pill-normal{
+      color:var(--green);
+      background:var(--green-soft);
+      border:1px solid rgba(49,211,139,.16);
+    }
+
+    .pill-warning{
+      color:var(--orange);
+      background:var(--orange-soft);
+      border:1px solid rgba(255,186,82,.16);
+    }
+
+    .pill-danger{
+      color:var(--red);
+      background:var(--red-soft);
+      border:1px solid rgba(255,123,139,.16);
+    }
+
+    .history-top{
+      display:grid;
+      grid-template-columns:repeat(4, 1fr);
+      gap:12px;
+    }
+
+    .history-stat{
+      border-radius:18px;
+      padding:16px;
+      background:
+        linear-gradient(180deg, rgba(20,37,84,.98), rgba(12,24,54,.98));
+      border:1px solid rgba(255,255,255,.05);
+      box-shadow:var(--shadow-soft);
+    }
+
+    .history-stat-k{
+      font-size:12px;
+      color:rgba(255,255,255,.56);
+      margin-bottom:10px;
+      font-weight:700;
+    }
+
+    .history-stat-v{
+      font-size:30px;
+      line-height:1;
+      font-weight:1000;
+      letter-spacing:0;
+    }
+
+    .table-wrap{
+      overflow:auto;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.05);
+      background:rgba(8,16,36,.5);
+    }
+
+    table{
+      width:100%;
+      min-width:980px;
+      border-collapse:collapse;
+    }
+
+    thead th{
+      position:sticky;
+      top:0;
+      z-index:1;
+      text-align:left;
+      padding:12px;
+      background:#122759;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      font-size:12px;
+      color:rgba(255,255,255,.64);
+      font-weight:900;
+      white-space:nowrap;
+    }
+
+    tbody td{
+      padding:12px;
+      font-size:13px;
+      border-bottom:1px solid rgba(255,255,255,.05);
+      vertical-align:middle;
+    }
+
+    tbody tr:hover{
+      background:rgba(255,255,255,.018);
+    }
+
+    .right-content{
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      padding:14px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+
+    .right-card{
+      border-radius:18px;
+      padding:14px;
+      background:
+        linear-gradient(180deg, rgba(19,35,81,.98), rgba(11,23,50,.98));
+      border:1px solid rgba(255,255,255,.05);
+      box-shadow:var(--shadow-soft);
+    }
+
+    .right-card-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:12px;
+      padding-bottom:10px;
+      border-bottom:1px solid rgba(255,255,255,.05);
+    }
+
+    .right-card-title{
+      font-size:16px;
+      font-weight:900;
+    }
+
+    .log-list{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      max-height:320px;
+      overflow:auto;
+    }
+
+    .log-item{
+      border-radius:14px;
+      padding:12px;
+      background:rgba(255,255,255,.022);
+      border:1px solid rgba(255,255,255,.04);
+      font-size:13px;
+      line-height:1.75;
+      color:#dce5ff;
+      word-break:break-word;
+    }
+
+    .quick-list{
+      display:grid;
+      gap:10px;
+    }
+
+    .quick-row{
+      border-radius:14px;
+      padding:12px;
+      background:rgba(255,255,255,.022);
+      border:1px solid rgba(255,255,255,.04);
+    }
+
+    .quick-k{
+      font-size:11px;
+      color:rgba(255,255,255,.5);
+      margin-bottom:6px;
+    }
+
+    .quick-v{
+      font-size:14px;
+      font-weight:900;
+      word-break:break-word;
+    }
+
+    .toast-wrap{
+      position:fixed;
+      right:18px;
+      top:18px;
+      z-index:10010;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      pointer-events:none;
+    }
+
+    .toast{
+      min-width:220px;
+      max-width:360px;
+      padding:12px 14px;
+      border-radius:14px;
+      font-size:13px;
+      line-height:1.6;
+      color:#fff;
+      border:1px solid rgba(255,255,255,.08);
+      box-shadow:0 16px 28px rgba(0,0,0,.26);
+      background:linear-gradient(180deg, rgba(22,41,94,.98), rgba(15,28,64,.98));
+      opacity:0;
+      transform:translateY(-8px);
+      animation:toastIn .18s ease forwards;
+    }
+
+    .toast.success{ border-color:rgba(49,211,139,.2); }
+    .toast.error{ border-color:rgba(255,123,139,.2); }
+    .toast.info{ border-color:rgba(93,141,255,.2); }
+
+    @keyframes toastIn{
+      to{
+        opacity:1;
+        transform:translateY(0);
+      }
+    }
+
+    .modal-mask{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.62);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+      z-index:10000;
+    }
+
+    .modal-mask.show{
+      display:flex;
+    }
+
+    .modal{
+      width:100%;
+      max-width:760px;
+      max-height:calc(100vh - 40px);
+      overflow:hidden;
+      border-radius:22px;
+      border:1px solid rgba(121,153,255,.18);
+      background:
+        radial-gradient(circle at top right, rgba(117,165,255,.14), transparent 30%),
+        linear-gradient(180deg, rgba(18,34,82,.99), rgba(11,23,52,.99));
+      box-shadow:0 24px 60px rgba(0,0,0,.35);
+      display:flex;
+      flex-direction:column;
+    }
+
+    .modal-head{
+      padding:16px 18px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+
+    .modal-title{
+      font-size:18px;
+      font-weight:900;
+    }
+
+    .modal-close{
+      border:0;
+      background:transparent;
+      color:rgba(255,255,255,.7);
+      font-size:24px;
+      min-height:auto;
+      padding:0;
+      box-shadow:none;
+    }
+
+    .modal-body{
+      padding:16px 18px;
+      overflow:auto;
+    }
+
+    .modal-actions{
+      padding:16px 18px;
+      border-top:1px solid rgba(255,255,255,.06);
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+
+    .danger-box{
+      border-radius:16px;
+      padding:14px;
+      background:rgba(255,123,139,.08);
+      border:1px solid rgba(255,123,139,.16);
+      color:#ffdbe0;
+      line-height:1.8;
+      font-size:13px;
+    }
+
+.voucher-panel{
+  display:grid;
+  gap:10px;
+}
+
+.voucher-item{
+  border-radius:14px;
+  padding:12px 14px;
+  display:grid;
+  grid-template-columns:120px 1fr;
+  gap:12px;
+  align-items:center;
+  background:rgba(255,255,255,.028);
+  border:1px solid rgba(255,255,255,.055);
+}
+
+.voucher-k{
+  color:rgba(255,255,255,.52);
+  font-size:12px;
+  font-weight:800;
+}
+
+.voucher-v{
+  color:#fff;
+  font-size:13px;
+  font-weight:900;
+  text-align:right;
+  word-break:break-word;
+}
+
+.voucher-v a{
+  color:#75a5ff;
+  text-decoration:none;
+  border-bottom:1px dashed rgba(117,165,255,.45);
+}
+
+.voucher-highlight{
+  background:linear-gradient(180deg, rgba(49,211,139,.10), rgba(49,211,139,.035));
+  border-color:rgba(49,211,139,.18);
+}
+
+.voucher-link-row{
+  background:linear-gradient(180deg, rgba(93,141,255,.12), rgba(93,141,255,.04));
+  border-color:rgba(93,141,255,.22);
+}
+
+    /* SUPER AGENT visual system */
+    :root{
+      --bg:#06080b;
+      --bg-2:#090d12;
+      --panel:#0b1016;
+      --panel-2:#0f161e;
+      --card:#10171f;
+      --card-2:#121c25;
+      --line:#1d2933;
+      --line-strong:#2b3d48;
+      --text:#f1f6f8;
+      --text-2:#d7e1e5;
+      --muted:#80919a;
+      --muted-2:#667781;
+      --blue:#35d3ff;
+      --blue-2:#83e6ff;
+      --blue-soft:rgba(53,211,255,.10);
+      --green:#21d19f;
+      --green-soft:rgba(33,209,159,.10);
+      --red:#ff5f78;
+      --red-soft:rgba(255,95,120,.10);
+      --orange:#ffc857;
+      --orange-soft:rgba(255,200,87,.10);
+      --shadow:0 18px 50px rgba(0,0,0,.34);
+      --shadow-soft:0 10px 24px rgba(0,0,0,.20);
+      --radius-xl:8px;
+      --radius-lg:8px;
+      --radius-md:6px;
+      --radius-sm:4px;
+    }
+
+    html, body{
+      background-color:var(--bg);
+      background-image:
+        linear-gradient(rgba(53,211,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(53,211,255,.025) 1px, transparent 1px);
+      background-size:32px 32px;
+      font-family:"Segoe UI Variable","Segoe UI","Microsoft YaHei","PingFang SC",Arial,sans-serif;
+      font-variant-numeric:tabular-nums;
+    }
+
+    body{
+      padding:8px;
+    }
+
+    ::-webkit-scrollbar{
+      width:5px;
+      height:5px;
+    }
+
+    ::-webkit-scrollbar-thumb{
+      background:#33424c;
+      border-radius:3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover{
+      background:#4c626e;
+    }
+
+    .app{
+      height:calc(100vh - 16px);
+      grid-template-columns:280px minmax(0,1fr) 320px;
+      gap:8px;
+    }
+
+    .panel,
+    .main-panel{
+      background:rgba(9,13,18,.98);
+      border:1px solid var(--line);
+      border-radius:8px;
+      box-shadow:var(--shadow);
+    }
+
+    .panel{
+      position:relative;
+    }
+
+    .panel::before,
+    .main-panel::before,
+    .topbar::before{
+      content:"";
+      position:absolute;
+      z-index:2;
+      top:-1px;
+      left:18px;
+      width:68px;
+      height:2px;
+      background:var(--blue);
+      box-shadow:0 0 14px rgba(53,211,255,.5);
+      pointer-events:none;
+    }
+
+    .panel-head{
+      min-height:52px;
+      padding:12px 14px;
+      border-bottom:1px solid var(--line);
+      background:#0c1218;
+    }
+
+    .panel-title{
+      font-size:15px;
+      letter-spacing:0;
+    }
+
+    .tag{
+      min-height:24px;
+      padding:0 8px;
+      border-radius:4px;
+      color:var(--blue-2);
+      background:rgba(53,211,255,.07);
+      border-color:rgba(53,211,255,.20);
+      font-size:10px;
+      letter-spacing:0;
+    }
+
+    .left-top{
+      padding:18px 16px 16px;
+      background:#0b1117;
+      border-bottom:1px solid var(--line);
+    }
+
+    .brand-lockup{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-bottom:16px;
+    }
+
+    .brand-mark{
+      width:42px;
+      height:42px;
+      flex:0 0 42px;
+      display:grid;
+      place-items:center;
+      position:relative;
+      border:1px solid rgba(53,211,255,.48);
+      border-radius:6px;
+      color:var(--blue-2);
+      background:#0c171e;
+      box-shadow:inset 0 0 18px rgba(53,211,255,.07), 0 0 20px rgba(53,211,255,.08);
+      font-size:13px;
+      font-weight:900;
+    }
+
+    .brand-mark::before,
+    .brand-mark::after{
+      content:"";
+      position:absolute;
+      width:8px;
+      height:8px;
+      border-color:var(--blue);
+    }
+
+    .brand-mark::before{
+      top:-1px;
+      left:-1px;
+      border-top:2px solid;
+      border-left:2px solid;
+    }
+
+    .brand-mark::after{
+      right:-1px;
+      bottom:-1px;
+      border-right:2px solid;
+      border-bottom:2px solid;
+    }
+
+    .brand-copy{
+      min-width:0;
+    }
+
+    .brand{
+      margin:0 0 4px;
+      font-size:21px;
+      letter-spacing:0;
+    }
+
+    .brand-code{
+      color:var(--blue);
+      font-family:Consolas,"SFMono-Regular",monospace;
+      font-size:9px;
+      line-height:1.4;
+      letter-spacing:0;
+    }
+
+    .brand-sub{
+      margin:0;
+      font-size:11px;
+      line-height:1.6;
+      color:var(--muted);
+    }
+
+    .mini-stats{
+      gap:0;
+    }
+
+    .mini-stat{
+      padding:10px 12px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#0d141b;
+    }
+
+    .mini-stat-k{
+      display:flex;
+      align-items:center;
+      gap:7px;
+      margin-bottom:5px;
+      color:var(--muted);
+      font-size:10px;
+    }
+
+    .mini-stat-k::before{
+      content:"";
+      width:6px;
+      height:6px;
+      border-radius:50%;
+      background:var(--green);
+      box-shadow:0 0 9px rgba(33,209,159,.7);
+    }
+
+    .mini-stat-v{
+      font-family:Consolas,"SFMono-Regular",monospace;
+      font-size:13px;
+      color:#dffbf3;
+    }
+
+    .account-list{
+      padding:10px;
+      gap:7px;
+    }
+
+    .account-item{
+      position:relative;
+      padding:12px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#0d131a;
+      box-shadow:none;
+      transform:none;
+    }
+
+    .account-item:hover{
+      transform:none;
+      border-color:#354952;
+      background:#101820;
+    }
+
+    .account-item.active{
+      border-color:rgba(53,211,255,.48);
+      background:#101a22;
+      box-shadow:inset 3px 0 0 var(--blue), inset 0 0 22px rgba(53,211,255,.035);
+    }
+
+    .account-top{
+      margin-bottom:7px;
+    }
+
+    .account-name{
+      font-size:14px;
+      letter-spacing:0;
+    }
+
+    .status-pill,
+    .status-inline{
+      min-height:22px;
+      padding:3px 7px;
+      font-size:10px;
+    }
+
+    .account-meta{
+      color:#8fa3ac;
+      font-size:11px;
+      line-height:1.6;
+    }
+
+    .account-grid{
+      margin-top:9px;
+      padding-top:9px;
+      gap:12px;
+      border-top:1px solid var(--line);
+    }
+
+    .account-mini{
+      padding:0;
+      border:0;
+      border-radius:0;
+      background:transparent;
+    }
+
+    .account-mini-k{
+      margin-bottom:3px;
+      color:var(--muted);
+      font-size:10px;
+    }
+
+    .account-mini-v{
+      font-size:13px;
+    }
+
+    .left-actions{
+      padding:8px 10px 10px;
+      gap:7px;
+      border-top:1px solid var(--line);
+    }
+
+    .left-note{
+      margin:0 10px 10px;
+      padding:9px 10px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#0b1117;
+      color:var(--muted);
+      font-size:10px;
+      line-height:1.7;
+    }
+
+    .center{
+      gap:8px;
+    }
+
+    .topbar{
+      position:relative;
+      min-height:78px;
+      padding:13px 16px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#0c1218;
+      box-shadow:var(--shadow);
+    }
+
+    .topbar-title-row{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin-bottom:5px;
+    }
+
+    .topbar-title{
+      margin:0;
+      font-size:20px;
+      letter-spacing:0;
+    }
+
+    .core-status{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      min-height:22px;
+      padding:0 7px;
+      border:1px solid rgba(33,209,159,.18);
+      border-radius:4px;
+      color:var(--green);
+      background:rgba(33,209,159,.06);
+      font-family:Consolas,"SFMono-Regular",monospace;
+      font-size:9px;
+      font-weight:800;
+      white-space:nowrap;
+    }
+
+    .core-status::before{
+      content:"";
+      width:5px;
+      height:5px;
+      border-radius:50%;
+      background:var(--green);
+      box-shadow:0 0 8px rgba(33,209,159,.8);
+    }
+
+    .topbar-sub{
+      color:var(--muted);
+      font-size:11px;
+      line-height:1.6;
+    }
+
+    .topbar-actions{
+      gap:7px;
+    }
+
+    .trade-jump-btn{
+      min-height:36px;
+      padding:8px 17px;
+      border:1px solid var(--blue);
+      border-radius:5px;
+      background:var(--blue);
+      color:#031016;
+      font-size:12px;
+      box-shadow:0 0 22px rgba(53,211,255,.14);
+    }
+
+    .tabs{
+      gap:3px;
+      padding:3px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#080d12;
+    }
+
+    .tab-btn{
+      min-height:30px;
+      padding:7px 12px;
+      border-radius:4px;
+      background:transparent;
+      color:#8fa0a9;
+      font-size:11px;
+    }
+
+    .tab-btn.active{
+      background:#17232c;
+      color:#e9f9fd;
+      box-shadow:inset 0 -2px 0 var(--blue);
+    }
+
+    .main-panel{
+      position:relative;
+    }
+
+    .main-content{
+      padding:12px;
+      gap:10px;
+    }
+
+    .hero-grid{
+      gap:8px;
+    }
+
+    .hero-card{
+      min-height:154px;
+      padding:14px;
+      border:1px solid var(--line);
+      border-top:2px solid #2b3a43;
+      border-radius:6px;
+      background:#0e151c;
+      box-shadow:none;
+    }
+
+    .hero-card:nth-child(1){ border-top-color:var(--blue); }
+    .hero-card:nth-child(2){ border-top-color:var(--green); }
+    .hero-card:nth-child(3){ border-top-color:var(--orange); }
+    .hero-card:nth-child(4){ border-top-color:#b7c7ce; }
+
+    .hero-card::after{
+      display:none;
+    }
+
+    .hero-k{
+      margin-bottom:10px;
+      color:var(--muted);
+      font-size:10px;
+      text-transform:uppercase;
+    }
+
+    .hero-v{
+      margin-bottom:8px;
+      color:#f4fbfd;
+      font-family:Consolas,"SFMono-Regular",monospace;
+      font-size:28px;
+      font-weight:800;
+    }
+
+    #metricBalance{
+      font-size:25px;
+    }
+
+    .hero-sub{
+      color:#60727b;
+      font-size:9px;
+      letter-spacing:0;
+    }
+
+    .chips{
+      gap:5px;
+      margin-top:10px;
+    }
+
+    .chip{
+      min-height:22px;
+      padding:3px 7px;
+      border:1px solid #26343d;
+      border-radius:4px;
+      background:#111b23;
+      color:#aebdc4;
+      font-size:9px;
+    }
+
+    .overview-grid{
+      gap:8px;
+    }
+
+    .block{
+      padding:0;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#0c1218;
+      box-shadow:none;
+      overflow:hidden;
+    }
+
+    .block-head{
+      min-height:48px;
+      margin:0;
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      background:#0e151c;
+    }
+
+    .block-title{
+      font-size:14px;
+    }
+
+    .data-list{
+      gap:0;
+    }
+
+    .data-row{
+      min-height:45px;
+      padding:9px 12px;
+      border:0;
+      border-bottom:1px solid #172129;
+      border-radius:0;
+      background:transparent;
+    }
+
+    .data-row:last-child{
+      border-bottom:0;
+    }
+
+    .data-row:hover{
+      background:#0f171e;
+    }
+
+    .data-k{
+      color:var(--muted);
+      font-size:10px;
+    }
+
+    .data-v{
+      font-size:13px;
+    }
+
+    .form-grid{
+      gap:10px 12px;
+      padding:12px;
+    }
+
+    label{
+      color:#aebdc4;
+      font-size:10px;
+    }
+
+    input,
+    select,
+    textarea{
+      margin-top:6px;
+      padding:9px 10px;
+      border:1px solid #26343d;
+      border-radius:5px;
+      background:#080d12;
+      color:#edf6f8;
+      font-size:12px;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus{
+      border-color:rgba(53,211,255,.66);
+      box-shadow:0 0 0 2px rgba(53,211,255,.08);
+    }
+
+    .mini-balance{
+      min-height:46px;
+      padding:8px 10px;
+      border-color:#26343d;
+      border-radius:5px;
+      background:#080d12;
+    }
+
+    .sticky-actions{
+      padding:10px 12px;
+      border:1px solid var(--line-strong);
+      border-radius:6px;
+      background:rgba(10,15,20,.96);
+      box-shadow:0 -10px 28px rgba(0,0,0,.28);
+    }
+
+    .sticky-title{
+      color:#e4eef1;
+      font-size:13px;
+    }
+
+    .sticky-sub{
+      color:var(--muted);
+      font-size:10px;
+    }
+
+    button{
+      min-height:36px;
+      padding:8px 13px;
+      border-radius:5px;
+      font-size:12px;
+      box-shadow:none;
+    }
+
+    button:hover{
+      transform:none;
+      filter:brightness(1.12);
+    }
+
+    button:focus-visible{
+      outline:2px solid rgba(53,211,255,.7);
+      outline-offset:2px;
+    }
+
+    .create,
+    .save{
+      background:#159fc3;
+    }
+
+    .delete,
+    .stop{
+      background:#c73f57;
+    }
+
+    .start{
+      background:#15966f;
+    }
+
+    .reset{
+      background:#3c4c56;
+    }
+
+    .manual{
+      background:#dcae45;
+      color:#11161a;
+    }
+
+    .ghost{
+      border:1px solid #2b3b45;
+      background:#111a21;
+    }
+
+    .history-top{
+      gap:8px;
+    }
+
+    .history-stat{
+      padding:13px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#0e151c;
+      box-shadow:none;
+    }
+
+    .history-stat-k{
+      margin-bottom:8px;
+      color:var(--muted);
+      font-size:10px;
+    }
+
+    .history-stat-v{
+      font-family:Consolas,"SFMono-Regular",monospace;
+      font-size:25px;
+      letter-spacing:0;
+    }
+
+    .table-wrap{
+      border-color:var(--line);
+      border-radius:6px;
+      background:#090e13;
+    }
+
+    thead th{
+      padding:10px;
+      background:#111920;
+      border-bottom-color:var(--line);
+      color:#8fa0a9;
+      font-size:10px;
+    }
+
+    tbody td{
+      padding:10px;
+      border-bottom-color:#172129;
+      font-size:12px;
+    }
+
+    tbody tr:hover{
+      background:#101820;
+    }
+
+    .right-content{
+      padding:0;
+      gap:0;
+    }
+
+    .right-card{
+      padding:13px;
+      border:0;
+      border-bottom:1px solid var(--line);
+      border-radius:0;
+      background:transparent;
+      box-shadow:none;
+    }
+
+    .right-card-head{
+      margin-bottom:8px;
+      padding-bottom:8px;
+      border-bottom-color:#172129;
+    }
+
+    .right-card-title{
+      font-size:13px;
+    }
+
+    .quick-list,
+    .log-list{
+      gap:0;
+    }
+
+    .quick-row,
+    .log-item{
+      padding:9px 0;
+      border:0;
+      border-bottom:1px solid #172129;
+      border-radius:0;
+      background:transparent;
+    }
+
+    .quick-row:last-child,
+    .log-item:last-child{
+      border-bottom:0;
+    }
+
+    .quick-k{
+      margin-bottom:4px;
+      color:var(--muted);
+      font-size:9px;
+    }
+
+    .quick-v{
+      font-size:12px;
+    }
+
+    .log-item{
+      color:#afbec5;
+      font-family:Consolas,"Microsoft YaHei",monospace;
+      font-size:10px;
+      line-height:1.6;
+    }
+
+    .toast{
+      border-color:#2a3a43;
+      border-radius:6px;
+      background:#111920;
+      box-shadow:0 18px 40px rgba(0,0,0,.4);
+    }
+
+    .modal-mask{
+      background:rgba(2,4,6,.78);
+      backdrop-filter:blur(7px);
+    }
+
+    .modal{
+      border:1px solid #2a3a43;
+      border-radius:8px;
+      background:#0b1117;
+      box-shadow:0 28px 80px rgba(0,0,0,.62), 0 0 0 1px rgba(53,211,255,.04);
+    }
+
+    .modal-head{
+      min-height:58px;
+      padding:13px 16px;
+      border-bottom-color:var(--line);
+      background:#0e151c;
+    }
+
+    .modal-title-group{
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+
+    .modal-title{
+      font-size:16px;
+    }
+
+    .modal-mode-badge{
+      display:inline-flex;
+      align-items:center;
+      min-height:22px;
+      padding:0 7px;
+      border:1px solid rgba(255,200,87,.28);
+      border-radius:4px;
+      color:var(--orange);
+      background:rgba(255,200,87,.07);
+      font-family:Consolas,"SFMono-Regular",monospace;
+      font-size:9px;
+      font-weight:900;
+    }
+
+    .modal-mode-badge.live{
+      border-color:rgba(33,209,159,.25);
+      color:var(--green);
+      background:rgba(33,209,159,.07);
+    }
+
+    .modal-close{
+      width:32px;
+      height:32px;
+      min-height:32px;
+      display:grid;
+      place-items:center;
+      border:1px solid transparent;
+      border-radius:5px;
+      font-size:20px;
+    }
+
+    .modal-close:hover{
+      border-color:#2a3a43;
+      background:#151e25;
+    }
+
+    .modal-body{
+      padding:14px 16px;
+    }
+
+    .modal-actions{
+      padding:12px 16px;
+      border-top-color:var(--line);
+      background:#0e151c;
+    }
+
+    .danger-box{
+      border-radius:6px;
+    }
+
+    .voucher-panel{
+      grid-template-columns:repeat(2, minmax(0,1fr));
+      gap:7px;
+    }
+
+    .voucher-item{
+      min-height:48px;
+      padding:9px 11px;
+      grid-template-columns:94px minmax(0,1fr);
+      gap:8px;
+      border:1px solid #202d36;
+      border-radius:5px;
+      background:#0e151c;
+    }
+
+    .voucher-k{
+      color:var(--muted);
+      font-size:10px;
+    }
+
+    .voucher-v{
+      font-size:12px;
+    }
+
+    .voucher-highlight{
+      border-color:rgba(33,209,159,.25);
+      background:rgba(33,209,159,.055);
+    }
+
+    .voucher-link-row{
+      border-color:rgba(53,211,255,.22);
+      background:rgba(53,211,255,.04);
+    }
+
+    #sfBulkPanel{
+      position:relative !important;
+      right:auto !important;
+      bottom:auto !important;
+      z-index:30 !important;
+      font-family:"Segoe UI Variable","Segoe UI","Microsoft YaHei",sans-serif !important;
+    }
+
+    #sfBulkBox{
+      position:absolute !important;
+      top:calc(100% + 8px) !important;
+      right:0 !important;
+      width:260px !important;
+      padding:12px !important;
+      border:1px solid #2a3a43 !important;
+      border-radius:6px !important;
+      background:#0b1117 !important;
+      box-shadow:0 22px 60px rgba(0,0,0,.52) !important;
+    }
+
+    #sfBulkClose{
+      width:28px !important;
+      height:28px !important;
+      min-height:28px !important;
+      padding:0 !important;
+      border:1px solid #2a3a43 !important;
+      border-radius:4px !important;
+      background:#121a21 !important;
+    }
+
+    #sfStartAll,
+    #sfStopAll,
+    #sfRefreshPage{
+      height:36px !important;
+      min-height:36px !important;
+      border-radius:4px !important;
+      font-size:11px !important;
+    }
+
+    #sfStartAll{
+      background:#15966f !important;
+    }
+
+    #sfStopAll{
+      background:#c73f57 !important;
+    }
+
+    #sfRefreshPage{
+      border:1px solid #2a3a43 !important;
+      background:#121a21 !important;
+      color:#dce8ec !important;
+    }
+
+    #sfBulkMsg{
+      color:var(--muted) !important;
+      font-family:Consolas,"Microsoft YaHei",monospace !important;
+      font-size:10px !important;
+    }
+
+    #sfBulkToggle{
+      height:36px !important;
+      min-width:104px !important;
+      min-height:36px !important;
+      padding:0 13px !important;
+      border:1px solid rgba(53,211,255,.58) !important;
+      border-radius:5px !important;
+      background:#0e1b22 !important;
+      color:var(--blue-2) !important;
+      font-size:11px !important;
+      box-shadow:0 12px 30px rgba(0,0,0,.38), inset 0 0 16px rgba(53,211,255,.05) !important;
+    }
+
+    /* Comfort and readability pass */
+    :root{
+      --line:#23313a;
+      --line-strong:#31444f;
+      --muted:#9aabb3;
+      --muted-2:#7f919a;
+      --text-2:#e0e9ec;
+    }
+
+    body{
+      font-size:13px;
+    }
+
+    .panel-head{
+      min-height:56px;
+      padding:13px 15px;
+    }
+
+    .panel-title{
+      font-size:16px;
+    }
+
+    .tag{
+      min-height:25px;
+      font-size:11px;
+    }
+
+    .brand-code{
+      font-size:10px;
+    }
+
+    .brand-sub{
+      font-size:12px;
+      line-height:1.7;
+    }
+
+    .mini-stat{
+      padding:11px 13px;
+    }
+
+    .mini-stat-k{
+      font-size:11px;
+    }
+
+    .mini-stat-v{
+      font-size:14px;
+    }
+
+    .account-list{
+      gap:8px;
+    }
+
+    .account-item{
+      padding:13px;
+    }
+
+    .account-name{
+      font-size:15px;
+    }
+
+    .status-pill,
+    .status-inline{
+      min-height:24px;
+      font-size:11px;
+    }
+
+    .account-meta{
+      font-size:12px;
+      line-height:1.7;
+    }
+
+    .account-mini-k{
+      font-size:11px;
+    }
+
+    .account-mini-v{
+      font-size:14px;
+    }
+
+    .left-note{
+      font-size:11px;
+      line-height:1.75;
+    }
+
+    .topbar{
+      min-height:86px;
+      padding:15px 17px;
+    }
+
+    .topbar-title{
+      font-size:22px;
+    }
+
+    .core-status{
+      min-height:24px;
+      font-size:10px;
+    }
+
+    .topbar-sub{
+      font-size:12px;
+      line-height:1.7;
+    }
+
+    .trade-jump-btn{
+      min-height:38px;
+      font-size:13px;
+    }
+
+    .tab-btn{
+      min-height:32px;
+      padding:8px 13px;
+      font-size:12px;
+    }
+
+    .main-content{
+      padding:14px;
+      gap:12px;
+    }
+
+    .hero-grid,
+    .overview-grid{
+      gap:10px;
+    }
+
+    .hero-card{
+      min-height:166px;
+      padding:16px;
+    }
+
+    .hero-k{
+      font-size:11px;
+    }
+
+    .hero-v{
+      font-size:30px;
+    }
+
+    #metricBalance{
+      font-size:24px;
+    }
+
+    .hero-sub{
+      font-size:10px;
+      color:#788b94;
+    }
+
+    .chip{
+      min-height:24px;
+      padding:4px 8px;
+      font-size:10px;
+    }
+
+    .block-head{
+      min-height:52px;
+      padding:11px 13px;
+    }
+
+    .block-title{
+      font-size:15px;
+    }
+
+    .data-row{
+      min-height:48px;
+      padding:10px 13px;
+    }
+
+    .data-k{
+      font-size:11px;
+    }
+
+    .data-v{
+      font-size:14px;
+    }
+
+    label{
+      font-size:11px;
+    }
+
+    input,
+    select,
+    textarea{
+      padding:10px 11px;
+      font-size:13px;
+    }
+
+    .sticky-title{
+      font-size:14px;
+    }
+
+    .sticky-sub{
+      font-size:11px;
+    }
+
+    button{
+      font-size:13px;
+    }
+
+    .history-stat{
+      padding:15px;
+    }
+
+    .history-stat-k{
+      font-size:11px;
+    }
+
+    .history-stat-v{
+      font-size:27px;
+    }
+
+    thead th{
+      padding:11px;
+      font-size:11px;
+    }
+
+    tbody td{
+      padding:11px;
+      font-size:13px;
+    }
+
+    .right-card{
+      padding:14px;
+    }
+
+    .right-card-title{
+      font-size:14px;
+    }
+
+    .quick-row,
+    .log-item{
+      padding:10px 0;
+    }
+
+    .quick-k{
+      font-size:10px;
+    }
+
+    .quick-v{
+      font-size:13px;
+    }
+
+    .log-item{
+      font-size:11px;
+      line-height:1.7;
+    }
+
+    .modal-title{
+      font-size:17px;
+    }
+
+    .modal-mode-badge{
+      min-height:24px;
+      font-size:10px;
+    }
+
+    .voucher-item{
+      min-height:54px;
+      padding:11px 12px;
+    }
+
+    .voucher-k{
+      font-size:11px;
+    }
+
+    .voucher-v{
+      font-size:13px;
+    }
+
+    /* Precision polish */
+    .overview-grid{
+      gap:12px;
+    }
+
+    .hero-grid{
+      grid-template-columns:repeat(4, minmax(0,1fr));
+      gap:12px;
+    }
+
+    #tab-overview > .overview-grid{
+      margin-top:12px;
+    }
+
+    .block{
+      border-color:#263640;
+      background:#0b1117;
+    }
+
+    .block-head{
+      min-height:54px;
+      justify-content:flex-start;
+      gap:9px;
+      padding:12px 14px;
+      background:linear-gradient(180deg, #111920 0%, #0e151b 100%);
+    }
+
+    .block-head::after{
+      content:"";
+      height:1px;
+      flex:1;
+      min-width:20px;
+      margin-left:4px;
+      background:linear-gradient(90deg, #2a3b45, transparent);
+    }
+
+    .block-title{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex:0 0 auto;
+      line-height:1;
+    }
+
+    .block-title::before{
+      content:"";
+      width:6px;
+      height:6px;
+      flex:0 0 6px;
+      border-radius:2px;
+      background:var(--blue);
+      box-shadow:0 0 9px rgba(53,211,255,.45);
+    }
+
+    .block:nth-child(2) .block-title::before{
+      background:var(--green);
+      box-shadow:0 0 9px rgba(33,209,159,.42);
+    }
+
+    .block-head .tag{
+      flex:0 0 auto;
+      min-height:22px;
+      padding:0 7px;
+      border-color:#29414d;
+      color:#9edff0;
+      background:#101d24;
+      font-size:9px;
+    }
+
+    .block-head{
+      justify-content:space-between;
+      gap:10px;
+    }
+
+    .block-head::after{
+      display:none;
+    }
+
+    .block-title{
+      display:block;
+      flex:0 1 auto;
+      line-height:1.2;
+    }
+
+    .block-title::before{
+      display:none;
+    }
+
+    .block-head .tag{
+      margin-left:auto;
+    }
+
+    .hero-card{
+      background:linear-gradient(180deg, #111920 0%, #0d141a 100%);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.018);
+    }
+
+    .hero-card:hover{
+      border-right-color:#31434d;
+      border-bottom-color:#31434d;
+      border-left-color:#31434d;
+    }
+
+    .hero-v{
+      line-height:1.1;
+    }
+
+    .data-row{
+      grid-template-columns:132px minmax(0,1fr);
+    }
+
+    .data-k{
+      color:#9eb0b8;
+    }
+
+    .data-v{
+      font-weight:800;
+    }
+
+    .right-card-head{
+      min-height:38px;
+      align-items:center;
+    }
+
+    .right-card-head .tag{
+      min-height:22px;
+      font-size:9px;
+    }
+
+    .quick-row{
+      min-height:48px;
+    }
+
+    .account-item.active .account-name{
+      color:#f5fbfd;
+    }
+
+    .account-item.active .account-meta{
+      color:#a8c2cc;
+    }
+
+    .tabs{
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.018);
+    }
+
+    .tab-btn.active{
+      color:#fff;
+    }
+
+    @media (max-width: 760px){
+      .brand-lockup{
+        margin-bottom:12px;
+      }
+
+      .topbar-title-row{
+        align-items:flex-start;
+        flex-direction:column;
+      }
+
+      .voucher-panel{
+        grid-template-columns:1fr;
+      }
+    }
+
+    @media (max-width: 1500px) and (min-width: 1341px){
+      .app{
+        grid-template-columns:260px minmax(0,1fr) 300px;
+      }
+    }
+
+    @media (max-width: 1340px) and (min-width: 1221px){
+      body{
+        overflow:auto;
+      }
+      .app{
+        height:auto;
+        grid-template-columns:260px minmax(0,1fr);
+      }
+      .app > aside.panel,
+      .center{
+        height:calc(100vh - 24px);
+        min-height:720px;
+      }
+      .right-panel{
+        grid-column:1 / -1;
+        height:480px !important;
+        min-height:480px !important;
+      }
+      .right-content{
+        max-height:unset;
+        display:grid;
+        grid-template-columns:repeat(3, minmax(0,1fr));
+        align-items:start;
+      }
+      .right-card{
+        height:100%;
+        border-right:1px solid var(--line);
+        border-bottom:0;
+      }
+      .right-card:last-child{
+        border-right:0;
+      }
+    }
+
+    @media (max-width: 1220px){
+      body{ overflow:auto; }
+      .app{
+        height:auto;
+        grid-template-columns:1fr;
+      }
+      .hero-grid{
+        grid-template-columns:repeat(2, minmax(0,1fr));
+      }
+      .overview-grid{
+        grid-template-columns:1fr;
+      }
+      .history-top{
+        grid-template-columns:repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 760px){
+      body{ padding:10px; }
+      .topbar{
+        flex-direction:column;
+        align-items:flex-start;
+      }
+      .topbar-actions{
+        width:100%;
+        justify-content:flex-start;
+      }
+      .hero-grid{
+        grid-template-columns:1fr;
+      }
+      .form-grid{
+        grid-template-columns:1fr;
+      }
+      .address-balance-row{
+        grid-template-columns:1fr;
+      }
+      .history-top{
+        grid-template-columns:1fr;
+      }
+      .sticky-actions{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .sticky-buttons{
+        width:100%;
+      }
+      .sticky-buttons button{
+        flex:1 1 calc(50% - 10px);
+      }
+      .modal-mask{
+        align-items:flex-start;
+        padding:10px;
+      }
+      .modal{
+        max-height:calc(100vh - 20px);
+        margin-top:0;
+      }
+      .modal-actions{
+        grid-template-columns:1fr 1fr;
+      }
+    }
+
+    @media (max-width: 520px){
+      .left-actions{
+        grid-template-columns:1fr;
+      }
+      .sticky-buttons button{
+        flex:1 1 100%;
+      }
+      .data-row{
+        grid-template-columns:96px 1fr;
+      }
+    }
+
+    /* Strategy configuration: keep shared execution settings separate from model logic. */
+    #tab-config.smart-active .config-trading-block,
+    #tab-config.smart-active #smartStrategyBlock{
+      grid-column:1 / -1;
+    }
+
+    #tab-config.smart-active .strategy-shared-grid{
+      grid-template-columns:1.35fr repeat(3, minmax(0,1fr));
+      align-items:start;
+      padding:16px;
+    }
+
+    #tab-config.smart-active .strategy-shared-grid .full{
+      grid-column:auto;
+    }
+
+    .strategy-context{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:0 14px;
+      min-height:34px;
+      border-bottom:1px solid var(--line);
+      background:#0a1117;
+      color:#8fa5ae;
+      font-size:11px;
+      line-height:1.45;
+    }
+
+    .strategy-context strong{
+      color:#dce9ed;
+      font-weight:800;
+    }
+
+    .strategy-context-dot{
+      width:6px;
+      height:6px;
+      flex:0 0 auto;
+      border-radius:50%;
+      background:#18d6a3;
+      box-shadow:0 0 10px rgba(24,214,163,.55);
+    }
+
+    .config-section{
+      padding:14px 16px 16px;
+    }
+
+    .config-section + .config-section{
+      border-top:1px solid var(--line);
+    }
+
+    .config-section-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:12px;
+    }
+
+    .config-section-title{
+      color:#e8f2f4;
+      font-size:13px;
+      font-weight:900;
+    }
+
+    .config-section-note{
+      max-width:620px;
+      color:#718892;
+      font-size:10px;
+      line-height:1.5;
+      text-align:right;
+    }
+
+    .smart-form-grid{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0,1fr));
+      gap:12px;
+    }
+
+    .smart-form-grid.signal-grid{
+      grid-template-columns:repeat(4, minmax(0,1fr));
+    }
+
+    .smart-form-grid.risk-grid{
+      grid-template-columns:repeat(3, minmax(0,1fr));
+    }
+
+    #tab-config .config-trading-block label,
+    #smartStrategyBlock label{
+      color:#b9c8ce;
+      font-size:11px;
+      line-height:1.35;
+    }
+
+    #tab-config .config-trading-block input,
+    #tab-config .config-trading-block select,
+    #smartStrategyBlock input,
+    #smartStrategyBlock select{
+      min-height:42px;
+      font-size:13px;
+      font-weight:700;
+    }
+
+    .field-help{
+      display:block;
+      min-height:30px;
+      margin-top:6px;
+      color:#647b85;
+      font-size:9px;
+      font-weight:600;
+      line-height:1.45;
+    }
+
+    #restoreSmartDefaultsBtn{
+      min-height:32px;
+      padding:6px 12px;
+      border-color:#31505d;
+      background:#101c23;
+      color:#bdeefa;
+      font-size:11px;
+    }
+
+    @media (max-width: 1180px){
+      #tab-config.smart-active .strategy-shared-grid,
+      .smart-form-grid,
+      .smart-form-grid.signal-grid{
+        grid-template-columns:repeat(2, minmax(0,1fr));
+      }
+    }
+
+    @media (max-width: 760px){
+      #tab-config.smart-active .strategy-shared-grid,
+      .smart-form-grid,
+      .smart-form-grid.signal-grid,
+      .smart-form-grid.risk-grid{
+        grid-template-columns:1fr;
+      }
+      .config-section-head{
+        display:block;
+      }
+      .config-section-note{
+        margin-top:5px;
+        text-align:left;
+      }
+      .field-help{
+        min-height:0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <div class="left-top">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">SA</div>
+          <div class="brand-copy">
+            <div class="brand">SUPER AGENT</div>
+            <div class="brand-code">AUTONOMOUS EXECUTION SYSTEM</div>
+          </div>
+        </div>
+        <div class="brand-sub">智能交易控制台 · 多账户 · 多平台 · 实时监控</div>
+
+        <div class="mini-stats">
+          <div class="mini-stat">
+            <div class="mini-stat-k">当前时间</div>
+            <div class="mini-stat-v" id="brandTime">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="account-panel">
+        <div class="panel-head">
+          <h2 class="panel-title">账户列表</h2>
+          <span class="tag">ACCOUNTS</span>
+        </div>
+
+        <div id="accountList" class="account-list"></div>
+
+        <div class="left-actions">
+          <button class="create" id="openCreateModalBtn">新增账户</button>
+          <button class="delete" id="openDeleteModalBtn">删除当前</button>
+        </div>
+
+        <div class="left-note">
+          点击账户卡片切换当前账户。每个账户可以设置不同的平台、方向、杠杆与策略参数。
+        </div>
+      </div>
+    </aside>
+
+    <main class="center">
+      <div class="topbar">
+        <div class="topbar-left">
+          <div class="topbar-title-row">
+            <div class="topbar-title" id="topbarAccountName">当前账户：-</div>
+            <span class="core-status">CORE ONLINE</span>
+          </div>
+          <div class="topbar-sub" id="topbarAccountMeta">平台 - ｜ 币种 - ｜ 方向 -</div>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="tabs">
+            <button class="tab-btn active" data-tab="overview">总览</button>
+            <button class="tab-btn" data-tab="config">参数配置</button>
+            <button class="tab-btn" data-tab="history">历史盈利</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-panel">
+        <div class="main-content">
+          <div id="tab-overview" class="tab-panel">
+            <div class="hero-grid">
+              <div class="hero-card">
+                <div class="hero-k">当前盈亏</div>
+                <div id="metricPnl" class="hero-v">--</div>
+                <div class="hero-sub">Current PnL</div>
+                <div class="chips">
+                  <span id="chipRunStatus" class="chip">状态 --</span>
+                  <span id="chipPlatform" class="chip">平台 --</span>
+                </div>
+              </div>
+
+              <div class="hero-card">
+                <div class="hero-k">收益率</div>
+                <div id="metricRoi" class="hero-v">--</div>
+                <div class="hero-sub">ROI</div>
+                <div class="chips">
+                  <span id="chipDirection" class="chip">方向 --</span>
+                </div>
+              </div>
+
+              <div class="hero-card">
+                <div class="hero-k">当前价格</div>
+                <div id="metricPrice" class="hero-v">--</div>
+                <div class="hero-sub">Current Price</div>
+                <div class="chips">
+                  <span id="chipSymbol" class="chip">币种 --</span>
+                </div>
+              </div>
+
+              <div class="hero-card">
+                <div class="hero-k">账户资金</div>
+                <div id="metricBalance" class="hero-v">--</div>
+                <div class="hero-sub">Balance</div>
+                <div class="chips">
+                  <span id="chipAvailable" class="chip">可用 --</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="overview-grid">
+              <div class="block">
+                <div class="block-head">
+                  <div class="block-title">持仓概览</div>
+                  <span class="tag">POSITION</span>
+                </div>
+                <div id="positionInfo" class="data-list"></div>
+              </div>
+
+              <div class="block">
+                <div class="block-head">
+                  <div class="block-title">策略执行</div>
+                  <span class="tag">STRATEGY</span>
+                </div>
+                <div id="strategyInfo" class="data-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="tab-config" class="tab-panel" style="display:none;">
+            <div class="overview-grid">
+              <div class="block">
+                <div class="block-head">
+                  <div class="block-title">基础信息</div>
+                  <span class="tag">BASIC</span>
+                </div>
+                <div class="form-grid">
+                  <label class="full">账户名称
+                    <input id="name" type="text" />
+                  </label>
+
+                  <label>平台
+                    <select id="platform">
+                      <option value="hyperliquid">Hyperliquid</option>
+                      <option value="binance">Binance Futures</option>
+                      <option value="extended">Extended</option>
+                    </select>
+                  </label>
+
+                  <label>方向
+                    <select id="side">
+                      <option value="long">做多</option>
+                      <option value="short">做空</option>
+                    </select>
+                  </label>
+
+                  <label>交易币种
+                    <select id="symbol">
+                      <option>ETH</option>
+                      <option>BTC</option>
+                      <option>SOL</option>
+                      <option>BNB</option>
+                    </select>
+                    <span class="field-help" id="symbolHelp">品种会按所选平台加载；Binance 股票品种为 USD-M 永续合约。</span>
+                  </label>
+
+                  <label>计价币种
+                    <select id="quoteAsset">
+                      <option>USDC</option>
+                      <option>USDT</option>
+                      <option>USD</option>
+                    </select>
+                  </label>
+
+                  <label>交易模式
+                    <select id="tradeMode">
+                      <option value="live">实盘交易</option>
+                      <option value="simulation">模拟交易</option>
+                    </select>
+                  </label>
+
+                  <label>模拟账户余额
+                    <input id="simulationBalance" type="number" min="1" step="0.01" />
+                  </label>
+
+                  <label>模拟滑点 bps
+                    <input id="simulationSlippageBps" type="number" min="0" max="1000" step="0.1" />
+                  </label>
+
+                  <label class="full">账户地址
+                    <div class="address-balance-row">
+                      <input id="address" type="text" />
+                      <div class="mini-balance">
+                        <div class="mini-balance-title">当前余额</div>
+                        <div class="mini-balance-value" id="balanceText">-</div>
+                      </div>
+                      <div class="mini-balance">
+                        <div class="mini-balance-title">可用余额</div>
+                        <div class="mini-balance-value" id="availableText">-</div>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div class="block">
+                <div class="block-head">
+                  <div class="block-title">平台凭证</div>
+                  <span class="tag">KEYS</span>
+                </div>
+                <div class="form-grid">
+                  <label class="full">Hyper 私钥
+                    <input id="privateKey" type="password" placeholder="Hyperliquid 实盘需要" />
+                  </label>
+
+                  <label>API Key
+                    <input id="apiKey" type="text" placeholder="Binance / Extended 需要" />
+                  </label>
+
+                  <label>API Secret
+                    <input id="apiSecret" type="password" placeholder="Binance 需要" />
+                  </label>
+
+                  <label class="full">Extended Stark 私钥
+                    <input id="starkPrivateKey" type="password" placeholder="Extended 写操作需要" />
+                  </label>
+
+                  <label>Extended Public Key
+                    <input id="publicKey" type="text" placeholder="Extended API 管理页提供" />
+                  </label>
+
+                  <label>Extended Vault
+                    <input id="vault" type="number" placeholder="Extended API 管理页提供" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="block config-trading-block">
+                <div class="block-head">
+                  <div class="block-title">执行参数</div>
+                  <span class="tag">TRADING</span>
+                </div>
+                <div class="strategy-context" id="strategyContext">
+                  <span class="strategy-context-dot"></span>
+                  <span><strong>经典补仓策略</strong>使用固定补仓与止盈参数。</span>
+                </div>
+                <div class="form-grid strategy-shared-grid">
+                  <label class="full">交易策略
+                    <select id="strategyType">
+                      <option value="classic">经典补仓策略</option>
+                      <option value="smart_regime_v1">智能趋势策略 V1</option><option value="trend_only_v1">Trend Only V1（推荐）</option>
+                    </select>
+                    <span class="field-help">切换策略只改变当前账户，已有策略数据不会被删除。</span>
+                  </label>
+
+                  <label>杠杆倍数
+                    <input id="leverage" type="number" min="1" max="125" />
+                    <span class="field-help">参与保证金和仓位上限计算。</span>
+                  </label>
+
+                  <label class="classic-only">最大补仓次数
+                    <input id="maxAdds" type="number" min="0" max="20" />
+                    <span class="field-help">仅经典策略使用。</span>
+                  </label>
+
+                  <label><span id="baseAmountLabel">首次开仓名义仓位（U）</span>
+                    <input id="baseAmount" type="number" step="0.01" />
+                    <span class="field-help" id="baseAmountHelp">经典策略的首次固定名义仓位。</span>
+                  </label>
+
+                  <label class="classic-only">补仓名义仓位（U）
+                    <input id="addAmount" type="number" step="0.01" />
+                    <span class="field-help">仅经典策略使用。</span>
+                  </label>
+
+                  <label class="classic-only">止盈比例（按保证金）
+                    <input id="takeProfit" type="number" step="0.001" />
+                    <span class="field-help">仅经典策略使用。</span>
+                  </label>
+
+                  <label class="classic-only">补仓触发比例（相对最近开仓/补仓价）
+                    <input id="addTrigger" type="number" step="0.001" />
+                    <span class="field-help">仅经典策略使用。</span>
+                  </label>
+
+                  <label class="full">轮询间隔（毫秒）
+                    <input id="interval" type="number" min="1000" step="500" />
+                    <span class="field-help">行情刷新和策略调度频率，推荐 15000 毫秒。</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="block" id="smartStrategyBlock" hidden>
+                <div class="block-head">
+                  <div class="block-title">智能策略参数</div>
+                  <button class="ghost" id="restoreSmartDefaultsBtn" type="button">恢复推荐参数</button>
+                </div>
+                <div class="config-section">
+                  <div class="config-section-head">
+                    <div class="config-section-title">行情与信号</div>
+                    <div class="config-section-note">15M 寻找入场，1H 确认趋势，4H 判断市场状态；评分达到门槛后才允许执行。</div>
+                  </div>
+                  <div class="smart-form-grid signal-grid">
+                    <label>方向模式
+                      <select id="smartDirectionMode">
+                        <option value="auto">自动多空</option>
+                        <option value="long">仅做多</option>
+                        <option value="short">仅做空</option>
+                      </select>
+                    </label>
+                    <label>入场周期
+                      <select id="smartEntryTimeframe">
+                        <option value="5m">5M</option>
+                        <option value="15m">15M</option>
+                        <option value="1h">1H</option>
+                      </select>
+                    </label>
+                    <label>趋势周期
+                      <select id="smartTrendTimeframe">
+                        <option value="15m">15M</option>
+                        <option value="1h">1H</option>
+                        <option value="4h">4H</option>
+                      </select>
+                    </label>
+                    <label>市场周期
+                      <select id="smartRegimeTimeframe">
+                        <option value="1h">1H</option>
+                        <option value="4h">4H</option>
+                        <option value="1d">1D</option>
+                      </select>
+                    </label>
+                    <label>入场门槛
+                      <input id="smartEntryThreshold" type="number" min="60" max="90" step="1" />
+                    </label>
+                    <label>空头入场门槛
+                      <input id="smartShortEntryThreshold" type="number" min="60" max="95" step="1" />
+                    </label>
+                    <label>多空最低分差
+                      <input id="smartMinScoreEdge" type="number" min="0" max="30" step="1" />
+                    </label>
+                    <label>补仓门槛
+                      <input id="smartAddThreshold" type="number" min="50" max="85" step="1" />
+                    </label>
+                    <label>退出门槛
+                      <input id="smartExitThreshold" type="number" min="20" max="70" step="1" />
+                    </label>
+                  </div>
+                </div>
+
+                <div class="config-section">
+                  <div class="config-section-head">
+                    <div class="config-section-title">仓位与退出</div>
+                    <div class="config-section-note">仓位由风险预算、单次开仓上限、保证金上限和可用余额共同约束，取其中最小值。</div>
+                  </div>
+                  <div class="smart-form-grid">
+                    <label>单轮风险（%）
+                      <input id="smartRiskPerTradePct" type="number" min="0.1" max="2" step="0.1" />
+                    </label>
+                    <label>最大保证金占比（%）
+                      <input id="smartMaxMarginPct" type="number" min="5" max="30" step="1" />
+                    </label>
+                    <label>最大补仓次数
+                      <input id="smartMaxAdds" type="number" min="0" max="5" step="1" />
+                    </label>
+                    <label>补仓倍数
+                      <input id="smartAddMultipliers" type="text" placeholder="1.3, 1.6, 2.0" />
+                    </label>
+                    <label>补仓 ATR 距离
+                      <input id="smartAddAtrMultipliers" type="text" placeholder="0.8, 1.2, 1.8" />
+                    </label>
+                    <label>止损 ATR
+                      <input id="smartStopAtr" type="number" min="1.5" max="4" step="0.1" />
+                    </label>
+                    <label>盈利启动 ATR
+                      <input id="smartTakeProfitAtr" type="number" min="0.5" max="5" step="0.1" />
+                    </label>
+                    <label>移动止盈 ATR
+                      <input id="smartTrailingAtr" type="number" min="1" max="6" step="0.1" />
+                    </label>
+                  </div>
+                </div>
+
+                <div class="config-section">
+                  <div class="config-section-head">
+                    <div class="config-section-title">账户级风控</div>
+                    <div class="config-section-note">达到亏损条件后暂停新开仓，已有仓位仍按保护逻辑管理。</div>
+                  </div>
+                  <div class="smart-form-grid risk-grid">
+                    <label>单日亏损上限（%）
+                      <input id="smartDailyLossPct" type="number" min="0.5" max="5" step="0.1" />
+                    </label>
+                    <label>连续亏损上限
+                      <input id="smartConsecutiveLossLimit" type="number" min="1" max="10" step="1" />
+                    </label>
+                    <label>风控暂停（小时）
+                      <input id="smartPauseHours" type="number" min="1" max="72" step="1" />
+                    </label>
+                    <label>亏损后冷却（分钟）
+                      <input id="smartLossCooldownMinutes" type="number" min="0" max="1440" step="5" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="block">
+                <div class="block-head">
+                  <div class="block-title">操作说明</div>
+                  <span class="tag">GUIDE</span>
+                </div>
+                <div class="left-note" style="margin:0;">
+                  保存参数后会写入当前账户配置。<br/>
+                  手动测试会按当前账户方向直接下单：做多 = 买入，做空 = 卖出。<br/>
+                  下单数量默认使用“首次开仓名义仓位（U）”换算。<br/>
+                  Extended 账户需要填写：API Key / Stark 私钥 / Public Key / Vault。
+                </div>
+              </div>
+            </div>
+
+            <div class="sticky-actions" style="margin-top:16px;">
+              <div class="sticky-text">
+                <div class="sticky-title">快捷操作</div>
+                <div class="sticky-sub">把高频操作集中到底部，减少来回切换区域的操作成本。</div>
+              </div>
+
+              <div class="sticky-buttons">
+                <button class="save" id="saveBtn">保存参数</button>
+                <button class="start" id="startBtn">启动机器人</button>
+                <button class="stop" id="stopBtn">停止机器人</button>
+                <button class="reset" id="resetBtn">重置状态</button>
+                <button class="manual" id="manualBtn">手动测试</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="tab-history" class="tab-panel" style="display:none;">
+            <div class="history-top">
+              <div class="history-stat">
+                <div class="history-stat-k">总交易次数</div>
+                <div id="historyTotalTrades" class="history-stat-v">0</div>
+              </div>
+              <div class="history-stat">
+                <div class="history-stat-k">总盈亏</div>
+                <div id="historyTotalPnl" class="history-stat-v">0</div>
+              </div>
+              <div class="history-stat">
+                <div class="history-stat-k">胜率</div>
+                <div id="historyWinRate" class="history-stat-v">0%</div>
+              </div>
+              <div class="history-stat">
+                <div class="history-stat-k">平均收益率</div>
+                <div id="historyAvgRoi" class="history-stat-v">0%</div>
+              </div>
+            </div>
+
+            <div class="block">
+              <div class="block-head">
+                <div class="block-title">历史盈利记录</div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  <span class="tag" id="historyCurrentAccountName">-</span>
+                  <button class="ghost" id="refreshHistoryBtn">刷新记录</button>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th>币种</th>
+                      <th>方向</th>
+                      <th>开仓价</th>
+                      <th>平仓价</th>
+                      <th>盈亏</th>
+                      <th>收益率</th>
+                      <th>补仓次数</th>
+                      <th>平台</th>
+                      <th>溯源</th>
+                    </tr>
+                  </thead>
+                  <tbody id="historyTableBody">
+                    <tr>
+                      <td colspan="10" class="muted" style="padding:16px;">暂无历史记录</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel right-panel">
+      <div class="panel-head">
+        <h2 class="panel-title">实时信息栏</h2>
+        <span class="tag">STATUS</span>
+      </div>
+
+      <div class="right-content">
+        <div class="right-card">
+          <div class="right-card-head">
+            <div class="right-card-title">当前状态</div>
+            <span id="rightRunTag" class="status-inline pill-normal">正常</span>
+          </div>
+          <div id="rightStatusList" class="quick-list"></div>
+        </div>
+
+        <div class="right-card">
+          <div class="right-card-head">
+            <div class="right-card-title">风控与异常</div>
+            <span class="tag">RISK</span>
+          </div>
+          <div id="rightRiskList" class="quick-list"></div>
+        </div>
+
+        <div class="right-card">
+          <div class="right-card-head">
+            <div class="right-card-title">最近日志</div>
+            <button class="ghost" id="refreshLogsBtn">刷新</button>
+          </div>
+          <div id="logsList" class="log-list"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="toastWrap" class="toast-wrap"></div>
+
+  <div id="createModalMask" class="modal-mask">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title">新增账户</div>
+        <button class="modal-close" data-close="createModalMask">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <label>账户名称
+            <input id="createName" type="text" placeholder="例如：主账户A" />
+          </label>
+
+          <label>平台
+            <select id="createPlatform">
+              <option value="hyperliquid">Hyperliquid</option>
+              <option value="binance">Binance Futures</option>
+              <option value="extended">Extended</option>
+            </select>
+          </label>
+
+          <label class="full">账户地址
+            <input id="createAddress" type="text" placeholder="请输入账户地址" />
+          </label>
+
+          <label class="full">Hyper 私钥
+            <input id="createPrivateKey" type="password" placeholder="Hyperliquid 账户需要" />
+          </label>
+
+          <label>API Key
+            <input id="createApiKey" type="text" placeholder="Binance / Extended 需要" />
+          </label>
+
+          <label>API Secret
+            <input id="createApiSecret" type="password" placeholder="Binance 需要" />
+          </label>
+
+          <label class="full">Extended Stark 私钥
+            <input id="createStarkPrivateKey" type="password" placeholder="Extended 写操作需要" />
+          </label>
+
+          <label>Extended Public Key
+            <input id="createPublicKey" type="text" placeholder="Extended API 管理页提供" />
+          </label>
+
+          <label>Extended Vault
+            <input id="createVault" type="number" placeholder="Extended API 管理页提供" />
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="ghost" data-close="createModalMask">取消</button>
+        <button class="create" id="confirmCreateBtn">确认新增</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="deleteModalMask" class="modal-mask">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div class="modal-title">删除当前账户</div>
+        <button class="modal-close" data-close="deleteModalMask">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="danger-box">
+          你将删除当前选中的账户：<b id="deleteAccountName">-</b><br/>
+          删除后该账户配置将不可恢复，请确认是否继续。
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="ghost" data-close="deleteModalMask">取消</button>
+        <button class="delete" id="confirmDeleteBtn">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+<div id="voucherModalMask" class="modal-mask">
+  <div class="modal" style="max-width:940px;">
+    <div class="modal-head">
+      <div class="modal-title-group">
+        <div class="modal-title">交易凭证</div>
+        <span id="voucherModeBadge" class="modal-mode-badge">DEMO</span>
+      </div>
+      <button class="modal-close" onclick="closeVoucherModal()">×</button>
+    </div>
+
+    <div class="modal-body">
+      <div id="voucherGrid" class="form-grid"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeVoucherModal()">关闭</button>
+      <button class="create" id="copyVoucherBtn">复制凭证内容</button>
+    </div>
+  </div>
+</div>
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let currentAccountId = "";
+    let hasInitializedForm = false;
+    let latestStatusData = null;
+    let latestHistoryItems = [];
+    let currentTab = "overview";
+    const instrumentCatalogCache = new Map();
+
+    function ensureSymbolOption(symbol) {
+      const normalized = String(symbol || "ETH").toUpperCase();
+      const select = $("symbol");
+      if (![...select.options].some(option => option.value === normalized)) {
+        const option = document.createElement("option");
+        option.value = normalized;
+        option.textContent = normalized;
+        select.appendChild(option);
+      }
+      select.value = normalized;
+    }
+
+    function renderInstrumentGroups(groups, selectedSymbol) {
+      const select = $("symbol");
+      const wanted = String(selectedSymbol || select.value || "ETH").toUpperCase();
+      select.replaceChildren();
+      for (const group of groups || []) {
+        const optgroup = document.createElement("optgroup");
+        optgroup.label = group.label || group.id || "交易品种";
+        for (const item of group.items || []) {
+          const option = document.createElement("option");
+          option.value = item.symbol;
+          option.textContent = item.name && item.name !== item.symbol
+            ? `${item.symbol} · ${item.name}`
+            : item.symbol;
+          option.dataset.group = item.group || group.id || "";
+          option.dataset.maxLeverage = item.maxLeverage || "";
+          optgroup.appendChild(option);
+        }
+        if (optgroup.children.length) select.appendChild(optgroup);
+      }
+      const available = [...select.options].some(option => option.value === wanted);
+      select.value = available ? wanted : (select.options[0]?.value || "ETH");
+      const current = select.selectedOptions[0];
+      const tradFi = current?.dataset?.group === "tradfi";
+      $("symbolHelp").textContent = tradFi
+        ? `Binance ${current.value}USDT 股票永续：不持有真实股票，实盘会校验合约状态和下单精度。`
+        : "品种会按所选平台加载；两种策略共用当前品种。";
+    }
+
+    async function updateInstrumentOptions(platform, selectedSymbol) {
+      const key = String(platform || "hyperliquid").toLowerCase();
+      let data = instrumentCatalogCache.get(key);
+      if (!data) {
+        data = await api(`/api/instruments?platform=${encodeURIComponent(key)}`);
+        if (!data?.ok) return;
+        instrumentCatalogCache.set(key, data);
+      }
+      renderInstrumentGroups(data.groups, selectedSymbol);
+    }
+    const SMART_DEFAULTS = {
+      directionMode: "auto",
+      entryTimeframe: "15m",
+      trendTimeframe: "1h",
+      regimeTimeframe: "4h",
+      entryThreshold: 75,
+      shortEntryThreshold: 75,
+      minScoreEdge: 0,
+      addThreshold: 65,
+      exitThreshold: 45,
+      riskPerTradePct: 0.5,
+      maxAdds: 3,
+      addMultipliers: [1.3, 1.6, 2],
+      addAtrMultipliers: [0.8, 1.2, 1.8],
+      stopAtr: 2.4,
+      takeProfitAtr: 1.5,
+      trailingAtr: 2.5,
+      maxMarginPct: 15,
+      dailyLossPct: 2,
+      consecutiveLossLimit: 3,
+      pauseHours: 12,
+      lossCooldownMinutes: 15
+    };
+
+    function setSmartFields(value = SMART_DEFAULTS) {
+      const smart = { ...SMART_DEFAULTS, ...(value || {}) };
+      $("smartDirectionMode").value = smart.directionMode;
+      $("smartEntryTimeframe").value = smart.entryTimeframe;
+      $("smartTrendTimeframe").value = smart.trendTimeframe;
+      $("smartRegimeTimeframe").value = smart.regimeTimeframe;
+      $("smartEntryThreshold").value = smart.entryThreshold;
+      $("smartShortEntryThreshold").value = smart.shortEntryThreshold;
+      $("smartMinScoreEdge").value = smart.minScoreEdge;
+      $("smartAddThreshold").value = smart.addThreshold;
+      $("smartExitThreshold").value = smart.exitThreshold;
+      $("smartRiskPerTradePct").value = smart.riskPerTradePct;
+      $("smartMaxAdds").value = smart.maxAdds;
+      $("smartMaxMarginPct").value = smart.maxMarginPct;
+      $("smartAddMultipliers").value = smart.addMultipliers.join(", ");
+      $("smartAddAtrMultipliers").value = smart.addAtrMultipliers.join(", ");
+      $("smartStopAtr").value = smart.stopAtr;
+      $("smartTakeProfitAtr").value = smart.takeProfitAtr;
+      $("smartTrailingAtr").value = smart.trailingAtr;
+      $("smartDailyLossPct").value = smart.dailyLossPct;
+      $("smartConsecutiveLossLimit").value = smart.consecutiveLossLimit;
+      $("smartPauseHours").value = smart.pauseHours;
+      $("smartLossCooldownMinutes").value = smart.lossCooldownMinutes;
+    }
+
+    function updateStrategyForm() {
+      const smart = $("strategyType").value === "smart_regime_v1";
+      const trendOnly = $("strategyType").value === "trend_only_v1";
+      $("smartStrategyBlock").hidden = !smart;
+      $("tab-config").classList.toggle("smart-active", smart);
+      $("baseAmountLabel").textContent = smart ? "单次开仓上限（U）" : "首次开仓名义仓位（U）";
+      $("baseAmountHelp").textContent = smart
+        ? "智能策略实际仓位还会受单轮风险、保证金和可用余额限制。"
+        : "经典策略的首次固定名义仓位。";
+      $("strategyContext").innerHTML = trendOnly
+        ? '<span class="strategy-context-dot"></span><span><strong>Trend Only V1</strong>只做趋势、单仓且不补仓；详细参数与 Live 确认在页面下方独立面板。</span>'
+        : smart
+          ? '<span class="strategy-context-dot"></span><span><strong>智能趋势策略 V1</strong>已启用：下方参数独立生效，经典补仓字段已隐藏。</span>'
+          : '<span class="strategy-context-dot"></span><span><strong>经典补仓策略</strong>使用固定补仓与止盈参数。</span>';
+      document.querySelectorAll(".classic-only").forEach(element => {
+        element.hidden = smart || trendOnly;
+      });
+    }
+
+    function parseNumberList(value, fallback) {
+      const items = String(value || "")
+        .split(",")
+        .map(item => Number(item.trim()))
+        .filter(Number.isFinite);
+      return items.length === 3 ? items : [...fallback];
+    }
+
+    async function api(path, options = {}) {
+      try {
+        const res = await fetch(path, {
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          ...options
+        });
+
+        const text = await res.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (e) {
+          data = { ok: false, error: "服务器返回格式异常" };
+        }
+
+        if (res.status === 401) {
+          showToast("登录已过期，请重新登录", "error");
+          setTimeout(() => { window.location.href = "/login.html"; }, 800);
+          return { ok: false, error: "未登录或登录已过期" };
+        }
+
+        if (!res.ok && data.ok !== false) {
+          data.ok = false;
+          data.error = data.error || `请求失败：${res.status}`;
+        }
+
+        return data;
+      } catch (e) {
+        return { ok: false, error: "网络连接失败，请检查服务器是否运行" };
+      }
+    }
+
+    function fmt(value, digits = 2) {
+      const n = Number(value);
+      if (!isFinite(n)) return "-";
+      return n.toFixed(digits);
+    }
+
+    function signClass(v) {
+      const n = Number(v || 0);
+      if (n > 0) return "green";
+      if (n < 0) return "red";
+      return "";
+    }
+
+    function esc(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function safeText(value, fallback = "-") {
+      const s = value === undefined || value === null || value === "" ? fallback : value;
+      return esc(s);
+    }
+
+    function renderTime() {
+      $("brandTime").textContent = new Date().toLocaleString("zh-CN");
+    }
+
+    function showToast(message, type = "info") {
+      const wrap = $("toastWrap");
+      const el = document.createElement("div");
+      el.className = `toast ${type}`;
+      el.textContent = message;
+      wrap.appendChild(el);
+
+      setTimeout(() => {
+        el.style.opacity = "0";
+        el.style.transform = "translateY(-8px)";
+      }, 2200);
+
+      setTimeout(() => {
+        el.remove();
+      }, 2600);
+    }
+
+    function setButtonLoading(btn, loading, loadingText = "") {
+      if (!btn) return;
+      if (loading) {
+        btn.dataset.oldText = btn.textContent;
+        btn.textContent = loadingText || btn.textContent;
+        btn.disabled = true;
+        btn.classList.add("btn-loading");
+      } else {
+        btn.disabled = false;
+        btn.classList.remove("btn-loading");
+        if (btn.dataset.oldText) {
+          btn.textContent = btn.dataset.oldText;
+        }
+      }
+    }
+
+    function openModal(id) {
+      $(id).classList.add("show");
+    }
+
+    function closeModal(id) {
+      $(id).classList.remove("show");
+    }
+
+    function runningPill(running) {
+      return running
+        ? `<span class="status-pill status-run">运行中</span>`
+        : `<span class="status-pill status-stop">未运行</span>`;
+    }
+
+    function inlineStatus(type, text) {
+      const cls = type === "danger"
+        ? "pill-danger"
+        : type === "warning"
+        ? "pill-warning"
+        : "pill-normal";
+      return `<span class="status-inline ${cls}">${text}</span>`;
+    }
+
+    function setTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.tab === tab);
+      });
+      document.querySelectorAll(".tab-panel").forEach(el => {
+        el.style.display = el.id === `tab-${tab}` ? "block" : "none";
+      });
+    }
+
+    function fillConfig(cfg) {
+      $("name").value = cfg.name || "";
+      $("platform").value = cfg.platform || "hyperliquid";
+      $("address").value = cfg.address || "";
+      $("privateKey").value = cfg.privateKey || "";
+      $("apiKey").value = cfg.apiKey || "";
+      $("apiSecret").value = cfg.apiSecret || "";
+      $("starkPrivateKey").value = cfg.starkPrivateKey || "";
+      $("publicKey").value = cfg.publicKey || "";
+      $("vault").value = cfg.vault || "";
+      ensureSymbolOption(cfg.symbol || "ETH");
+      updateInstrumentOptions(cfg.platform || "hyperliquid", cfg.symbol || "ETH");
+      $("quoteAsset").value = cfg.quoteAsset || "USDC";
+      $("tradeMode").value = cfg.simulationEnabled || cfg.tradeMode === "simulation" ? "simulation" : "live";
+      $("simulationBalance").value = cfg.simulationBalance || 10000;
+      $("simulationSlippageBps").value = cfg.simulationSlippageBps || 0;
+      $("side").value = cfg.side || "long";
+      $("strategyType").value = cfg.strategyType || "classic";
+      $("leverage").value = cfg.leverage || 10;
+      $("baseAmount").value = cfg.baseAmount || 1000;
+      $("addAmount").value = cfg.addAmount || 1000;
+      $("takeProfit").value = cfg.takeProfit || 0.01;
+      $("addTrigger").value = cfg.addTrigger || 0.005;
+      $("maxAdds").value = cfg.maxAdds || 5;
+      $("interval").value = cfg.interval || 3000;
+      setSmartFields(cfg.smartStrategy);
+      updateStrategyForm();
+    }
+
+    function row(k, v, cls = "") {
+      return `<div class="data-row"><div class="data-k">${k}</div><div class="data-v ${cls}">${v}</div></div>`;
+    }
+
+    function quick(k, v, cls = "") {
+      return `
+        <div class="quick-row">
+          <div class="quick-k">${k}</div>
+          <div class="quick-v ${cls}">${v}</div>
+        </div>
+      `;
+    }
+
+    function renderAccountList(accounts, currentId, currentState) {
+      const accountList = $("accountList");
+      const scratch = document.createElement("div");
+      scratch.innerHTML = accounts.map(acc => {
+        return `
+          <div class="account-item ${acc.id === currentId ? "active" : ""}" data-account-id="${safeText(acc.id)}">
+            <div class="account-top">
+              <div class="account-name">${safeText(acc.name || "-")}</div>
+              ${runningPill(!!acc.running)}
+            </div>
+
+            <div class="account-meta">
+              平台：${safeText(acc.platform || "-")}<br/>
+              ${acc.symbol || "-"}/${acc.quoteAsset || "USDT"} ｜ ${
+                acc.strategyType === "trend_only_v1"
+                  ? "Trend Only V1"
+                  : acc.strategyType === "smart_regime_v1"
+                    ? (acc.side === "long" ? "智能做多" : acc.side === "short" ? "智能做空" : "智能多空")
+                  : (acc.side === "long" ? "做多" : "做空")
+              }
+            </div>
+
+            <div class="account-grid">
+              <div class="account-mini">
+                <div class="account-mini-k">当前盈亏</div>
+                <div class="account-mini-v ${signClass(acc.pnl)}">${fmt(acc.pnl, 2)} U</div>
+              </div>
+              <div class="account-mini">
+                <div class="account-mini-k">收益率</div>
+                <div class="account-mini-v ${signClass(acc.roi)}">${fmt(acc.roi, 2)}%</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const existing = new Map(
+        Array.from(accountList.querySelectorAll("[data-account-id]"))
+          .map(node => [node.dataset.accountId, node])
+      );
+      const retained = new Set();
+
+      for (const nextNode of Array.from(scratch.children)) {
+        const accountId = nextNode.dataset.accountId;
+        let liveNode = existing.get(accountId);
+        if (!liveNode) {
+          liveNode = nextNode;
+        } else {
+          liveNode.className = nextNode.className;
+          if (liveNode.innerHTML !== nextNode.innerHTML) {
+            liveNode.innerHTML = nextNode.innerHTML;
+          }
+        }
+        liveNode.onclick = () => selectAccount(accountId);
+        accountList.appendChild(liveNode);
+        retained.add(accountId);
+      }
+
+      for (const [accountId, node] of existing.entries()) {
+        if (!retained.has(accountId)) node.remove();
+      }
+    }
+
+    let accountSwitching = false;
+    async function selectAccount(id) {
+      if (accountSwitching || id === currentAccountId) return;
+      accountSwitching = true;
+      currentAccountId = id;
+      document.querySelectorAll("#accountList [data-account-id]").forEach(node => {
+        node.classList.toggle("active", node.dataset.accountId === id);
+      });
+
+      try {
+        await api("/api/account/select", {
+          method: "POST",
+          body: JSON.stringify({ id })
+        });
+        hasInitializedForm = false;
+        await Promise.all([loadAll(true), loadHistory()]);
+      showToast("已切换账户", "success");
+      } finally {
+        accountSwitching = false;
+      }
+    }
+    window.selectAccount = selectAccount;
+
+    function renderOverview(cfg, st) {
+      const smartMode = cfg.strategyType === "smart_regime_v1";
+      const trendOnlyMode = cfg.strategyType === "trend_only_v1";
+      const effectiveSide = trendOnlyMode ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : smartMode ? (st.smartSide || "auto") : cfg.side;
+      const directionText = effectiveSide === "long" ? "做多" : effectiveSide === "short" ? "做空" : "自动多空";
+      $("topbarAccountName").textContent = `当前账户：${cfg.name || "-"}`;
+      $("topbarAccountMeta").textContent =
+        `平台 ${cfg.platform || "-"} ｜ 币种 ${cfg.symbol || "-"} / ${cfg.quoteAsset || "USDT"} ｜ 方向 ${directionText}`;
+
+      $("metricPnl").textContent = `${fmt(st.pnl, 2)} U`;
+      $("metricPnl").className = `hero-v ${signClass(st.pnl)}`;
+
+      $("metricRoi").textContent = `${fmt(st.roi, 2)} %`;
+      $("metricRoi").className = `hero-v ${signClass(st.roi)}`;
+
+      $("metricPrice").textContent = st.currentPrice ? fmt(st.currentPrice, 2) : "-";
+      $("metricBalance").textContent = `${st.balance ?? "-"}`;
+
+      $("chipRunStatus").textContent = `状态 ${st.running ? "运行中" : "未运行"}`;
+      $("chipPlatform").textContent = `平台 ${cfg.platform || "-"}`;
+      $("chipDirection").textContent = `方向 ${directionText}`;
+      $("chipSymbol").textContent = `币种 ${cfg.symbol || "-"}`;
+      $("chipAvailable").textContent = `可用 ${st.available ?? "-"}`;
+
+      $("balanceText").textContent = st.balance ?? "-";
+      $("availableText").textContent = st.available ?? "-";
+
+      const positionRows = [
+        row("运行状态", st.running ? "运行中" : "未运行", st.running ? "green" : "red"),
+        row("当前价格", st.currentPrice || "-"),
+        row("开仓均价", st.entryPrice || "-"),
+        row("真实未实现盈亏", st.realUnrealizedPnl || "-"),
+        row("实际保证金", `${st.marginUsedU || 0} U`),
+row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >= 80 ? "red" : Number(st.marginRatio || 0) >= 50 ? "orange" : "green"),
+        row("当前盈亏", `${st.pnl || 0} U`, signClass(st.pnl)),
+        row("收益率", `${st.roi || 0}%`, signClass(st.roi))
+      ];
+      if (smartMode) {
+        positionRows.splice(4, 0, row("ATR 风险止损", st.smartStopPrice || "-"));
+      }
+      $("positionInfo").innerHTML = positionRows.join("");
+
+      const strategyRows = [
+        row("平台", cfg.platform || "-"),
+        row("策略", smartMode ? "智能趋势策略 V1" : "经典补仓策略"),
+        row("币种", `${cfg.symbol || "-"} / ${cfg.quoteAsset || "USDT"}`),
+        row("方向", directionText),
+        row("杠杆", cfg.leverage || "-"),
+        row("补仓次数", st.addCount || 0),
+        row("循环次数", st.cycleCount || 0),
+        row("下次补仓价", st.nextAddPrice ? Number(st.nextAddPrice).toFixed(2) : "-")
+      ];
+      if (smartMode) {
+        strategyRows.splice(2, 0,
+          row("行情状态", st.smartRegime || "WAITING", st.smartRiskOff ? "red" : "green"),
+          row("信号评分", `${st.smartScore || 0} / ${cfg.smartStrategy?.entryThreshold || 75}`),
+          row("多 / 空评分", `${st.smartLongScore || 0} / ${st.smartShortScore || 0}`),
+          row("波动分位", `${st.smartVolatilityPercentile || 0}%`)
+        );
+        strategyRows.push(
+          row("盈利保护启动价", st.smartTakeProfitPrice || "-"),
+          row("移动保护价", st.smartTrailingActive && st.smartTrailingPrice ? st.smartTrailingPrice : "-"),
+          row("盈利保护状态", st.smartTrailingActive ? "已启动" : "等待启动", st.smartTrailingActive ? "green" : "")
+        );
+      } else {
+        strategyRows.push(row("下次止盈价", st.nextTakeProfitPrice || "-"));
+      }
+      $("strategyInfo").innerHTML = strategyRows.join("");
+
+      const rightType = st.lastError ? "danger" : st.running ? "normal" : "warning";
+      const rightText = st.lastError ? "异常" : st.running ? "运行中" : "未运行";
+      $("rightRunTag").outerHTML = inlineStatus(rightType, rightText).replace("<span ", '<span id="rightRunTag" ');
+
+      const rightStatusRows = [
+        quick("账户名称", cfg.name || "-"),
+        quick("当前价格", st.currentPrice || "-"),
+        quick("开仓均价", st.entryPrice || "-"),
+        quick("下次补仓价", st.nextAddPrice ? Number(st.nextAddPrice).toFixed(2) : "-")
+      ];
+      if (smartMode) {
+        rightStatusRows.push(
+          quick("盈利保护启动价", st.smartTakeProfitPrice || "-"),
+          quick("移动保护价", st.smartTrailingActive && st.smartTrailingPrice ? st.smartTrailingPrice : "-"),
+          quick("盈利保护状态", st.smartTrailingActive ? "已启动" : "等待启动")
+        );
+      } else {
+        rightStatusRows.push(quick("下次止盈价", st.nextTakeProfitPrice || "-"));
+      }
+      rightStatusRows.push(quick("更新时间", st.updatedAt || "-"));
+      $("rightStatusList").innerHTML = rightStatusRows.join("");
+
+      const rightRiskRows = [
+        quick("账户余额", st.balance ?? "-"),
+        quick("可用余额", st.available ?? "-"),
+        quick("下一次补仓名义仓位", `${st.nextAddNotionalU || 0} U`),
+        quick("下一次补仓保证金", `${st.nextAddAmountU || 0} U`)
+      ];
+      if (smartMode) {
+        rightRiskRows.push(
+          quick("盈利保护启动浮盈", `${st.nextTakeProfitTargetU || 0} U`),
+          quick("智能风控", st.smartRiskOff ? "风险规避" : st.smartReduceRisk ? "降低仓位" : "正常"),
+          quick("策略暂停至", st.smartPauseUntil > Date.now() ? new Date(st.smartPauseUntil).toLocaleString("zh-CN") : "-")
+        );
+      } else {
+        rightRiskRows.push(quick("止盈目标盈利", `${st.nextTakeProfitTargetU || 0} U`));
+      }
+      rightRiskRows.push(quick("错误信息", st.lastError || "-", st.lastError ? "red" : "muted"));
+      $("rightRiskList").innerHTML = rightRiskRows.join("");
+
+      const logs = Array.isArray(st.logs) ? st.logs : [];
+      $("logsList").innerHTML = logs.length
+        ? logs.map(x => `<div class="log-item">${x}</div>`).join("")
+        : `<div class="log-item muted">暂无日志</div>`;
+    }
+
+    function renderHistory(items) {
+      latestHistoryItems = Array.isArray(items) ? items : [];
+      const totalTrades = latestHistoryItems.length;
+      const totalPnl = latestHistoryItems.reduce((sum, x) => sum + Number(x.pnl || 0), 0);
+      const winCount = latestHistoryItems.filter(x => Number(x.pnl || 0) > 0).length;
+      const avgRoi = totalTrades
+        ? latestHistoryItems.reduce((sum, x) => sum + Number(x.roi || 0), 0) / totalTrades
+        : 0;
+      const winRate = totalTrades ? (winCount / totalTrades) * 100 : 0;
+
+      $("historyCurrentAccountName").textContent = latestStatusData?.config?.name || "-";
+      $("historyTotalTrades").textContent = totalTrades;
+      $("historyTotalPnl").textContent = `${fmt(totalPnl, 2)} U`;
+      $("historyTotalPnl").className = `history-stat-v ${signClass(totalPnl)}`;
+      $("historyWinRate").textContent = `${fmt(winRate, 2)}%`;
+      $("historyAvgRoi").textContent = `${fmt(avgRoi, 2)}%`;
+
+      if (!totalTrades) {
+        $("historyTableBody").innerHTML = `
+          <tr>
+            <td colspan="10" class="muted" style="padding:16px;">暂无历史记录</td>
+          </tr>
+        `;
+        return;
+      }
+
+      $("historyTableBody").innerHTML = latestHistoryItems.map((item, idx) => `
+  <tr>
+    <td>${item.time || "-"}</td>
+    <td>${item.symbol || "-"}</td>
+    <td>${item.side || "-"}</td>
+    <td>${fmt(item.entryPrice, 2)}</td>
+    <td>${fmt(item.exitPrice, 2)}</td>
+    <td class="${signClass(item.pnl)}">${fmt(item.pnl, 2)}</td>
+    <td class="${signClass(item.roi)}">${fmt(item.roi, 2)}%</td>
+    <td>${Number(item.addCount || 0)}</td>
+    <td>${item.platform || "-"}</td>
+    <td>
+      <button class="ghost" style="min-height:36px;padding:8px 12px;font-size:12px;"
+        onclick="openVoucherModal(${idx})">
+        查看凭证
+      </button>
+    </td>
+  </tr>
+`).join("");
+    }
+
+function buildVoucherData(item) {
+  const accountingSource = {
+    exchange: "交易所成交与资金费",
+    "exchange-fee-only": "交易所手续费（资金费暂不可用）",
+    "exchange-partial-cycle": "交易所数据（部署时已持仓，周期成本不完整）",
+    "estimated-fee": "估算手续费（未含资金费）",
+    "legacy-unadjusted": "旧记录（未扣成本）",
+    legacy: "旧记录（未扣成本）"
+  }[item.costSource] || item.costSource || "旧记录（未扣成本）";
+  const accountingRows = {
+    "毛盈亏": item.grossPnl != null ? `${fmt(item.grossPnl, 4)} U` : "-",
+    "交易手续费": item.tradingFee != null ? `${fmt(item.tradingFee, 4)} U` : "-",
+    "资金费收支": item.fundingPnl != null ? `${fmt(item.fundingPnl, 4)} U` : "-",
+    "净盈亏": item.netPnl != null ? `${fmt(item.netPnl, 4)} U` : (item.pnl != null ? `${fmt(item.pnl, 4)} U` : "-"),
+    "成本数据来源": accountingSource
+  };
+  return {
+    ...accountingRows,
+    "账户名称": item.accountName || (latestStatusData?.config?.name || "-"),
+    "订单性质": item.simulation ? "SAGT" : "LIVE",
+    "平台": item.platform || "-",
+    "币种": item.symbol || "-",
+    "方向": item.side || "-",
+    "时间": item.time || "-",
+    "开仓价": item.entryPrice != null ? fmt(item.entryPrice, 2) : "-",
+    "平台价": item.exitPrice != null ? fmt(item.exitPrice, 2) : "-",
+    "盈利": item.pnl != null ? `${fmt(item.pnl, 4)} U` : "-",
+    "收益率": item.roi != null ? `${fmt(item.roi, 2)}%` : "-",
+    "补仓次数": Number(item.addCount || 0),
+    "平台原因": item.closeReason || "-",
+    "平台订单号": item.platformOrderId || "-",
+    "平台成交号": item.platformTradeId || "-",
+    "链上哈希": item.txHash || "-",
+    "查询链接": item.explorerUrl || "-"
+  };
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function escapeAttr(value) {
+  return String(value ?? "")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+window.openVoucherModal = function(idx) {
+  const item = latestHistoryItems[idx];
+  if (!item) return;
+
+  const data = buildVoucherData(item);
+  window.__currentVoucherData = data;
+  const modeBadge = $("voucherModeBadge");
+  modeBadge.textContent = item.simulation ? "DEMO" : "LIVE";
+  modeBadge.className = `modal-mode-badge ${item.simulation ? "" : "live"}`.trim();
+
+  $("voucherGrid").className = "voucher-panel";
+
+  $("voucherGrid").innerHTML = Object.entries(data).map(([k, v]) => {
+    const value = String(v ?? "-");
+    const isProfit = k === "盈利" || k === "收益率";
+    const isLink = k === "查询链接" && value && value !== "-";
+
+    const displayValue = isLink
+      ? `<a href="${escapeAttr(value)}" target="_blank" rel="noopener noreferrer">打开浏览器查询</a>`
+      : safeText(value);
+
+    return `
+      <div class="voucher-item ${isProfit ? "voucher-highlight" : ""} ${isLink ? "voucher-link-row" : ""}">
+        <div class="voucher-k">${safeText(k)}</div>
+        <div class="voucher-v">${displayValue}</div>
+      </div>
+    `;
+  }).join("");
+
+  $("voucherModalMask").classList.add("show");
+};
+
+window.closeVoucherModal = function() {
+  $("voucherModalMask").classList.remove("show");
+};
+
+    async function loadHistory() {
+      if (!currentAccountId) return;
+      const res = await api(`/api/profit-history?id=${encodeURIComponent(currentAccountId)}`);
+      if (res.ok) {
+        renderHistory(res.items || []);
+      } else if (res.error) {
+        showToast(res.error || "历史记录读取失败", "error");
+      }
+    }
+
+    async function loadAll(forceFill = false) {
+      const data = await api("/api/status");
+      if (!data || data.ok === false) {
+        if (data?.error) showToast(data.error, "error");
+        return;
+      }
+
+      latestStatusData = data;
+      currentAccountId = data.currentAccountId;
+
+      renderTime();
+      renderAccountList(data.accounts || [], data.currentAccountId, data.state || {});
+      renderOverview(data.config || {}, data.state || {});
+
+      if (forceFill || !hasInitializedForm) {
+        fillConfig(data.config || {});
+        hasInitializedForm = true;
+      }
+
+      $("deleteAccountName").textContent = data.config?.name || "当前账户";
+    }
+
+    async function saveConfig() {
+      const btn = $("saveBtn");
+      setButtonLoading(btn, true, "保存中");
+
+      try {
+        const payload = {
+          name: $("name").value.trim(),
+          platform: $("platform").value,
+          address: $("address").value.trim(),
+          privateKey: $("privateKey").value.trim(),
+          apiKey: $("apiKey").value.trim(),
+          apiSecret: $("apiSecret").value.trim(),
+          starkPrivateKey: $("starkPrivateKey").value.trim(),
+          publicKey: $("publicKey").value.trim(),
+          vault: $("vault").value.trim(),
+          symbol: $("symbol").value,
+          quoteAsset: $("quoteAsset").value,
+          tradeMode: $("tradeMode").value,
+          simulationEnabled: $("tradeMode").value === "simulation",
+          simulationBalance: Number($("simulationBalance").value || 10000),
+          simulationSlippageBps: Number($("simulationSlippageBps").value || 0),
+          side: $("side").value,
+          strategyType: $("strategyType").value,
+          leverage: Number($("leverage").value),
+          baseAmount: Number($("baseAmount").value),
+          addAmount: Number($("addAmount").value),
+          takeProfit: Number($("takeProfit").value),
+          addTrigger: Number($("addTrigger").value),
+          maxAdds: Number($("maxAdds").value),
+          interval: Number($("interval").value),
+          smartStrategy: {
+            directionMode: $("smartDirectionMode").value,
+            entryTimeframe: $("smartEntryTimeframe").value,
+            trendTimeframe: $("smartTrendTimeframe").value,
+            regimeTimeframe: $("smartRegimeTimeframe").value,
+            entryThreshold: Number($("smartEntryThreshold").value),
+            shortEntryThreshold: Number($("smartShortEntryThreshold").value),
+            minScoreEdge: Number($("smartMinScoreEdge").value),
+            addThreshold: Number($("smartAddThreshold").value),
+            exitThreshold: Number($("smartExitThreshold").value),
+            riskPerTradePct: Number($("smartRiskPerTradePct").value),
+            maxAdds: Number($("smartMaxAdds").value),
+            maxMarginPct: Number($("smartMaxMarginPct").value),
+            addMultipliers: parseNumberList($("smartAddMultipliers").value, SMART_DEFAULTS.addMultipliers),
+            addAtrMultipliers: parseNumberList($("smartAddAtrMultipliers").value, SMART_DEFAULTS.addAtrMultipliers),
+            stopAtr: Number($("smartStopAtr").value),
+            takeProfitAtr: Number($("smartTakeProfitAtr").value),
+            trailingAtr: Number($("smartTrailingAtr").value),
+            dailyLossPct: Number($("smartDailyLossPct").value),
+            consecutiveLossLimit: Number($("smartConsecutiveLossLimit").value),
+            pauseHours: Number($("smartPauseHours").value),
+            lossCooldownMinutes: Number($("smartLossCooldownMinutes").value)
+          }
+        };
+
+        const res = await api("/api/config", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          hasInitializedForm = false;
+          await loadAll(true);
+          showToast("参数已保存", "success");
+        } else {
+          showToast(res.error || "保存失败", "error");
+        }
+      } catch (e) {
+        showToast("保存失败", "error");
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    }
+
+    function resetCreateForm() {
+      $("createName").value = "";
+      $("createPlatform").value = "hyperliquid";
+      $("createAddress").value = "";
+      $("createPrivateKey").value = "";
+      $("createApiKey").value = "";
+      $("createApiSecret").value = "";
+      $("createStarkPrivateKey").value = "";
+      $("createPublicKey").value = "";
+      $("createVault").value = "";
+    }
+
+    async function createAccountFromModal() {
+      const btn = $("confirmCreateBtn");
+      const name = $("createName").value.trim();
+      const platform = $("createPlatform").value;
+      const address = $("createAddress").value.trim();
+
+      if (!name) {
+        showToast("请填写账户名称", "error");
+        return;
+      }
+      if (!address) {
+        showToast("请填写账户地址", "error");
+        return;
+      }
+
+      setButtonLoading(btn, true, "创建中");
+
+      try {
+        const res = await api("/api/account/create", {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            platform,
+            address,
+            privateKey: $("createPrivateKey").value.trim(),
+            apiKey: $("createApiKey").value.trim(),
+            apiSecret: $("createApiSecret").value.trim(),
+            starkPrivateKey: $("createStarkPrivateKey").value.trim(),
+            publicKey: $("createPublicKey").value.trim(),
+            vault: $("createVault").value.trim()
+          })
+        });
+
+        if (res.ok) {
+          resetCreateForm();
+          closeModal("createModalMask");
+          hasInitializedForm = false;
+          await loadAll(true);
+          await loadHistory();
+          showToast("账户已创建", "success");
+        } else {
+          showToast(res.error || "创建失败", "error");
+        }
+      } catch (e) {
+        showToast("创建失败", "error");
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    }
+
+    async function deleteCurrentAccount() {
+      const btn = $("confirmDeleteBtn");
+      setButtonLoading(btn, true, "删除中");
+
+      try {
+        const res = await api("/api/account/delete", { method: "POST" });
+        if (res.ok) {
+          closeModal("deleteModalMask");
+          hasInitializedForm = false;
+          await loadAll(true);
+          await loadHistory();
+          showToast("当前账户已删除", "success");
+        } else {
+          showToast(res.error || "删除失败", "error");
+        }
+      } catch (e) {
+        showToast("删除失败", "error");
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    }
+
+    async function manualOrder() {
+      const btn = $("manualBtn");
+      const symbol = $("symbol").value;
+      const side = $("side").value === "long" ? "buy" : "sell";
+      const amountU = Number($("baseAmount").value || 0);
+
+      if (!amountU || amountU <= 0) {
+        showToast("请先填写有效的首次开仓名义仓位", "error");
+        return;
+      }
+
+      if (!confirm(`确认手动测试下单？\n${symbol} / ${side}\n名义仓位：${amountU}U`)) return;
+
+      setButtonLoading(btn, true, "下单中");
+
+      try {
+        const res = await api("/api/manual-order", {
+          method: "POST",
+          body: JSON.stringify({
+            symbol,
+            side,
+            amountU,
+            tif: "Ioc",
+            reduceOnly: false
+          })
+        });
+
+        if (res.ok) {
+          const order = res.order || {};
+          await loadAll(false);
+          showToast(`下单成功：${order.side || side} ${order.size || ""}`, "success");
+        } else {
+          showToast(res.error || "手动下单失败", "error");
+        }
+      } catch (e) {
+        showToast("手动下单失败", "error");
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    }
+
+    async function runSimpleAction(path, btnId, loadingText, successText, failText) {
+      const btn = $(btnId);
+      setButtonLoading(btn, true, loadingText);
+      try {
+        const res = await api(path, { method: "POST" });
+        if (!res.ok) {
+          showToast(res.error || failText, "error");
+        } else {
+          showToast(successText, "success");
+        }
+        await loadAll(false);
+      } catch (e) {
+        showToast(failText, "error");
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    }
+
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => setTab(btn.dataset.tab));
+    });
+
+    $("openCreateModalBtn").addEventListener("click", () => openModal("createModalMask"));
+    $("openDeleteModalBtn").addEventListener("click", () => openModal("deleteModalMask"));
+    $("confirmCreateBtn").addEventListener("click", createAccountFromModal);
+    $("confirmDeleteBtn").addEventListener("click", deleteCurrentAccount);
+
+    $("saveBtn").addEventListener("click", saveConfig);
+    $("strategyType").addEventListener("change", updateStrategyForm);
+    $("platform").addEventListener("change", () => {
+      const platform = $("platform").value;
+      if (platform === "binance") $("quoteAsset").value = "USDT";
+      if (platform === "hyperliquid") $("quoteAsset").value = "USDC";
+      if (platform === "extended") $("quoteAsset").value = "USD";
+      updateInstrumentOptions(platform, $("symbol").value);
+    });
+    $("symbol").addEventListener("change", () => {
+      const current = $("symbol").selectedOptions[0];
+      const tradFi = current?.dataset?.group === "tradfi";
+      $("symbolHelp").textContent = tradFi
+        ? `Binance ${current.value}USDT 股票永续：不持有真实股票，实盘会校验合约状态和下单精度。`
+        : "品种会按所选平台加载；两种策略共用当前品种。";
+      if (tradFi) {
+        const maxLeverage = Number(current.dataset.maxLeverage || 10);
+        if (Number($("leverage").value || 0) > maxLeverage) {
+          $("leverage").value = maxLeverage;
+          showToast(`股票永续杠杆已调整为安全上限 ${maxLeverage} 倍`, "info");
+        }
+      }
+    });
+    $("restoreSmartDefaultsBtn").addEventListener("click", () => {
+      setSmartFields(SMART_DEFAULTS);
+      showToast("已恢复智能策略推荐参数", "success");
+    });
+    $("manualBtn").addEventListener("click", manualOrder);
+    $("refreshHistoryBtn").addEventListener("click", async () => {
+      await loadHistory();
+      showToast("历史记录已刷新", "info");
+    });
+    $("refreshLogsBtn").addEventListener("click", async () => {
+      await loadAll(false);
+      showToast("日志已刷新", "info");
+    });
+
+    $("startBtn").addEventListener("click", () =>
+      runSimpleAction("/api/start", "startBtn", "启动中", "机器人已启动", "启动失败")
+    );
+    $("stopBtn").addEventListener("click", () =>
+      runSimpleAction("/api/stop", "stopBtn", "停止中", "机器人已停止", "停止失败")
+    );
+    $("resetBtn").addEventListener("click", () =>
+      runSimpleAction("/api/reset", "resetBtn", "重置中", "状态已重置", "重置失败")
+    );
+
+    document.querySelectorAll("[data-close]").forEach(btn => {
+      btn.addEventListener("click", () => closeModal(btn.dataset.close));
+    });
+
+    document.querySelectorAll(".modal-mask").forEach(mask => {
+      mask.addEventListener("click", e => {
+        if (e.target === mask) mask.classList.remove("show");
+      });
+    });
+
+$("copyVoucherBtn").addEventListener("click", async () => {
+  try {
+    const data = window.__currentVoucherData || {};
+    const text = Object.entries(data)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join("\n");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    showToast("凭证内容已复制", "success");
+  } catch (e) {
+    showToast("复制失败", "error");
+  }
+});
+
+$("voucherModalMask").addEventListener("click", e => {
+  if (e.target.id === "voucherModalMask") {
+    closeVoucherModal();
+  }
+});
+
+    renderTime();
+    loadAll(true).then(loadHistory);
+    setInterval(renderTime, 1000);
+
+    let polling = false;
+    setInterval(async () => {
+      if (polling || accountSwitching) return;
+      polling = true;
+      try {
+        await loadAll(false);
+        if (currentTab === "history") {
+          await loadHistory();
+        }
+      } finally {
+        polling = false;
+      }
+    }, 2500);
+</script>
+
+<!-- SUPERFLOW_BULK_CONTROL_START -->
+<div id="sfBulkPanel" style="
+  position:fixed;
+  right:24px;
+  bottom:24px;
+  z-index:999999;
+  font-family:Arial,'Microsoft YaHei',sans-serif;
+">
+  <div id="sfBulkBox" style="
+    width:240px;
+    border-radius:20px;
+    background:rgba(7,16,36,.96);
+    border:1px solid rgba(112,150,255,.35);
+    box-shadow:0 22px 50px rgba(0,0,0,.45);
+    padding:14px;
+    display:none;
+  ">
+    <div style="
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom:12px;
+      color:#fff;
+      font-size:15px;
+      font-weight:900;
+    ">
+      <span>批量控制</span>
+      <button id="sfBulkClose" style="
+        border:0;
+        background:rgba(255,255,255,.08);
+        color:#fff;
+        width:28px;
+        height:28px;
+        border-radius:50%;
+        cursor:pointer;
+        font-weight:900;
+      ">×</button>
+    </div>
+
+    <button id="sfStartAll" style="
+      width:100%;
+      height:44px;
+      border:0;
+      border-radius:14px;
+      background:#19c37d;
+      color:#fff;
+      font-weight:900;
+      cursor:pointer;
+      margin-bottom:10px;
+      font-size:14px;
+    ">全部启动</button>
+
+    <button id="sfStopAll" style="
+      width:100%;
+      height:44px;
+      border:0;
+      border-radius:14px;
+      background:#ff5c7a;
+      color:#fff;
+      font-weight:900;
+      cursor:pointer;
+      margin-bottom:10px;
+      font-size:14px;
+    ">全部停止</button>
+
+    <button id="sfRefreshPage" style="
+      width:100%;
+      height:40px;
+      border:0;
+      border-radius:12px;
+      background:#263b73;
+      color:#dbe7ff;
+      font-weight:800;
+      cursor:pointer;
+      font-size:13px;
+    ">刷新页面</button>
+
+    <div id="sfBulkMsg" style="
+      margin-top:10px;
+      color:#9fb8ff;
+      font-size:12px;
+      line-height:1.6;
+      word-break:break-word;
+    ">控制通道已就绪</div>
+  </div>
+
+  <button id="sfBulkToggle" style="
+    height:48px;
+    min-width:128px;
+    border:0;
+    border-radius:999px;
+    background:linear-gradient(135deg,#4f7cff,#7aa2ff);
+    color:#fff;
+    font-size:15px;
+    font-weight:900;
+    cursor:pointer;
+    box-shadow:0 18px 38px rgba(0,0,0,.35);
+  ">批量控制</button>
+</div>
+
+<script>
+(function(){
+  function $(id){ return document.getElementById(id); }
+
+  const panel = $("sfBulkPanel");
+  const topbarActions = document.querySelector(".topbar-actions");
+  if (panel && topbarActions) {
+    topbarActions.appendChild(panel);
+  }
+
+  const box = $("sfBulkBox");
+  const toggle = $("sfBulkToggle");
+  const closeBtn = $("sfBulkClose");
+  const msg = $("sfBulkMsg");
+  const startBtn = $("sfStartAll");
+  const stopBtn = $("sfStopAll");
+  const refreshBtn = $("sfRefreshPage");
+
+  if (!box || !toggle || !msg) return;
+
+  toggle.onclick = function(){
+    box.style.display = box.style.display === "none" ? "block" : "none";
+  };
+
+  closeBtn.onclick = function(){
+    box.style.display = "none";
+  };
+
+  refreshBtn.onclick = function(){
+    location.reload();
+  };
+
+  async function postAction(path){
+    msg.textContent = "执行中，请稍等...";
+    try {
+      const res = await fetch(path, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        credentials:"same-origin"
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        throw new Error(data.error || "操作失败");
+      }
+
+      if (path === "/api/start-all") {
+        const success = Array.isArray(data.results)
+          ? data.results.filter(x => x.ok).length
+          : 0;
+        msg.textContent = "全部启动完成，成功账户：" + success;
+      } else {
+        msg.textContent = "全部停止完成，账户数：" + (data.count || 0);
+      }
+
+      setTimeout(function(){
+        location.reload();
+      }, 1200);
+    } catch(e) {
+      msg.textContent = "失败：" + e.message;
+    }
+  }
+
+  startBtn.onclick = function(){
+    if (confirm("确认启动全部账户？")) {
+      postAction("/api/start-all");
+    }
+  };
+
+  stopBtn.onclick = function(){
+    if (confirm("确认停止全部账户？")) {
+      postAction("/api/stop-all");
+    }
+  };
+})();
+</script>
+<!-- SUPERFLOW_BULK_CONTROL_END -->
+
+<script src="/trend-only-panel.js" defer></script></body>
+</html>

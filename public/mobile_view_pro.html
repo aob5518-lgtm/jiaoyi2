@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+  />
+  <title>PRO客户访问端</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    :root {
+      --bg-1: #050b16;
+      --bg-2: #081224;
+      --panel: rgba(14, 24, 50, 0.86);
+      --panel-2: rgba(10, 18, 40, 0.96);
+      --line: rgba(92, 120, 198, 0.20);
+      --text: #ffffff;
+      --muted: #97a8d8;
+      --green: #32d47b;
+      --red: #ff7089;
+      --blue: #77aaff;
+      --gold: #f3c56b;
+      --shadow: 0 14px 36px rgba(0, 0, 0, 0.30);
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(70, 120, 255, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(80, 190, 255, 0.12), transparent 30%),
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 44%, #040a14 100%);
+      overflow-x: hidden;
+    }
+
+    .app {
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100vh;
+      padding: 14px 14px 92px;
+    }
+
+    .topbar {
+      margin-bottom: 12px;
+    }
+
+    .title {
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: 0.4px;
+      line-height: 1.08;
+    }
+
+    .subtitle {
+      margin-top: 5px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .tab-page { display: none; }
+    .tab-page.active { display: block; }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 800;
+      margin-bottom: 10px;
+      letter-spacing: 0.2px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .hero-main {
+      grid-column: 1 / -1;
+      background:
+        linear-gradient(135deg, rgba(67, 111, 255, 0.22), rgba(14, 28, 62, 0.78)),
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+      border: 1px solid rgba(110, 168, 255, 0.24);
+      border-radius: 18px;
+      padding: 15px;
+      cursor: pointer;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+
+    .hero-main:active {
+      transform: scale(0.985);
+      filter: brightness(1.04);
+    }
+
+    .hero-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .hero-value {
+      font-size: 26px;
+      font-weight: 900;
+      line-height: 1.08;
+      word-break: break-word;
+      margin-bottom: 6px;
+    }
+
+    .hero-meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .metric {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px;
+      min-height: 84px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .info-box {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px;
+      min-height: 76px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .info-box .k {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .info-box .v {
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+
+    .highlight-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .highlight-box {
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)),
+        var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px;
+      min-height: 88px;
+    }
+
+    .highlight-title {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .highlight-value {
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.15;
+      margin-bottom: 6px;
+    }
+
+    .highlight-sub {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .score-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px;
+    }
+
+    .score-left {
+      flex: 1 1 auto;
+    }
+
+    .score-title {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .score-value {
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+
+    .score-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 82px;
+      min-height: 34px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .score-tag.gold {
+      color: #111;
+      background: linear-gradient(180deg, #f6d58a, #dfb866);
+      border-color: rgba(255, 224, 145, 0.38);
+    }
+
+    .score-tag.blue {
+      color: #dfeaff;
+      background: linear-gradient(180deg, rgba(84, 131, 255, 0.28), rgba(44, 73, 161, 0.38));
+      border-color: rgba(110, 168, 255, 0.26);
+    }
+
+    .chart-card {
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0)),
+        var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+    }
+
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .chart-title {
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .chart-sub {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .chart-wrap {
+      width: 100%;
+      height: 180px;
+      background: rgba(255,255,255,0.015);
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius: 14px;
+      padding: 8px;
+    }
+
+    #equityChart {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .account-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .account-item {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+
+    .account-item:active {
+      transform: scale(0.99);
+    }
+
+    .account-item.active {
+      border-color: rgba(110, 168, 255, 0.48);
+      box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.2) inset;
+      background:
+        linear-gradient(180deg, rgba(67, 111, 255, 0.10), rgba(9, 20, 50, 0.96));
+    }
+
+    .account-name {
+      font-size: 15px;
+      font-weight: 800;
+      margin-bottom: 5px;
+      line-height: 1.3;
+    }
+
+    .account-meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+      word-break: break-word;
+    }
+
+    .tip-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #cfd8f6;
+      border-radius: 14px;
+      padding: 11px 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .green { color: var(--green) !important; }
+    .red { color: var(--red) !important; }
+
+    .bottom-nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(6, 13, 26, 0.96);
+      border-top: 1px solid rgba(92, 120, 198, 0.16);
+      backdrop-filter: blur(12px);
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .nav-btn {
+      background: rgba(17, 29, 59, 0.9);
+      border: 1px solid rgba(92, 120, 198, 0.16);
+      color: var(--muted);
+      min-height: 42px;
+      border-radius: 13px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .nav-btn.active {
+      color: #fff;
+      border-color: rgba(110, 168, 255, 0.4);
+      box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.18) inset;
+      background: linear-gradient(180deg, rgba(67, 111, 255, 0.18), rgba(17, 29, 59, 0.92));
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">PRO客户访问端</div>
+      <div class="subtitle" id="topSub">账户状态、收益表现与净值风格展示</div>
+    </div>
+
+    <div id="page-overview" class="tab-page active">
+      <div class="card">
+        <div class="card-title">账户总览</div>
+
+        <div class="hero">
+          <div class="hero-main" onclick="openAccounts()">
+            <div class="hero-label">当前账户（点击切换）</div>
+            <div class="hero-value" id="ovAccountName">-</div>
+            <div class="hero-meta" id="ovAccountMeta">-</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">当前盈亏 (U)</div>
+            <div class="metric-value" id="ovPnl">-</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">收益率</div>
+            <div class="metric-value" id="ovRoi">-</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">当前余额</div>
+            <div class="metric-value" id="ovBalance">-</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">可用余额</div>
+            <div class="metric-value" id="ovAvailable">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">总资产曲线</div>
+          <div class="chart-sub">基于历史盈利记录生成</div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="equityChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">收益概览</div>
+        <div class="highlight-row">
+          <div class="highlight-box">
+            <div class="highlight-title">累计收益</div>
+            <div class="highlight-value" id="sumProfit">-</div>
+            <div class="highlight-sub">历史已实现盈利累计</div>
+          </div>
+
+          <div class="highlight-box">
+            <div class="highlight-title">今日盈亏</div>
+            <div class="highlight-value" id="todayProfit">-</div>
+            <div class="highlight-sub">按本地日期统计</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">账户评分</div>
+        <div class="score-wrap">
+          <div class="score-left">
+            <div class="score-title">稳定性评分</div>
+            <div class="score-value" id="scoreValue">-</div>
+          </div>
+          <div class="score-tag blue" id="scoreTag">评估中</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">基础信息</div>
+        <div class="section-grid">
+          <div class="info-box">
+            <div class="k">平台</div>
+            <div class="v" id="ovPlatform">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">运行状态</div>
+            <div class="v" id="ovRunning">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">币种</div>
+            <div class="v" id="ovSymbol">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">方向</div>
+            <div class="v" id="ovSide">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">当前价格</div>
+            <div class="v" id="ovPrice">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">开仓均价</div>
+            <div class="v" id="ovEntry">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">当前仓位数量</div>
+            <div class="v" id="ovPositionSize">-</div>
+          </div>
+
+          <div class="info-box">
+            <div class="k">当前保证金 (U)</div>
+            <div class="v" id="ovMargin">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">状态说明</div>
+        <div id="ovErrorBox" class="tip-box">-</div>
+      </div>
+    </div>
+
+    <div id="page-accounts" class="tab-page">
+      <div class="card">
+        <div class="card-title">账户列表</div>
+        <div id="accountList" class="account-list"></div>
+      </div>
+    </div>
+
+    <div id="page-history" class="tab-page">
+      <div class="card">
+        <div class="card-title">历史盈利记录</div>
+        <div id="historyList" class="account-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" data-tab="overview">总览</button>
+    <button class="nav-btn" data-tab="accounts">账户</button>
+    <button class="nav-btn" data-tab="history">历史</button>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let currentAccountId = "";
+    let currentHistoryItems = [];
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...options
+      });
+      return res.json();
+    }
+
+    function setTab(tab) {
+      document.querySelectorAll(".tab-page").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".nav-btn").forEach(el => el.classList.remove("active"));
+      $(`page-${tab}`).classList.add("active");
+      document.querySelector(`.nav-btn[data-tab="${tab}"]`).classList.add("active");
+    }
+
+    function openAccounts() {
+      setTab("accounts");
+    }
+    window.openAccounts = openAccounts;
+
+    document.querySelectorAll(".nav-btn").forEach(btn => {
+      btn.addEventListener("click", () => setTab(btn.dataset.tab));
+    });
+
+    function fmt(v, digits = 4) {
+      const n = Number(v);
+      if (!isFinite(n)) return "-";
+      return n.toFixed(digits).replace(/\.?0+$/, "");
+    }
+
+    function renderOverview(payload) {
+      const cfg = payload.account;
+      const st = payload.state;
+
+      $("topSub").textContent = `${cfg.name || "-"} ｜ ${cfg.platform || "-"} ｜ ${cfg.symbol || "-"} / ${cfg.quoteAsset || "-"}`;
+      $("ovAccountName").textContent = cfg.name || "-";
+      $("ovAccountMeta").textContent = `${cfg.platform || "-"} ｜ ${cfg.symbol || "-"} / ${cfg.quoteAsset || "-"} ｜ ${cfg.side === "long" ? "做多" : "做空"}`;
+
+      $("ovPnl").textContent = fmt(st.pnl || 0);
+      $("ovRoi").textContent = `${fmt(st.roi || 0, 2)}%`;
+      $("ovBalance").textContent = st.balance || "-";
+      $("ovAvailable").textContent = st.available || "-";
+      $("ovPlatform").textContent = cfg.platform || "-";
+
+      const runningEl = $("ovRunning");
+      runningEl.textContent = st.running ? "运行中" : "未运行";
+      runningEl.className = "v " + (st.running ? "green" : "red");
+
+      $("ovSymbol").textContent = `${cfg.symbol || "-"} / ${cfg.quoteAsset || "-"}`;
+      $("ovSide").textContent = cfg.side === "long" ? "做多" : "做空";
+      $("ovPrice").textContent = fmt(st.currentPrice || 0, 4);
+      $("ovEntry").textContent = st.entryPrice ? fmt(st.entryPrice, 4) : "-";
+      $("ovPositionSize").textContent = st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-");
+      $("ovMargin").textContent = fmt(st.marginUsedU || 0, 4);
+
+      const tipText = st.lastError || st.lastAction || "状态正常";
+      $("ovErrorBox").textContent = tipText;
+
+      $("ovPnl").className = "metric-value " + (Number(st.pnl || 0) >= 0 ? "green" : "red");
+      $("ovRoi").className = "metric-value " + (Number(st.roi || 0) >= 0 ? "green" : "red");
+    }
+
+    function renderAccounts(items, selectedId) {
+      $("accountList").innerHTML = items.map(acc => `
+        <div class="account-item ${acc.id === selectedId ? "active" : ""}" onclick="selectAccount('${acc.id}')">
+          <div class="account-name">${acc.name}</div>
+          <div class="account-meta">
+            平台：${acc.platform}<br>
+            币种：${acc.symbol}/${acc.quoteAsset || "-"}<br>
+            方向：${acc.side === "long" ? "做多" : "做空"}<br>
+            状态：${acc.running ? "运行中" : "未运行"}<br>
+            盈亏：${fmt(acc.pnl || 0)} U / ${fmt(acc.roi || 0, 2)}%
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderHistory(items) {
+      const el = $("historyList");
+      if (!items || items.length === 0) {
+        el.innerHTML = `<div class="muted">暂无历史盈利记录</div>`;
+        return;
+      }
+
+      el.innerHTML = items.map(item => {
+        const pnlNum = Number(item.pnl || 0);
+        const roiNum = Number(item.roi || 0);
+        const pnlClass = pnlNum >= 0 ? "green" : "red";
+        const roiClass = roiNum >= 0 ? "green" : "red";
+
+        return `
+          <div class="account-item">
+            <div class="account-name">${item.symbol || "-"} ｜ ${item.side || "-"}</div>
+            <div class="account-meta">
+              时间：${item.time || "-"}<br>
+              开仓价：${item.entryPrice ?? "-"}<br>
+              平仓价：${item.exitPrice ?? "-"}<br>
+              盈利：<span class="${pnlClass}">${item.pnl ?? "-"}</span> U<br>
+              收益率：<span class="${roiClass}">${item.roi ?? "-"}</span>%
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function calculateSummary(items) {
+      const list = Array.isArray(items) ? items : [];
+      let total = 0;
+      let today = 0;
+
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const todayKey1 = `${yyyy}/${mm}/${dd}`;
+      const todayKey2 = `${yyyy}-${mm}-${dd}`;
+
+      for (const item of list) {
+        const pnl = Number(item.pnl || 0);
+        total += pnl;
+
+        const time = String(item.time || "");
+        if (time.includes(todayKey1) || time.includes(todayKey2)) {
+          today += pnl;
+        }
+      }
+
+      return { total, today };
+    }
+
+    function calcScore(items, st) {
+      const list = Array.isArray(items) ? items : [];
+      const totalCount = list.length;
+      const winCount = list.filter(x => Number(x.pnl || 0) > 0).length;
+      const winRate = totalCount > 0 ? (winCount / totalCount) : 0;
+      const roi = Number(st.roi || 0);
+      const pnl = Number(st.pnl || 0);
+
+      let score = 60;
+      score += Math.min(totalCount, 20);
+      score += Math.round(winRate * 20);
+      if (roi > 0) score += 5;
+      if (pnl > 0) score += 5;
+      score = Math.max(35, Math.min(98, score));
+
+      let tag = "成长中";
+      let tagClass = "blue";
+
+      if (score >= 90) {
+        tag = "S 级稳定";
+        tagClass = "gold";
+      } else if (score >= 80) {
+        tag = "A级稳健";
+        tagClass = "blue";
+      } else if (score >= 70) {
+        tag = "B级良好";
+        tagClass = "blue";
+      }
+
+      return { score, tag, tagClass };
+    }
+
+    function renderAdvanced(items, st) {
+      const summary = calculateSummary(items);
+      const score = calcScore(items, st);
+
+      $("sumProfit").textContent = `${fmt(summary.total, 4)} U`;
+      $("todayProfit").textContent = `${fmt(summary.today, 4)} U`;
+
+      $("sumProfit").className = "highlight-value " + (summary.total >= 0 ? "green" : "red");
+      $("todayProfit").className = "highlight-value " + (summary.today >= 0 ? "green" : "red");
+
+      $("scoreValue").textContent = score.score;
+      const scoreTag = $("scoreTag");
+      scoreTag.textContent = score.tag;
+      scoreTag.className = `score-tag ${score.tagClass}`;
+    }
+
+    function drawEquityChart(items) {
+      const canvas = $("equityChart");
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const padding = 14;
+      const chartW = w - padding * 2;
+      const chartH = h - padding * 2;
+
+      ctx.strokeStyle = "rgba(255,255,255,0.05)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const y = padding + (chartH / 3) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding, y);
+        ctx.lineTo(w - padding, y);
+        ctx.stroke();
+      }
+
+      let points = [];
+      let equity = 0;
+      const list = Array.isArray(items) ? [...items].reverse() : [];
+
+      if (list.length === 0) {
+        points = [0, 0, 0, 0, 0];
+      } else {
+        for (const item of list) {
+          equity += Number(item.pnl || 0);
+          points.push(equity);
+        }
+        if (points.length === 1) points = [0, points[0]];
+      }
+
+      const min = Math.min(...points);
+      const max = Math.max(...points);
+      const range = max - min || 1;
+
+      const coords = points.map((v, i) => {
+        const x = padding + (chartW * i / Math.max(points.length - 1, 1));
+        const y = padding + chartH - ((v - min) / range) * chartH;
+        return { x, y };
+      });
+
+      const gradient = ctx.createLinearGradient(0, padding, 0, h - padding);
+      gradient.addColorStop(0, "rgba(110, 168, 255, 0.32)");
+      gradient.addColorStop(1, "rgba(110, 168, 255, 0.02)");
+
+      ctx.beginPath();
+      coords.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.lineTo(coords[coords.length - 1].x, h - padding);
+      ctx.lineTo(coords[0].x, h - padding);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      const lastVal = points[points.length - 1];
+      ctx.beginPath();
+      coords.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.strokeStyle = lastVal >= 0 ? "#6ea8ff" : "#ff7089";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      const end = coords[coords.length - 1];
+      ctx.beginPath();
+      ctx.arc(end.x, end.y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = lastVal >= 0 ? "#6ea8ff" : "#ff7089";
+      ctx.fill();
+    }
+
+    async function selectAccount(id) {
+      currentAccountId = id;
+      await loadCurrent();
+      setTab("overview");
+    }
+    window.selectAccount = selectAccount;
+
+    async function loadAccounts() {
+      const data = await api("/api/public/accounts");
+      if (!data.ok) return [];
+
+      const items = data.items || [];
+      if (!currentAccountId) {
+        currentAccountId = data.currentAccountId || (items[0] && items[0].id) || "";
+      }
+
+      renderAccounts(items, currentAccountId);
+      return items;
+    }
+
+    async function loadCurrent() {
+      if (!currentAccountId) return;
+
+      const statusRes = await api(`/api/public/status?id=${encodeURIComponent(currentAccountId)}`);
+      if (statusRes.ok) {
+        renderOverview(statusRes);
+      }
+
+      const historyRes = await api(`/api/public/profit-history?id=${encodeURIComponent(currentAccountId)}`);
+      currentHistoryItems = historyRes.items || [];
+      renderHistory(currentHistoryItems);
+      renderAdvanced(currentHistoryItems, statusRes.state || {});
+      requestAnimationFrame(() => drawEquityChart(currentHistoryItems));
+    }
+
+    async function loadAll() {
+      await loadAccounts();
+      await loadCurrent();
+    }
+
+    window.addEventListener("resize", () => {
+      requestAnimationFrame(() => drawEquityChart(currentHistoryItems));
+    });
+
+    loadAll();
+    setInterval(() => loadCurrent(), 5000);
+    setInterval(() => loadAccounts(), 15000);
+  </script>
+<script src="/trend-only-panel.js" defer></script></body>
+</html>
