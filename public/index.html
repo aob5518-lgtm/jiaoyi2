@@ -2694,6 +2694,66 @@
         min-height:0;
       }
     }
+    .account-tools{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:8px;
+      margin:10px 0 12px;
+    }
+    .account-tools input,
+    .account-tools select{
+      width:100%;
+      min-height:36px;
+      border:1px solid #20343c;
+      border-radius:8px;
+      background:#0b151a;
+      color:#d8e6ea;
+      padding:8px 10px;
+      font-size:12px;
+      font-weight:700;
+    }
+    .mode-switch{
+      display:inline-flex;
+      gap:6px;
+      padding:4px;
+      margin-bottom:14px;
+      border:1px solid #20343c;
+      border-radius:8px;
+      background:#0b151a;
+    }
+    .mode-switch button{
+      min-height:34px;
+      border:0;
+      border-radius:6px;
+      background:transparent;
+      color:#8298a1;
+      padding:6px 14px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .mode-switch button.active{
+      background:#16313a;
+      color:#e8f7fb;
+    }
+    #tab-config.simple-mode .advanced-mode-only,
+    #tab-config.simple-mode .trend-advanced-field{
+      display:none !important;
+    }
+    @media (max-width: 1280px){
+      .right-panel{
+        position:fixed;
+        right:12px;
+        top:86px;
+        bottom:12px;
+        z-index:20;
+        width:min(360px, calc(100vw - 24px));
+        transform:translateX(calc(100% + 16px));
+        transition:transform .18s ease;
+      }
+      .right-panel.open{
+        transform:translateX(0);
+      }
+    }
   </style>
 </head>
 <body>
@@ -2721,6 +2781,18 @@
         <div class="panel-head">
           <h2 class="panel-title">账户列表</h2>
           <span class="tag">ACCOUNTS</span>
+        </div>
+
+        <div class="account-tools">
+          <input id="accountSearch" type="search" placeholder="搜索账户 / 平台 / 币种" />
+          <select id="accountFilter">
+            <option value="all">全部</option>
+            <option value="running">运行中</option>
+            <option value="stopped">未运行</option>
+            <option value="error">异常</option>
+            <option value="position">有仓位</option>
+            <option value="pending">待确认订单</option>
+          </select>
         </div>
 
         <div id="accountList" class="account-list"></div>
@@ -2770,7 +2842,7 @@
               </div>
 
               <div class="hero-card">
-                <div class="hero-k">收益率</div>
+                <div class="hero-k" id="metricRoiLabel">收益率</div>
                 <div id="metricRoi" class="hero-v">--</div>
                 <div class="hero-sub">ROI</div>
                 <div class="chips">
@@ -2779,7 +2851,7 @@
               </div>
 
               <div class="hero-card">
-                <div class="hero-k">当前价格</div>
+                <div class="hero-k" id="metricPriceLabel">当前价格</div>
                 <div id="metricPrice" class="hero-v">--</div>
                 <div class="hero-sub">Current Price</div>
                 <div class="chips">
@@ -2788,7 +2860,7 @@
               </div>
 
               <div class="hero-card">
-                <div class="hero-k">账户资金</div>
+                <div class="hero-k" id="metricBalanceLabel">账户资金</div>
                 <div id="metricBalance" class="hero-v">--</div>
                 <div class="hero-sub">Balance</div>
                 <div class="chips">
@@ -2800,7 +2872,7 @@
             <div class="overview-grid">
               <div class="block">
                 <div class="block-head">
-                  <div class="block-title">持仓概览</div>
+                  <div class="block-title" id="positionBlockTitle">持仓概览</div>
                   <span class="tag">POSITION</span>
                 </div>
                 <div id="positionInfo" class="data-list"></div>
@@ -2808,15 +2880,24 @@
 
               <div class="block">
                 <div class="block-head">
-                  <div class="block-title">策略执行</div>
+                  <div class="block-title" id="strategyBlockTitle">策略执行</div>
                   <span class="tag">STRATEGY</span>
                 </div>
                 <div id="strategyInfo" class="data-list"></div>
               </div>
             </div>
+            <details class="block" id="signalReplayPanel" hidden style="margin-top:16px;">
+              <summary class="block-title" style="cursor:pointer;">信号回放 / 错过行情分析</summary>
+              <div class="config-section-note" style="margin:10px 0;">最近 50 根已收盘 K 线的策略判断、允许入场状态和阻断原因。</div>
+              <div id="signalReplayList" class="data-list"></div>
+            </details>
           </div>
 
           <div id="tab-config" class="tab-panel" style="display:none;">
+            <div class="mode-switch">
+              <button id="simpleModeBtn" class="active" type="button">简洁模式</button>
+              <button id="advancedModeBtn" type="button">高级模式</button>
+            </div>
             <div class="overview-grid">
               <div class="block">
                 <div class="block-head">
@@ -2836,7 +2917,7 @@
                     </select>
                   </label>
 
-                  <label>方向
+                  <label class="advanced-mode-only">方向
                     <select id="side">
                       <option value="long">做多</option>
                       <option value="short">做空</option>
@@ -2868,15 +2949,15 @@
                     </select>
                   </label>
 
-                  <label>模拟账户余额
+                  <label class="advanced-mode-only">模拟账户余额
                     <input id="simulationBalance" type="number" min="1" step="0.01" />
                   </label>
 
-                  <label>模拟滑点 bps
+                  <label class="advanced-mode-only">模拟滑点 bps
                     <input id="simulationSlippageBps" type="number" min="0" max="1000" step="0.1" />
                   </label>
 
-                  <label class="full">账户地址
+                  <label class="full advanced-mode-only">账户地址
                     <div class="address-balance-row">
                       <input id="address" type="text" />
                       <div class="mini-balance">
@@ -2892,7 +2973,7 @@
                 </div>
               </div>
 
-              <div class="block">
+              <div class="block advanced-mode-only">
                 <div class="block-head">
                   <div class="block-title">平台凭证</div>
                   <span class="tag">KEYS</span>
@@ -2937,7 +3018,9 @@
                   <label class="full">交易策略
                     <select id="strategyType">
                       <option value="classic">经典补仓策略</option>
-                      <option value="smart_regime_v1">智能趋势策略 V1</option><option value="trend_only_v1">Trend Only V1（推荐）</option>
+                      <option value="smart_regime_v1">智能趋势策略 V1</option>
+                      <option value="trend_only_v2">Trend Only V2（推荐）</option>
+                      <option value="trend_only_v1">Trend Only V1（兼容保留）</option>
                     </select>
                     <span class="field-help">切换策略只改变当前账户，已有策略数据不会被删除。</span>
                   </label>
@@ -3117,6 +3200,8 @@
                 <button class="save" id="saveBtn">保存参数</button>
                 <button class="start" id="startBtn">启动机器人</button>
                 <button class="stop" id="stopBtn">停止机器人</button>
+                <button class="start" id="trendConfirmBtn" hidden>确认本次 Live 开仓</button>
+                <button class="stop" id="trendCloseBtn" hidden>平掉趋势仓位</button>
                 <button class="reset" id="resetBtn">重置状态</button>
                 <button class="manual" id="manualBtn">手动测试</button>
               </div>
@@ -3312,7 +3397,10 @@
     </div>
   </div>
 </div>
-  <script src="/strategy-view.js"></script>
+  <script>
+    window.__strategyViewLoadFailed = false;
+  </script>
+  <script src="/strategy-view.js" onerror="window.__strategyViewLoadFailed=true"></script>
   <script>
     const $ = id => document.getElementById(id);
 
@@ -3321,6 +3409,8 @@
     let latestStatusData = null;
     let latestHistoryItems = [];
     let currentTab = "overview";
+    let latestAccounts = [];
+    let configMode = "simple";
     const instrumentCatalogCache = new Map();
 
     function ensureSymbolOption(symbol) {
@@ -3422,9 +3512,12 @@
       $("smartLossCooldownMinutes").value = smart.lossCooldownMinutes;
     }
 
+    function isTrendOnlyType(type) { return type === "trend_only_v1" || type === "trend_only_v2"; }
+
     function updateStrategyForm() {
       const smart = $("strategyType").value === "smart_regime_v1";
-      const trendOnly = $("strategyType").value === "trend_only_v1";
+      const trendOnly = isTrendOnlyType($("strategyType").value);
+      const trendV2 = $("strategyType").value === "trend_only_v2";
       $("smartStrategyBlock").hidden = !smart;
       $("trendOnlyBlock").hidden = !trendOnly;
       window.TrendOnlyPanel?.setVisible(trendOnly);
@@ -3434,7 +3527,7 @@
         ? "智能策略实际仓位还会受单轮风险、保证金和可用余额限制。"
         : "经典策略的首次固定名义仓位。";
       $("strategyContext").innerHTML = trendOnly
-        ? '<span class="strategy-context-dot"></span><span><strong>Trend Only V1</strong>只做趋势、单仓且不补仓；详细参数与 Live 确认在页面下方独立面板。</span>'
+        ? `<span class="strategy-context-dot"></span><span><strong>${trendV2 ? "Trend Only V2" : "Trend Only V1"}</strong>只做趋势、单仓且不补仓；${trendV2 ? "支持突破、回踩与延续入场。" : "V1 兼容模式。"}</span>`
         : smart
           ? '<span class="strategy-context-dot"></span><span><strong>智能趋势策略 V1</strong>已启用：下方参数独立生效，经典补仓字段已隐藏。</span>'
           : '<span class="strategy-context-dot"></span><span><strong>经典补仓策略</strong>使用固定补仓与止盈参数。</span>';
@@ -3448,11 +3541,22 @@
         $("maxAdds").value = 0;
       }
       for (const [id, message] of [
-        ["manualBtn", "Trend Only V1 禁止手动加仓，请使用趋势面板平仓。"],
+        ["manualBtn", "Trend Only 禁止手动加仓，请使用趋势面板平仓。"],
         ["resetBtn", "趋势状态不可通过重置清除，请使用趋势平仓或核对订单。"]
       ]) {
-        const button = $(id); button.hidden = trendOnly; button.disabled = trendOnly; button.title = trendOnly ? message : "";
+        const button = $(id); button.hidden = trendOnly || (smart && id === "manualBtn"); button.disabled = trendOnly || (smart && id === "manualBtn"); button.title = trendOnly ? message : "";
       }
+      $("startBtn").textContent = trendOnly ? "启动趋势监控" : "启动机器人";
+      $("stopBtn").textContent = trendOnly ? "停止新开仓" : "停止机器人";
+      $("trendConfirmBtn").hidden = !trendOnly;
+      $("trendCloseBtn").hidden = !trendOnly;
+      applyConfigMode();
+    }
+
+    function applyConfigMode() {
+      $("tab-config").classList.toggle("simple-mode", configMode === "simple");
+      $("simpleModeBtn").classList.toggle("active", configMode === "simple");
+      $("advancedModeBtn").classList.toggle("active", configMode === "advanced");
     }
 
     function parseNumberList(value, fallback) {
@@ -3580,7 +3684,7 @@
         : type === "warning"
         ? "pill-warning"
         : "pill-normal";
-      return `<span class="status-inline ${cls}">${text}</span>`;
+      return `<span class="status-inline ${cls}">${safeText(text)}</span>`;
     }
 
     function setTab(tab) {
@@ -3597,12 +3701,18 @@
       $("name").value = cfg.name || "";
       $("platform").value = cfg.platform || "hyperliquid";
       $("address").value = cfg.address || "";
-      $("privateKey").value = cfg.privateKey || "";
-      $("apiKey").value = cfg.apiKey || "";
-      $("apiSecret").value = cfg.apiSecret || "";
-      $("starkPrivateKey").value = cfg.starkPrivateKey || "";
-      $("publicKey").value = cfg.publicKey || "";
-      $("vault").value = cfg.vault || "";
+      for (const [id, flag, label] of [
+        ["privateKey", "hasPrivateKey", "Hyperliquid 私钥"],
+        ["apiKey", "hasApiKey", "API Key"],
+        ["apiSecret", "hasApiSecret", "API Secret"],
+        ["starkPrivateKey", "hasStarkPrivateKey", "Extended Stark 私钥"],
+        ["publicKey", "hasPublicKey", "Extended Public Key"],
+        ["vault", "hasVault", "Extended Vault"]
+      ]) {
+        const input = $(id);
+        input.value = "";
+        input.placeholder = cfg[flag] ? "已配置，留空则不修改" : `${label} 未配置`;
+      }
       ensureSymbolOption(cfg.symbol || "ETH");
       updateInstrumentOptions(cfg.platform || "hyperliquid", cfg.symbol || "ETH");
       $("quoteAsset").value = cfg.quoteAsset || "USDC";
@@ -3611,12 +3721,12 @@
       $("simulationSlippageBps").value = cfg.simulationSlippageBps || 0;
       $("side").value = cfg.side || "long";
       $("strategyType").value = cfg.strategyType || "classic";
-      $("leverage").value = cfg.strategyType === "trend_only_v1" ? 10 : (cfg.leverage || 10);
+      $("leverage").value = isTrendOnlyType(cfg.strategyType) ? 10 : (cfg.leverage || 10);
       $("baseAmount").value = cfg.baseAmount || 1000;
       $("addAmount").value = cfg.addAmount || 1000;
       $("takeProfit").value = cfg.takeProfit || 0.01;
       $("addTrigger").value = cfg.addTrigger || 0.005;
-      $("maxAdds").value = cfg.strategyType === "trend_only_v1" ? 0 : (cfg.maxAdds ?? 5);
+      $("maxAdds").value = isTrendOnlyType(cfg.strategyType) ? 0 : (cfg.maxAdds ?? 5);
       $("interval").value = cfg.interval || 3000;
       setSmartFields(cfg.smartStrategy);
       window.__pendingTrendOnlyConfig = cfg.trendOnlyConfig || window.TrendOnlyPanel?.defaults || {};
@@ -3625,20 +3735,35 @@
     }
 
     function row(k, v, cls = "") {
-      return `<div class="data-row"><div class="data-k">${k}</div><div class="data-v ${cls}">${v}</div></div>`;
+      return `<div class="data-row"><div class="data-k">${safeText(k)}</div><div class="data-v ${safeText(cls, "")}">${safeText(v)}</div></div>`;
     }
 
     function quick(k, v, cls = "") {
       return `
         <div class="quick-row">
-          <div class="quick-k">${k}</div>
-          <div class="quick-v ${cls}">${v}</div>
+          <div class="quick-k">${safeText(k)}</div>
+          <div class="quick-v ${safeText(cls, "")}">${safeText(v)}</div>
         </div>
       `;
     }
 
+    function accountMatchesFilter(acc) {
+      const q = String($("accountSearch")?.value || "").trim().toLowerCase();
+      const filter = $("accountFilter")?.value || "all";
+      const haystack = [acc.name, acc.platform, acc.symbol, acc.quoteAsset, acc.strategyLabel, acc.strategyType].join(" ").toLowerCase();
+      if (q && !haystack.includes(q)) return false;
+      if (filter === "running") return !!acc.running;
+      if (filter === "stopped") return !acc.running;
+      if (filter === "error") return !!acc.lastError;
+      if (filter === "position") return !!acc.hasPosition;
+      if (filter === "pending") return !!acc.hasPendingOrder;
+      return true;
+    }
+
     function renderAccountList(accounts, currentId, currentState) {
       const accountList = $("accountList");
+      latestAccounts = Array.isArray(accounts) ? accounts : [];
+      accounts = latestAccounts.filter(accountMatchesFilter);
       const scratch = document.createElement("div");
       scratch.innerHTML = accounts.map(acc => {
         return `
@@ -3649,14 +3774,8 @@
             </div>
 
             <div class="account-meta">
-              平台：${safeText(acc.platform || "-")}<br/>
-              ${acc.symbol || "-"}/${acc.quoteAsset || "USDT"} ｜ ${
-                acc.strategyType === "trend_only_v1"
-                  ? "Trend Only V1"
-                  : acc.strategyType === "smart_regime_v1"
-                    ? (acc.side === "long" ? "智能做多" : acc.side === "short" ? "智能做空" : "智能多空")
-                  : (acc.side === "long" ? "做多" : "做空")
-              }
+              ${safeText(acc.platform || "-")} / ${safeText(acc.symbol || "-")}${safeText(acc.quoteAsset || "USDT")}<br/>
+              ${safeText(acc.strategyLabel || "-")}
             </div>
 
             <div class="account-grid">
@@ -3723,24 +3842,73 @@
     }
     window.selectAccount = selectAccount;
 
+    function fallbackTrendView(cfg, st) {
+      const trend = st.trendOnly || {};
+      const signal = trend.signal || {};
+      const indicators = trend.indicators || {};
+      const position = trend.position;
+      const pending = trend.pendingOrder;
+      const marketMap = { trend: "趋势", strong_trend: "强趋势", trend_continuation: "趋势延续", trend_pullback: "趋势回踩", trend_breakout: "趋势启动", extended_no_chase: "趋势已走远，等待回踩", chop: "震荡", unclear: "不明确", data_insufficient: "数据不足" };
+      const directionMap = { long: "做多趋势", short: "做空趋势", none: "无方向" };
+      const market = trend.weekendBlocked ? "周末禁开" : (marketMap[signal.regime] || "数据不足");
+      const direction = directionMap[position?.side || signal.directionRaw || signal.direction] || "无方向";
+      const weekend = trend.weekendBlocked ? "周末禁止新开仓" : "允许交易";
+      const nextAction = pending?.status === "unknown_order_state" ? "订单结果未知，禁止重复下单" : (st.lastAction || "等待趋势");
+      const warn = pending?.status === "unknown_order_state" ? "red" : "";
+      const signalRows = [
+        ["市场阶段", market], ["原始趋势方向", direction], ["交易方向", signal.tradeDirection === "long" ? "准备做多" : signal.tradeDirection === "short" ? "准备做空" : "暂不交易"], ["当前阻断原因", (signal.blockers?.length ? signal.blockers : signal.reasons || []).join("；") || "无"], ["周末过滤", weekend],
+        ["CHOP", indicators.chop ?? "-"], ["ADX", indicators.adx ?? "-"], ["ATR", indicators.atr ?? "-"],
+        ["趋势评分", signal.score ?? 0], ["1H 方向", directionMap[indicators.trendDirection] || "-"],
+        ["4H 方向", directionMap[indicators.higherDirection] || "-"],
+        ["信号原因", (signal.reasons || []).join("；") || "-"]
+      ];
+      const positionRows = [
+        ["是否有仓位", position ? "有" : "无"], ["方向", position ? direction : "-"],
+        ["入场价", position?.entryPrice ?? "-"], ["仓位数量", position?.positionSize ?? "-"],
+        ["仓位价值", position?.positionValue ?? "-"], ["当前 R 倍数", position?.rMultiple ?? "-"],
+        ["初始止损价", position?.initialStopLossPrice ?? "-"], ["当前止损价", position?.currentStopLossPrice ?? "-"],
+        ["是否已保本", position?.breakEvenActivated ? "已保本" : "未保本"],
+        ["是否已启动移动止盈", position?.trailingActive ? "已启动" : "未启动"],
+        ["pendingOrder 状态", pending?.status || "无待确认订单", warn],
+        ["clientOrderId", pending?.clientOrderId || "-", warn]
+      ];
+      return { market, direction, weekend, nextAction, signalRows, positionRows, rightStatusRows: [], rightRiskRows: [] };
+    }
+
+    function getTrendView(cfg, st) {
+      if (window.StrategyView?.buildTrendView) {
+        const view = window.StrategyView.buildTrendView(cfg, st);
+        return {
+          ...view,
+          signalRows: view.strategyRows,
+          positionRows: view.positionRows
+        };
+      }
+      return fallbackTrendView(cfg, st);
+    }
+
     function renderOverview(cfg, st) {
       const smartMode = cfg.strategyType === "smart_regime_v1";
-      const trendOnlyMode = cfg.strategyType === "trend_only_v1";
-      const trendView = trendOnlyMode ? window.StrategyView.buildTrendView(cfg, st) : null;
-      const effectiveSide = trendOnlyMode ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : smartMode ? (st.smartSide || "auto") : cfg.side;
+      const trendOnlyMode = isTrendOnlyType(cfg.strategyType);
+      const trendView = trendOnlyMode ? getTrendView(cfg, st) : null;
+      const strategyViewMissing = trendOnlyMode && (window.__strategyViewLoadFailed || !window.StrategyView?.buildTrendView);
+      const effectiveSide = trendOnlyMode ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.directionRaw || st.trendOnly?.signal?.direction || "auto") : smartMode ? (st.smartSide || "auto") : cfg.side;
       const directionText = effectiveSide === "long" ? "做多" : effectiveSide === "short" ? "做空" : "自动多空";
       $("topbarAccountName").textContent = `当前账户：${cfg.name || "-"}`;
       $("topbarAccountMeta").textContent =
-        `平台 ${cfg.platform || "-"} ｜ 币种 ${cfg.symbol || "-"} / ${cfg.quoteAsset || "USDT"} ｜ 策略 ${cfg.strategyLabel || (trendOnlyMode ? "Trend Only V1" : smartMode ? "智能趋势策略 V1" : "经典补仓策略")} ｜ 方向 ${directionText}`;
+        `${cfg.name || "-"} ｜ ${cfg.platform || "-"} ｜ ${cfg.symbol || "-"} / ${cfg.quoteAsset || "USDT"} ｜ ${cfg.strategyLabel || (trendOnlyMode ? (cfg.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1") : smartMode ? "智能趋势策略 V1" : "经典补仓策略")} ｜ ${cfg.tradeMode === "simulation" || cfg.simulationEnabled ? "模拟" : "实盘"} ｜ ${st.running ? "运行中" : "未运行"}`;
 
       $("metricPnl").textContent = `${fmt(st.pnl, 2)} U`;
       $("metricPnl").className = `hero-v ${signClass(st.pnl)}`;
 
-      $("metricRoi").textContent = `${fmt(st.roi, 2)} %`;
+      $("metricRoiLabel").textContent = trendOnlyMode ? "市场状态" : "收益率";
+      $("metricRoi").textContent = trendOnlyMode ? trendView.market : `${fmt(st.roi, 2)} %`;
       $("metricRoi").className = `hero-v ${signClass(st.roi)}`;
 
-      $("metricPrice").textContent = st.currentPrice ? fmt(st.currentPrice, 2) : "-";
-      $("metricBalance").textContent = `${st.balance ?? "-"}`;
+      $("metricPriceLabel").textContent = trendOnlyMode ? "下一步动作" : "当前价格";
+      $("metricPrice").textContent = trendOnlyMode ? trendView.nextAction : (st.currentPrice ? fmt(st.currentPrice, 2) : "-");
+      $("metricBalanceLabel").textContent = trendOnlyMode ? "账户风险" : "账户资金";
+      $("metricBalance").textContent = trendOnlyMode ? (st.lastError ? "异常" : st.trendOnly?.pendingOrder ? "待确认" : "正常") : `${st.balance ?? "-"}`;
 
       $("chipRunStatus").textContent = `状态 ${st.running ? "运行中" : "未运行"}`;
       $("chipPlatform").textContent = `平台 ${cfg.platform || "-"}`;
@@ -3751,6 +3919,8 @@
       $("balanceText").textContent = st.balance ?? "-";
       $("availableText").textContent = st.available ?? "-";
 
+      $("positionBlockTitle").textContent = trendOnlyMode ? "持仓保护" : "持仓概览";
+      $("strategyBlockTitle").textContent = trendOnlyMode ? "趋势信号解释" : "策略执行";
       const positionRows = trendOnlyMode ? trendView.positionRows.map(([key, value, cls]) => row(key, value, cls)) : [
         row("运行状态", st.running ? "运行中" : "未运行", st.running ? "green" : "red"),
         row("当前价格", st.currentPrice || "-"),
@@ -3766,7 +3936,10 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       }
       $("positionInfo").innerHTML = positionRows.join("");
 
-      const strategyRows = trendOnlyMode ? trendView.strategyRows.map(([key, value, cls]) => row(key, value, cls)) : [
+      const strategyRows = trendOnlyMode ? [
+        ...(strategyViewMissing ? [row("模块状态", "策略视图模块加载失败，请刷新页面或检查静态资源。", "red")] : []),
+        ...trendView.signalRows.map(([key, value, cls]) => row(key, value, cls))
+      ] : [
         row("平台", cfg.platform || "-"),
         row("策略", smartMode ? "智能趋势策略 V1" : "经典补仓策略"),
         row("币种", `${cfg.symbol || "-"} / ${cfg.quoteAsset || "USDT"}`),
@@ -3794,12 +3967,28 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
         strategyRows.push(row("下次止盈价", st.nextTakeProfitPrice || "-"));
       }
       $("strategyInfo").innerHTML = strategyRows.join("");
+      const replayPanel = $("signalReplayPanel");
+      replayPanel.hidden = cfg.strategyType !== "trend_only_v2";
+      if (cfg.strategyType === "trend_only_v2") {
+        const items = st.trendOnly?.signalJournal || [];
+        $("signalReplayList").innerHTML = items.length ? items.map(item => row(
+          `${new Date(item.time).toLocaleString("zh-CN")} · ${item.entryMode || item.regime || "判断"}`,
+          `${item.entryPermission === "allowed" ? "允许开仓" : "已阻断"}｜${(item.blockers || []).join("；") || item.finalAction || "条件通过"}`,
+          item.entryPermission === "allowed" ? "green" : "orange"
+        )).join("") : row("暂无回放", "等待下一根已收盘 K 线");
+      }
 
       const rightType = st.lastError ? "danger" : st.running ? "normal" : "warning";
       const rightText = st.lastError ? "异常" : st.running ? "运行中" : "未运行";
       $("rightRunTag").outerHTML = inlineStatus(rightType, rightText).replace("<span ", '<span id="rightRunTag" ');
 
-      const rightStatusRows = trendOnlyMode ? trendView.rightStatusRows.map(([key, value, cls]) => quick(key, value, cls)) : [
+      const pendingStatus = st.trendOnly?.pendingOrder?.status || "无";
+      const rightStatusRows = trendOnlyMode ? [
+        quick("当前状态", st.running ? "运行中" : "未运行", st.running ? "green" : "orange"),
+        quick("是否异常", st.lastError ? "异常" : "正常", st.lastError ? "red" : "green"),
+        quick("pendingOrder", pendingStatus, pendingStatus === "unknown_order_state" ? "red" : ""),
+        quick("最后动作", st.lastAction || trendView.nextAction || "-")
+      ] : [
         quick("账户名称", cfg.name || "-"),
         quick("当前价格", st.currentPrice || "-"),
         quick("开仓均价", st.entryPrice || "-"),
@@ -3819,7 +4008,15 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       if (!trendOnlyMode) rightStatusRows.push(quick("更新时间", st.updatedAt || "-"));
       $("rightStatusList").innerHTML = rightStatusRows.join("");
 
-      const rightRiskRows = trendOnlyMode ? trendView.rightRiskRows.map(([key, value, cls]) => quick(key, value, cls)) : [
+      const rightRiskRows = trendOnlyMode ? [
+        quick("账户余额", st.balance ?? "-"),
+        quick("可用余额", st.available ?? "-"),
+        quick("单笔风险比例", `${fmt(Number(cfg.trendOnlyConfig?.riskPerTrade || 0) * 100, 2)}%`),
+        quick("日亏损限制", `${fmt(Number(cfg.trendOnlyConfig?.maxDailyLossRatio || 0) * 100, 2)}%`),
+        quick("当前止损价", st.trendOnly?.position?.currentStopLossPrice ?? "-"),
+        quick("当前 R", st.trendOnly?.position?.rMultiple ?? "-"),
+        quick("错误信息", st.lastError || "-", st.lastError ? "red" : "muted")
+      ] : [
         quick("账户余额", st.balance ?? "-"),
         quick("可用余额", st.available ?? "-"),
         quick("下一次补仓名义仓位", `${st.nextAddNotionalU || 0} U`),
@@ -3841,7 +4038,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
 
       const logs = Array.isArray(st.logs) ? st.logs : [];
       $("logsList").innerHTML = logs.length
-        ? logs.map(x => `<div class="log-item">${x}</div>`).join("")
+        ? logs.map(x => `<div class="log-item">${safeText(x)}</div>`).join("")
         : `<div class="log-item muted">暂无日志</div>`;
     }
 
@@ -3873,15 +4070,15 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
 
       $("historyTableBody").innerHTML = latestHistoryItems.map((item, idx) => `
   <tr>
-    <td>${item.time || "-"}</td>
-    <td>${item.symbol || "-"}</td>
-    <td>${item.side || "-"}</td>
+    <td>${safeText(item.time || "-")}</td>
+    <td>${safeText(item.symbol || "-")}</td>
+    <td>${safeText(item.side || "-")}</td>
     <td>${fmt(item.entryPrice, 2)}</td>
     <td>${fmt(item.exitPrice, 2)}</td>
     <td class="${signClass(item.pnl)}">${fmt(item.pnl, 2)}</td>
     <td class="${signClass(item.roi)}">${fmt(item.roi, 2)}%</td>
     <td>${Number(item.addCount || 0)}</td>
-    <td>${item.platform || "-"}</td>
+    <td>${safeText(item.platform || "-")}</td>
     <td>
       <button class="ghost" style="min-height:36px;padding:8px 12px;font-size:12px;"
         onclick="openVoucherModal(${idx})">
@@ -4014,7 +4211,7 @@ window.closeVoucherModal = function() {
 
     async function saveConfig() {
       const btn = $("saveBtn");
-      const trendOnlySelected = $("strategyType").value === "trend_only_v1";
+      const trendOnlySelected = isTrendOnlyType($("strategyType").value);
       const pending = latestStatusData?.state?.trendOnly?.pendingOrder;
       if (trendOnlySelected && pending) {
         showToast("订单状态尚未确认，禁止保存关键参数。", "error");
@@ -4027,12 +4224,6 @@ window.closeVoucherModal = function() {
           name: $("name").value.trim(),
           platform: $("platform").value,
           address: $("address").value.trim(),
-          privateKey: $("privateKey").value.trim(),
-          apiKey: $("apiKey").value.trim(),
-          apiSecret: $("apiSecret").value.trim(),
-          starkPrivateKey: $("starkPrivateKey").value.trim(),
-          publicKey: $("publicKey").value.trim(),
-          vault: $("vault").value.trim(),
           symbol: $("symbol").value,
           quoteAsset: $("quoteAsset").value,
           tradeMode: $("tradeMode").value,
@@ -4073,6 +4264,10 @@ window.closeVoucherModal = function() {
             lossCooldownMinutes: Number($("smartLossCooldownMinutes").value)
           }
         };
+        for (const key of ["privateKey", "apiKey", "apiSecret", "starkPrivateKey", "publicKey", "vault"]) {
+          const value = $(key).value.trim();
+          if (value) payload[key] = value;
+        }
 
         const res = await api("/api/config", {
           method: "POST",
@@ -4179,8 +4374,8 @@ window.closeVoucherModal = function() {
 
     async function manualOrder() {
       const btn = $("manualBtn");
-      if ($("strategyType").value === "trend_only_v1") {
-        showToast("Trend Only V1 禁止手动加仓，请使用趋势面板平仓。", "error");
+      if (isTrendOnlyType($("strategyType").value)) {
+        showToast("Trend Only 禁止手动加仓，请使用趋势面板平仓。", "error");
         return;
       }
       const symbol = $("symbol").value;
@@ -4224,7 +4419,7 @@ window.closeVoucherModal = function() {
 
     async function runSimpleAction(path, btnId, loadingText, successText, failText) {
       const btn = $(btnId);
-      if (path === "/api/reset" && $("strategyType").value === "trend_only_v1") {
+      if (path === "/api/reset" && isTrendOnlyType($("strategyType").value)) {
         showToast("趋势状态不可通过重置清除，请使用趋势平仓或核对订单。", "error");
         return;
       }
@@ -4254,7 +4449,14 @@ window.closeVoucherModal = function() {
     $("confirmDeleteBtn").addEventListener("click", deleteCurrentAccount);
 
     $("saveBtn").addEventListener("click", saveConfig);
-    $("strategyType").addEventListener("change", updateStrategyForm);
+    $("simpleModeBtn").addEventListener("click", () => { configMode = "simple"; applyConfigMode(); });
+    $("advancedModeBtn").addEventListener("click", () => { configMode = "advanced"; applyConfigMode(); });
+    $("accountSearch").addEventListener("input", () => renderAccountList(latestAccounts, currentAccountId, latestStatusData?.state || {}));
+    $("accountFilter").addEventListener("change", () => renderAccountList(latestAccounts, currentAccountId, latestStatusData?.state || {}));
+    $("strategyType").addEventListener("change", () => {
+      if (isTrendOnlyType($("strategyType").value)) window.TrendOnlyPanel?.setConfig(window.TrendOnlyPanel?.getConfig() || window.__pendingTrendOnlyConfig || {});
+      updateStrategyForm();
+    });
     document.addEventListener("trend-only-panel-ready", () => {
       if (window.__pendingTrendOnlyConfig) window.TrendOnlyPanel?.setConfig(window.__pendingTrendOnlyConfig);
       updateStrategyForm();
@@ -4303,6 +4505,8 @@ window.closeVoucherModal = function() {
     $("resetBtn").addEventListener("click", () =>
       runSimpleAction("/api/reset", "resetBtn", "重置中", "状态已重置", "重置失败")
     );
+    $("trendConfirmBtn").addEventListener("click", () => window.TrendOnlyPanel?.confirmLive?.());
+    $("trendCloseBtn").addEventListener("click", () => window.TrendOnlyPanel?.closePosition?.());
 
     document.querySelectorAll("[data-close]").forEach(btn => {
       btn.addEventListener("click", () => closeModal(btn.dataset.close));

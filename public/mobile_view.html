@@ -419,6 +419,32 @@
       return n.toFixed(digits).replace(/\.?0+$/, "");
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#096;");
+    }
+
+    function trendLabel(payload) {
+      const trend = payload.state?.trendOnly || {};
+      const signal = trend.signal || {};
+      const indicators = trend.indicators || {};
+      const pending = trend.pendingOrder;
+      const position = trend.position || {};
+      const market = trend.weekendBlocked ? "周末禁开" : ({ trend: "趋势", strong_trend: "强趋势", trend_continuation: "趋势延续", trend_pullback: "趋势回踩", trend_breakout: "趋势启动", extended_no_chase: "趋势已走远，等待回踩", chop: "震荡", unclear: "不明确", data_insufficient: "数据不足" })[signal.regime] || "数据不足";
+      const direction = ({ long: "做多趋势", short: "做空趋势", none: "无方向" })[position.side || signal.directionRaw || signal.direction] || "无方向";
+      const nextAction = pending?.status === "unknown_order_state" ? "订单结果未知，禁止重复下单" : (payload.state?.lastAction || "等待趋势");
+      const blockers = (signal.blockers?.length ? signal.blockers : signal.reasons || []).join("；");
+      return { trend, indicators, pending, position, market, direction, nextAction, blockers };
+    }
+
     function renderOverview(payload) {
       const cfg = payload.account;
       const st = payload.state;
@@ -437,13 +463,15 @@
       runningEl.className = "v " + (st.running ? "green" : "red");
 
       $("ovSymbol").textContent = `${cfg.symbol || "-"} / ${cfg.quoteAsset || "-"}`;
-      $("ovSide").textContent = cfg.side === "long" ? "做多" : "做空";
+      const trendOnly = cfg.strategyType === "trend_only_v1" || cfg.strategyType === "trend_only_v2";
+      const trend = trendOnly ? trendLabel(payload) : null;
+      $("ovSide").textContent = trendOnly ? trend.direction : (cfg.side === "long" ? "做多" : "做空");
       $("ovPrice").textContent = fmt(st.currentPrice || 0, 4);
-      $("ovEntry").textContent = st.entryPrice ? fmt(st.entryPrice, 4) : "-";
-      $("ovPositionSize").textContent = st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-");
-      $("ovMargin").textContent = fmt(st.marginUsedU || 0, 4);
+      $("ovEntry").textContent = trendOnly ? `CHOP ${fmt(trend.indicators.chop, 2)} / ADX ${fmt(trend.indicators.adx, 2)} / ATR ${fmt(trend.indicators.atr, 2)}` : (st.entryPrice ? fmt(st.entryPrice, 4) : "-");
+      $("ovPositionSize").textContent = trendOnly ? `当前止损 ${trend.position.currentStopLossPrice ?? "-"}` : (st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-"));
+      $("ovMargin").textContent = trendOnly ? `R ${trend.position.rMultiple ?? "-"} / pending ${trend.pending?.status || "无"}` : fmt(st.marginUsedU || 0, 4);
 
-      const tipText = st.lastError || st.lastAction || "状态正常";
+      const tipText = trendOnly ? `${trend.market} ｜ ${trend.nextAction}${trend.blockers ? ` ｜ ${trend.blockers}` : ""}` : (st.lastError || st.lastAction || "状态正常");
       $("ovErrorBox").textContent = tipText;
 
       $("ovPnl").className = "metric-value " + (Number(st.pnl || 0) >= 0 ? "green" : "red");
@@ -452,12 +480,12 @@
 
     function renderAccounts(items, selectedId) {
       $("accountList").innerHTML = items.map(acc => `
-        <div class="account-item ${acc.id === selectedId ? "active" : ""}" onclick="selectAccount('${acc.id}')">
-          <div class="account-name">${acc.name}</div>
+        <div class="account-item ${acc.id === selectedId ? "active" : ""}" onclick="selectAccount('${escapeAttr(acc.id)}')">
+          <div class="account-name">${escapeHtml(acc.name)}</div>
           <div class="account-meta">
-            平台：${acc.platform}<br>
-            币种：${acc.symbol}/${acc.quoteAsset || "-"}<br>
-            方向：${acc.side === "long" ? "做多" : "做空"}<br>
+            平台：${escapeHtml(acc.platform)}<br>
+            币种：${escapeHtml(acc.symbol)}/${escapeHtml(acc.quoteAsset || "-")}<br>
+            策略：${escapeHtml(acc.strategyLabel || acc.strategyType || "-")}<br>
             状态：${acc.running ? "运行中" : "未运行"}<br>
             盈亏：${fmt(acc.pnl || 0)} U / ${fmt(acc.roi || 0, 2)}%
           </div>
@@ -480,9 +508,9 @@
 
         return `
           <div class="account-item">
-            <div class="account-name">${item.symbol || "-"} ｜ ${item.side || "-"}</div>
+            <div class="account-name">${escapeHtml(item.symbol || "-")} ｜ ${escapeHtml(item.side || "-")}</div>
             <div class="account-meta">
-              时间：${item.time || "-"}<br>
+              时间：${escapeHtml(item.time || "-")}<br>
               开仓价：${item.entryPrice ?? "-"}<br>
               平仓价：${item.exitPrice ?? "-"}<br>
               盈利：<span class="${pnlClass}">${item.pnl ?? "-"}</span> U<br>
@@ -533,5 +561,5 @@
     setInterval(() => loadCurrent(), 5000);
     setInterval(() => loadAccounts(), 15000);
   </script>
-<div id="trendOnlyBlock" hidden></div><script src="/strategy-view.js"></script><script src="/trend-only-panel.js" defer></script></body>
+<script src="/strategy-view.js"></script></body>
 </html>

@@ -1,12 +1,19 @@
 "use strict";
-const fs = require("fs"), path = require("path"), crypto = require("crypto"), T = require("./trend_only");
+const fs = require("fs"), path = require("path"), crypto = require("crypto"), V1 = require("./trend_only"), V2 = require("./trend_only_v2");
 
 function createTrendRuntime(d) {
   const file = path.join(d.directory, "trend_only_runtime.json");
   let states = {};
   if (fs.existsSync(file)) states = JSON.parse(fs.readFileSync(file, "utf8")); // Fail closed on corrupted state.
   const approvals = new Map();
-  function get(acc) { return states[acc.id] ||= T.initialState(); }
+  function isV2(acc) { return acc?.strategyType === "trend_only_v2"; }
+  function engine(acc) { return isV2(acc) ? V2 : V1; }
+  function get(acc) {
+    const initial = engine(acc).initialState();
+    const state = states[acc.id] ||= initial;
+    for (const [key, value] of Object.entries(initial)) if (state[key] === undefined) state[key] = value;
+    return state;
+  }
   function save() {
     const tmp = file + ".tmp";
     const fd = fs.openSync(tmp, "w", 0o600);
@@ -19,12 +26,19 @@ function createTrendRuntime(d) {
     st.lastAction = message;
     if (get(acc).lastLog !== message) { d.log(acc.id, message); get(acc).lastLog = message; }
   }
+  function annotateSignal(acc, reason, finalAction) {
+    if (!isV2(acc)) return;
+    const s = get(acc), item = (s.signalJournal || []).findLast?.(entry => entry.time === s.signal?.signalTime) || (s.signalJournal || []).at(-1);
+    if (!item || item.time !== s.signal?.signalTime) return;
+    item.finalAction = finalAction || reason || item.finalAction;
+    if (reason && !(item.blockers || []).includes(reason)) item.blockers = [...(item.blockers || []), reason];
+  }
   function publish(acc, st) {
     const s = get(acc), p = s.position;
-    const weekendBlocked = T.isWeekendBlocked(Date.now(), T.normalizeConfig(acc.trendOnlyConfig));
+    const T = engine(acc), weekendBlocked = T.isWeekendBlocked(Date.now(), T.normalizeConfig(acc.trendOnlyConfig));
     const signal = s.signal || {
       regime: "data_insufficient",
-      direction: "none",
+      direction: "none", directionRaw: "none", tradeDirection: "none", entryPermission: "blocked", blockers: [],
       score: 0,
       reasons: [weekendBlocked ? "周末过滤：当前为周六/周日，禁止新开仓" : (s.lastLog || "行情数据不足，等待已收盘 K 线")]
     };
@@ -40,7 +54,9 @@ function createTrendRuntime(d) {
       lastLog: s.lastLog || "",
       dailyLoss: Number(s.dailyLoss || 0),
       consecutiveLosses: Number(s.consecutiveLosses || 0),
-      pauseUntil: Number(s.pauseUntil || 0)
+      pauseUntil: Number(s.pauseUntil || 0),
+      trendContext: s.trendContext || null,
+      signalJournal: (s.signalJournal || []).slice(-50).reverse()
     };
     st.entryPrice = p?.entryPrice || 0; st.positionQty = p?.positionSize || 0;
     st.positionValueU = st.entryPrice * st.positionQty; st.marginUsedU = p ? st.positionValueU / p.leverage : 0;
@@ -53,6 +69,7 @@ function createTrendRuntime(d) {
     }
   }
   async function reconcileExternalExit(acc, st, remote) {
+    const T = engine(acc);
     const s = get(acc), p = s.position;
     if (!p || remote.qty >= p.positionSize || (remote.qty > 0 && remote.side !== p.side)) return false;
     const delta = p.positionSize - remote.qty;
@@ -141,6 +158,7 @@ function createTrendRuntime(d) {
     return { terminal: true, fill: qty ? { qty, price, exchangeOrderId: String(order.orderId), clientOrderId: o.clientOrderId } : null };
   }
   function settle(acc, st, o, result) {
+    const T = engine(acc);
     const s = get(acc);
     if (!result.terminal) { o.status = "unknown_order_state"; save(); return false; }
     if (result.fill) {
@@ -149,6 +167,7 @@ function createTrendRuntime(d) {
         s.lastEntrySignalTime = o.plan.signal.signalTime;
         log(acc, st, `趋势开仓成功：${acc.symbol} ${s.position.side === "long" ? "做多" : "做空"}，${s.position.leverage}倍杠杆，入场价 ${s.position.entryPrice}，初始止损 ${s.position.initialStopLossPrice}`);
       } else {
+        if (isV2(acc)) s.lastClosedTrendId = s.position?.trendId || "";
         const v = T.recordClose(account(acc, st), result.fill, o.reason);
         if (paper(acc)) s.simBalance += v.pnl;
         log(acc, st, `趋势平仓成交：${o.reason}，数量 ${result.fill.qty}，净盈亏 ${v.pnl.toFixed(4)}`);
@@ -159,6 +178,7 @@ function createTrendRuntime(d) {
     return true;
   }
   async function submit(acc, st, kind, plan, reason = "") {
+    const T = engine(acc);
     const s = get(acc);
     if (s.pendingOrder) throw Error("已有 pendingOrder，禁止提交");
     const c = T.normalizeConfig(acc.trendOnlyConfig), id = "0x" + crypto.randomBytes(16).toString("hex");
@@ -201,9 +221,9 @@ function createTrendRuntime(d) {
       return false;
     }
   }
-  function configHash(acc) { return crypto.createHash("sha256").update(JSON.stringify([acc.id, acc.platform, acc.symbol, acc.tradeMode, acc.simulationEnabled, T.normalizeConfig(acc.trendOnlyConfig)])).digest("hex"); }
+  function configHash(acc) { const T = engine(acc); return crypto.createHash("sha256").update(JSON.stringify([acc.id, acc.platform, acc.symbol, acc.tradeMode, acc.simulationEnabled, T.normalizeConfig(acc.trendOnlyConfig)])).digest("hex"); }
   async function tick(acc, st, action) {
-    const s = get(acc), c = T.normalizeConfig(acc.trendOnlyConfig);
+    const T = engine(acc), s = get(acc), c = T.normalizeConfig(acc.trendOnlyConfig);
     try {
       st.currentPrice = await d.price(acc); publish(acc, st); flushJournal(acc);
       st.updatedAt = new Date().toLocaleString("zh-CN");
@@ -230,18 +250,22 @@ function createTrendRuntime(d) {
         const values = sets.map((x, n) => T.indicatorsFor(x.candles, c, [c.entryTimeframe, c.trendTimeframe, c.higherTimeframe][n]));
         i = { ...values[0], config: c, trendDirection: T.directionOf(values[1]), higherDirection: T.directionOf(values[2]), price: Number(st.currentPrice) };
         s.signal = T.detectMarketRegime(i.candles, i);
+        if (isV2(acc)) {
+          T.updateTrendContext(s, s.signal, i);
+          T.appendShadowSignal(s, acc.id, s.signal, i, s.signal.entryPermission === "allowed" ? "允许开仓" : (s.signal.blockers || []).join("；"));
+        }
         s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, trendDirection: i.trendDirection, higherDirection: i.higherDirection };
       } catch (e) { log(acc, st, `趋势行情暂不可用：${e.message}；已有价格止损继续执行`); return; }
       if (s.position) {
         const result = T.manageTrendOnlyPosition(account(acc, st), { price: st.currentPrice }, i);
         result.logs.forEach(m => log(acc, st, m)); save();
-        if (result.reason) await submit(acc, st, "close", null, result.reason);
-        else log(acc, st, s.position.trailingActive ? "移动止盈中" : s.position.breakEvenActivated ? "已保本，等待趋势延续" : "已开仓，等待 1R");
+        if (result.reason) { annotateSignal(acc, result.reason, "平仓信号"); await submit(acc, st, "close", null, result.reason); }
+        else { const actionText = s.position.defensiveMode ? "趋势衰减，进入防守模式" : s.position.trailingActive ? "移动止盈中" : s.position.breakEvenActivated ? "已保本，等待趋势延续" : "已开仓，等待 1R"; annotateSignal(acc, "当前已有仓位", actionText); log(acc, st, actionText); }
         return;
       }
-      if (!st.running) { log(acc, st, "趋势监控已停止，禁止新开仓"); return; }
-      if (d.conflictingAccount?.(acc)) { log(acc, st, "同一交易账户与合约已被其他策略占用，禁止新开仓"); return; }
-      if (remote.openOrders.length) { log(acc, st, "交易所存在挂单，禁止新开仓"); return; }
+      if (!st.running) { annotateSignal(acc, "趋势监控已停止，禁止新开仓", "监控已停止"); log(acc, st, "趋势监控已停止，禁止新开仓"); return; }
+      if (d.conflictingAccount?.(acc)) { annotateSignal(acc, "同一交易账户与合约已被其他策略占用", "风控暂停"); log(acc, st, "同一交易账户与合约已被其他策略占用，禁止新开仓"); return; }
+      if (remote.openOrders.length) { annotateSignal(acc, "交易所存在挂单", "等待挂单完成"); log(acc, st, "交易所存在挂单，禁止新开仓"); return; }
       const approval = approvals.get(acc.id);
       const confirmed = approval && approval.signalTime === s.signal.signalTime && approval.expires >= Date.now() && approval.configHash === configHash(acc);
       const a = { ...account(acc, st), confirmLive: !!confirmed };
@@ -249,7 +273,8 @@ function createTrendRuntime(d) {
       const preview = T.tryOpenTrendOnlyPosition({ ...a, confirmLive: true }, s.signal, { ...i, ...bounds });
       s.preview = preview.allowed ? { ...preview, expires: Date.now() + 60000, configHash: configHash(acc) } : null;
       const plan = T.tryOpenTrendOnlyPosition(a, s.signal, { ...i, ...bounds });
-      if (!plan.allowed) { log(acc, st, plan.reason); return; }
+      if (!plan.allowed) { annotateSignal(acc, plan.reason, plan.reason); log(acc, st, plan.reason); return; }
+      annotateSignal(acc, "", paper(acc) ? "Paper 开仓" : "Live 信号已确认，准备开仓");
       await submit(acc, st, "open", plan);
     } finally { publish(acc, st); save(); }
   }

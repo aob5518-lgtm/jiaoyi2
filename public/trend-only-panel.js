@@ -9,7 +9,13 @@
     emaMid: 50, emaSlow: 200, minAdxToTrade: 25, maxChopToTrade: 45, stopLossAtrMultiplier: 1.5,
     trailingAtrMultiplier: 2, breakEvenAtR: 1, trailStartAtR: 3, timeStopBars: 8,
     minProfitForTimeStopR: 0.5, breakoutLookback: 20, requireMultiTimeframeConfirm: true,
-    entryTimeframe: "15m", trendTimeframe: "1h", higherTimeframe: "4h"
+    entryTimeframe: "15m", trendTimeframe: "1h", higherTimeframe: "4h", version: "v2",
+    chopIdealMax: 45, chopTransitionMax: 52, chopHardBlock: 61.8, adxTrendStart: 25, adxTrendValid: 30,
+    adxStrong: 35, adxVeryStrong: 40, minDiSpread: 8, higherTimeframeMode: "not_against",
+    entryModes: ["breakout_entry", "pullback_entry", "continuation_entry"], pullbackEmaBandAtr: 0.5,
+    pullbackConfirmLookback: 5, pullbackInvalidationAtr: 0.2, continuationLookback: 8, microBreakLookback: 5,
+    maxEntryExtensionAtr: 1.5, maxStopDistanceAtr: 2.2, minStopDistanceAtr: 0.8, softBreakEvenAtR: 1,
+    realBreakEvenAtR: 1.5, lockProfitAtR: 2.5, defensiveTrailingAtrMultiplier: 1.2, reversalConfirmBars: 2
   };
   const labels = {
     enabled: "启用趋势策略", leverage: "杠杆（最高 10）", allowWeekendOpen: "允许周末开新仓", weekendMode: "周末保护模式",
@@ -19,12 +25,18 @@
     emaSlow: "EMA 慢线", minAdxToTrade: "最低 ADX", maxChopToTrade: "最高 CHOP", stopLossAtrMultiplier: "初始止损 ATR 倍数",
     trailingAtrMultiplier: "移动止盈 ATR 倍数", breakEvenAtR: "保本启动 R", trailStartAtR: "移动止盈启动 R",
     timeStopBars: "时间止损 K 线数", minProfitForTimeStopR: "时间止损最低 R", breakoutLookback: "突破回看 K 线数",
-    requireMultiTimeframeConfirm: "要求多周期确认", entryTimeframe: "入场周期", trendTimeframe: "趋势周期", higherTimeframe: "高周期"
+    requireMultiTimeframeConfirm: "要求多周期确认", entryTimeframe: "入场周期", trendTimeframe: "趋势周期", higherTimeframe: "高周期",
+    version: "策略版本", chopIdealMax: "CHOP 优质上限", chopTransitionMax: "CHOP 过渡上限", chopHardBlock: "CHOP 强阻断",
+    adxTrendStart: "ADX 启动", adxTrendValid: "ADX 有效", adxStrong: "ADX 强趋势", adxVeryStrong: "ADX 极强趋势", minDiSpread: "最低 DI 差值",
+    higherTimeframeMode: "多周期确认", entryModes: "入场模式", pullbackEmaBandAtr: "回踩 EMA 带宽 ATR", pullbackConfirmLookback: "回踩确认回看",
+    pullbackInvalidationAtr: "回踩失效 ATR", continuationLookback: "延续结构回看", microBreakLookback: "微结构突破回看",
+    maxEntryExtensionAtr: "最大追单距离 ATR", maxStopDistanceAtr: "最大止损距离 ATR", minStopDistanceAtr: "最小止损距离 ATR",
+    softBreakEvenAtR: "软保本启动 R", realBreakEvenAtR: "真实保本启动 R", lockProfitAtR: "锁定 1R 启动", defensiveTrailingAtrMultiplier: "防守移动止盈 ATR", reversalConfirmBars: "反转确认 K 线"
   };
   mount.innerHTML = `
     <div class="block-head">
-      <div><div class="block-title">Trend Only V1 参数</div><div class="config-section-note">趋势过滤单仓 · 无 DCA · UTC 周末默认禁开</div></div>
-      <button class="ghost" id="trendRestoreDefaults" type="button">恢复推荐参数</button>
+      <div><div class="block-title" id="trendOnlyPanelTitle">Trend Only 参数</div><div class="config-section-note">趋势过滤单仓 · 无 DCA · UTC 周末默认禁开</div></div>
+      <div><button class="ghost" id="trendUpgradeV2" type="button">一键升级到 V2</button> <button class="ghost" id="trendRestoreDefaults" type="button">恢复推荐参数</button></div>
     </div>
     <div class="config-section">
       <div class="config-section-head"><div class="config-section-title">行情、仓位与风控</div><div class="config-section-note">主配置页保存会同时保存以下参数。</div></div>
@@ -35,20 +47,35 @@
       <div class="data-list" id="trendOnlyStatus"></div>
       <div class="left-note" id="trendOnlyReasons">暂无信号原因</div>
     </div>
-    <div class="sticky-buttons">
-      <button class="save" id="trendOnlySave" type="button">保存并启用 Trend Only V1</button>
-      <button class="start" id="trendOnlyConfirm" type="button">确认本次 Live 开仓</button>
-      <button class="stop" id="trendOnlyClose" type="button">平掉趋势仓位</button>
-    </div>`;
+    <div class="left-note" id="trendOnlyActionHint">趋势操作已合并到底部操作栏。</div>`;
   const fieldRoot = document.getElementById("trendOnlyFields");
   const inputs = {};
   function setConfig(config = {}) {
     const merged = { ...DEFAULTS, ...config };
     fieldRoot.replaceChildren();
+    const simpleKeys = new Set(["version", "leverage", "riskPerTrade", "allowWeekendOpen", "entryModes"]);
+    const v2Only = new Set(["version", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread", "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr", "maxStopDistanceAtr", "minStopDistanceAtr", "softBreakEvenAtR", "realBreakEvenAtR", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars"]);
+    const selectedV2 = document.getElementById("strategyType")?.value === "trend_only_v2";
+    document.getElementById("trendOnlyPanelTitle").textContent = selectedV2 ? "Trend Only V2 参数" : "Trend Only V1 参数";
+    document.getElementById("trendUpgradeV2").hidden = selectedV2;
     for (const [key, fallback] of Object.entries(DEFAULTS)) {
       const label = document.createElement("label"); label.textContent = labels[key] || key;
+      if (!simpleKeys.has(key)) label.classList.add("trend-advanced-field");
+      if (v2Only.has(key) && !selectedV2) label.hidden = true;
       let input;
-      if (key === "weekendMode" || key.endsWith("Timeframe")) {
+      if (key === "entryModes") {
+        input = document.createElement("select");
+        for (const [value, text] of [["hybrid", "混合（突破 / 回踩 / 延续）"], ["breakout_entry", "仅突破"], ["pullback_entry", "仅回踩"], ["continuation_entry", "仅延续"]]) {
+          const option = document.createElement("option"); option.value = value; option.textContent = text; input.append(option);
+        }
+        input.value = Array.isArray(merged[key]) && merged[key].length === 3 ? "hybrid" : merged[key]?.[0] || "hybrid";
+      } else if (key === "higherTimeframeMode") {
+        input = document.createElement("select");
+        for (const [value, text] of [["not_against", "高周期不反向（推荐）"], ["strict_align", "三周期严格同向"], ["off", "关闭（仅 Paper）"]]) { const option = document.createElement("option"); option.value = value; option.textContent = text; input.append(option); }
+        input.value = merged[key];
+      } else if (key === "version") {
+        input = document.createElement("input"); input.type = "text"; input.value = selectedV2 ? "Trend Only V2" : "Trend Only V1"; input.disabled = true;
+      } else if (key === "weekendMode" || key.endsWith("Timeframe")) {
         input = document.createElement("select");
         const options = key === "weekendMode" ? ["no_new_position", "force_flat_before_weekend"] : ["1m", "5m", "15m", "1h", "4h", "1d"];
         for (const item of options) {
@@ -67,7 +94,11 @@
   }
   function getConfig() {
     const result = {};
-    for (const [key, input] of Object.entries(inputs)) result[key] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
+    for (const [key, input] of Object.entries(inputs)) {
+      if (key === "entryModes") result[key] = input.value === "hybrid" ? ["breakout_entry", "pullback_entry", "continuation_entry"] : [input.value];
+      else if (key === "version") result[key] = document.getElementById("strategyType")?.value === "trend_only_v2" ? "v2" : "v1";
+      else result[key] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
+    }
     return result;
   }
   function setVisible(visible) { mount.hidden = !visible; }
@@ -75,48 +106,63 @@
     const response = await fetch(endpoint, body ? { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) } : { credentials: "same-origin" });
     const data = await response.json(); if (!response.ok || !data.ok) throw Error(data.error || "请求失败"); return data;
   }
+  function esc(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
   function render(data) {
     const trend = data.state || {}, position = trend.position, indicators = trend.indicators || {}, signal = trend.signal || {};
-    const view = window.StrategyView?.buildTrendView({ name: data.accountName, trendOnlyConfig: data.config }, { trendOnly: trend, lastAction: data.lastAction, updatedAt: "" });
-    document.getElementById("trendOnlyStatusMessage").textContent = data.active ? (view?.nextAction || data.lastAction || "等待趋势") : "当前账户尚未启用 Trend Only V1";
-    const pairs = [["市场状态", view?.market || "行情数据不足"], ["趋势方向", view?.direction || "无方向"], ["周末过滤", view?.weekend || "-"],
+    const view = window.StrategyView?.buildTrendView({ name: data.accountName, strategyType: data.strategyType, trendOnlyConfig: data.config }, { trendOnly: trend, lastAction: data.lastAction, updatedAt: "" });
+    document.getElementById("trendOnlyStatusMessage").textContent = data.active ? (view?.nextAction || data.lastAction || "等待趋势") : "当前账户尚未启用 Trend Only";
+    const pairs = [["市场阶段", view?.market || "行情数据不足"], ["原始趋势方向", view?.direction || "无方向"], ["交易方向", signal.tradeDirection === "long" ? "准备做多" : signal.tradeDirection === "short" ? "准备做空" : "暂不交易"], ["周末过滤", view?.weekend || "-"],
       ["CHOP", indicators.chop ?? "-"], ["ADX", indicators.adx ?? "-"], ["ATR", indicators.atr ?? "-"], ["趋势评分", signal.score ?? 0],
       ["当前 R", position?.rMultiple ?? "-"], ["当前止损价", position?.currentStopLossPrice ?? "-"], ["订单状态", trend.pendingOrder?.status || "无待确认订单"]];
-    document.getElementById("trendOnlyStatus").innerHTML = pairs.map(([key, value]) => `<div class="data-row"><div class="data-k">${key}</div><div class="data-v">${value}</div></div>`).join("");
+    document.getElementById("trendOnlyStatus").innerHTML = pairs.map(([key, value]) => `<div class="data-row"><div class="data-k">${esc(key)}</div><div class="data-v">${esc(value)}</div></div>`).join("");
     document.getElementById("trendOnlyReasons").textContent = (signal.reasons || []).join("；") || "暂无信号原因";
-    document.getElementById("trendOnlyConfirm").disabled = data.paper || !data.active || !trend.preview || !!trend.pendingOrder || !!position;
-    document.getElementById("trendOnlyClose").disabled = !data.active || !position;
   }
   async function refresh() {
     const data = await api("/api/trend-only");
     if (!Object.keys(inputs).length) setConfig(window.__pendingTrendOnlyConfig || data.config);
     const selector = document.getElementById("strategyType");
-    const visible = selector ? selector.value === "trend_only_v1" : data.active;
+    const visible = selector ? ["trend_only_v1", "trend_only_v2"].includes(selector.value) : data.active;
     setVisible(visible);
     if (visible) render(data);
     return data;
   }
   function report(error) { document.getElementById("trendOnlyStatusMessage").textContent = error.message || String(error); }
   document.getElementById("trendRestoreDefaults").onclick = () => setConfig(DEFAULTS);
-  document.getElementById("trendOnlySave").onclick = () => document.getElementById("saveBtn")?.click();
-  document.getElementById("trendOnlyConfirm").onclick = async () => {
+  document.getElementById("trendUpgradeV2").onclick = async () => {
+    try {
+      const selector = document.getElementById("strategyType"); if (selector) selector.value = "trend_only_v2";
+      setConfig(DEFAULTS);
+      const data = await refresh();
+      await api("/api/trend-only/config", { accountId: data.accountId, strategyType: "trend_only_v2", config: getConfig() });
+      document.dispatchEvent(new Event("trend-only-upgraded"));
+      location.reload();
+    } catch (error) { report(error); }
+  };
+  async function confirmLive() {
     try {
       const data = await refresh(), preview = data.state.preview;
       if (!preview) throw Error("当前没有可确认的趋势信号");
       if (!window.confirm(`${data.accountName}：确认当前 Live 趋势信号开仓？数量 ${preview.qty}，风险预算 ${preview.riskAmount}。`)) return;
       await api("/api/trend-only/confirm", { accountId: data.accountId, signalTime: preview.signal.signalTime, configHash: preview.configHash, confirmLive: true }); await refresh();
     } catch (error) { report(error); }
-  };
-  document.getElementById("trendOnlyClose").onclick = async () => {
+  }
+  async function closePosition() {
     try {
       const data = await refresh(); if (!data.state.position) throw Error("当前没有趋势仓位");
       if (!window.confirm(`确认平掉 ${data.accountName} 的全部趋势仓位？`)) return;
       await api("/api/trend-only/close", { accountId: data.accountId }); await refresh();
     } catch (error) { report(error); }
-  };
-  window.TrendOnlyPanel = { defaults: DEFAULTS, getConfig, setConfig, setVisible, refresh };
+  }
+  window.TrendOnlyPanel = { defaults: DEFAULTS, getConfig, setConfig, setVisible, refresh, confirmLive, closePosition };
   setConfig(window.__pendingTrendOnlyConfig || DEFAULTS);
-  setVisible(document.getElementById("strategyType")?.value === "trend_only_v1");
+  setVisible(["trend_only_v1", "trend_only_v2"].includes(document.getElementById("strategyType")?.value));
   refresh().catch(report);
   setInterval(() => { if (!document.hidden && !mount.hidden) refresh().catch(report); }, 5000);
   document.dispatchEvent(new CustomEvent("trend-only-panel-ready"));

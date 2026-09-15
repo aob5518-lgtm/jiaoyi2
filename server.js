@@ -4,27 +4,32 @@ const path = require("path");
 const url = require("url");
 const crypto = require("crypto");
 const TrendOnly = require("./trend_only");
+const TrendOnlyV2 = require("./trend_only_v2");
 const { createTrendRuntime } = require("./trend_runtime");
-const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1"]);
+const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2"]);
 function getStrategyType(acc = {}) {
   const explicit = String(acc?.strategyType || "").trim();
   if (explicit) return STRATEGY_TYPES.has(explicit) ? explicit : "classic";
   const legacyMode = String(acc?.strategyMode || "").trim();
   if (legacyMode === "Trend Only V1") return "trend_only_v1";
+  if (legacyMode === "Trend Only V2") return "trend_only_v2";
   if (legacyMode === "智能V1" || legacyMode === "趋势模式") return "smart_regime_v1";
   return "classic";
 }
 function getStrategyLabel(acc = {}) {
   const type = getStrategyType(acc);
   if (type === "trend_only_v1") return "Trend Only V1";
+  if (type === "trend_only_v2") return "Trend Only V2（趋势过滤 + 回踩入场 + 延续入场）";
   if (type === "smart_regime_v1") return "智能趋势策略 V1";
   return "经典补仓策略";
 }
 function getStrategyMode(acc = {}) {
   const type = getStrategyType(acc);
-  return type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
+  return type === "trend_only_v2" ? "Trend Only V2" : type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
 }
-function isTrendOnly(acc) { return getStrategyType(acc) === "trend_only_v1"; }
+function isTrendOnly(acc) { return ["trend_only_v1", "trend_only_v2"].includes(getStrategyType(acc)); }
+function isTrendOnlyV2(acc) { return getStrategyType(acc) === "trend_only_v2"; }
+function trendEngine(accOrType) { return (typeof accOrType === "string" ? accOrType : getStrategyType(accOrType)) === "trend_only_v2" ? TrendOnlyV2 : TrendOnly; }
 const zlib = require("zlib");
 const { spawn } = require("child_process");
 const {
@@ -80,6 +85,7 @@ async function initSdk() {
 
 const PORT = 3000;
 const CONFIG_PATH = path.join(__dirname, "config.json");
+const PUBLIC_DIR = path.resolve(__dirname, "public");
 const HISTORY_PATH = path.join(__dirname, "profit_history.json");
 const AUTH_PATH = path.join(__dirname, "auth.json");
 const SIM_ORDERS_PATH = path.join(__dirname, "simulation_orders.json");
@@ -978,7 +984,7 @@ function normalizeExistingSimulationDefaults() {
       acc.strategyType = migratedType;
       changed = true;
     }
-    const tc = TrendOnly.normalizeConfig(acc.trendOnlyConfig);
+    const tc = trendEngine(acc).normalizeConfig(acc.trendOnlyConfig);
     const mode = getStrategyMode(acc);
     if (JSON.stringify(acc.trendOnlyConfig) !== JSON.stringify(tc) || acc.strategyMode !== mode) { acc.trendOnlyConfig = tc; acc.strategyMode = mode; changed = true; }
     if (acc.strategyType === "smart_regime_v1") {
@@ -1578,15 +1584,15 @@ function assertFiniteNumber(value, name, { min = null, max = null, allowZero = f
 }
 
 function validateAccountConfigPayload(next) {
-  const modes = { "DCA基础模式": "classic", "智能V1": "smart_regime_v1", "趋势模式": "smart_regime_v1", "Trend Only V1": "trend_only_v1" };
+  const modes = { "DCA基础模式": "classic", "智能V1": "smart_regime_v1", "趋势模式": "smart_regime_v1", "Trend Only V1": "trend_only_v1", "Trend Only V2": "trend_only_v2" };
   if (next.strategyMode !== undefined) {
     if (!modes[next.strategyMode]) throw new Error("策略模式无效");
     if (next.strategyType && modes[next.strategyMode] !== next.strategyType) throw new Error("策略模式字段冲突");
     next.strategyType = modes[next.strategyMode];
   }
-  if (next.trendOnlyConfig !== undefined) next.trendOnlyConfig = TrendOnly.normalizeConfig(next.trendOnlyConfig);
-  if (next.strategyType === "trend_only_v1") {
-    next.strategyMode = "Trend Only V1";
+  if (next.trendOnlyConfig !== undefined) next.trendOnlyConfig = trendEngine(next.strategyType || next.strategyMode).normalizeConfig(next.trendOnlyConfig);
+  if (["trend_only_v1", "trend_only_v2"].includes(next.strategyType)) {
+    next.strategyMode = next.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
     if (next.trendOnlyConfig) next.leverage = next.trendOnlyConfig.leverage;
     next.maxAdds = 0;
   }
@@ -3159,7 +3165,7 @@ async function tickAccount(acc) {
   let accountSyncOk = true;
 
   try {
-    if (activeStrategyType === "trend_only_v1") { await trendRuntime.tick(acc, st); return; }
+    if (["trend_only_v1", "trend_only_v2"].includes(activeStrategyType)) { await trendRuntime.tick(acc, st); return; }
     st.symbol = acc.symbol;
     st.currentPrice = await getMarketPrice(acc);
     st.updatedAt = new Date().toLocaleString("zh-CN");
@@ -4101,27 +4107,88 @@ function redirect(res, location) {
 }
 
 function serveFile(res, filePath) {
-  fs.readFile(filePath, (err, buf) => {
+  const resolved = path.resolve(filePath);
+  const relative = path.relative(PUBLIC_DIR, resolved);
+  const ext = path.extname(resolved).toLowerCase();
+  const allowedTypes = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml; charset=utf-8",
+    ".ico": "image/x-icon",
+    ".webp": "image/webp"
+  };
+
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("禁止访问");
+    return;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(allowedTypes, ext)) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("禁止访问");
+    return;
+  }
+
+  fs.readFile(resolved, (err, buf) => {
     if (err) {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("文件不存在");
       return;
     }
 
-    const ext = path.extname(filePath).toLowerCase();
-    const types = {
-      ".html": "text/html; charset=utf-8",
-      ".css": "text/css; charset=utf-8",
-      ".js": "application/javascript; charset=utf-8",
-      ".json": "application/json; charset=utf-8",
-      ".py": "text/plain; charset=utf-8"
-    };
-
     res.writeHead(200, {
-      "Content-Type": types[ext] || "text/plain; charset=utf-8"
+      "Content-Type": allowedTypes[ext]
     });
     res.end(buf);
   });
+}
+
+function hasConfiguredSecret(value) {
+  return typeof value === "string" ? value.trim().length > 0 : !!value;
+}
+
+function sanitizeAccountForDashboard(acc = {}, st = {}) {
+  const strategyType = getStrategyType(acc);
+  return {
+    id: acc.id,
+    name: acc.name,
+    platform: acc.platform,
+    address: acc.address,
+    symbol: acc.symbol,
+    quoteAsset: acc.quoteAsset,
+    side: isTrendOnly(acc)
+      ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto")
+      : isSmartStrategy(acc)
+        ? (st.smartSide || "auto")
+        : acc.side,
+    strategyType,
+    strategyMode: getStrategyMode(acc),
+    strategyLabel: getStrategyLabel(acc),
+    tradeMode: isSimulationAccount(acc) ? "simulation" : "live",
+    simulationEnabled: isSimulationAccount(acc),
+    simulationBalance: acc.simulationBalance,
+    simulationSlippageBps: acc.simulationSlippageBps,
+    leverage: acc.leverage,
+    baseAmount: acc.baseAmount,
+    addAmount: acc.addAmount,
+    takeProfit: acc.takeProfit,
+    addTrigger: acc.addTrigger,
+    maxAdds: acc.maxAdds,
+    interval: acc.interval,
+    smartStrategy: acc.smartStrategy,
+    trendOnlyConfig: acc.trendOnlyConfig,
+    hasPrivateKey: hasConfiguredSecret(acc.privateKey),
+    hasApiKey: hasConfiguredSecret(acc.apiKey),
+    hasApiSecret: hasConfiguredSecret(acc.apiSecret),
+    hasStarkPrivateKey: hasConfiguredSecret(acc.starkPrivateKey),
+    hasPublicKey: hasConfiguredSecret(acc.publicKey),
+    hasVault: hasConfiguredSecret(acc.vault)
+  };
 }
 
 function getPublicAccountPayload(acc, st) {
@@ -4148,6 +4215,7 @@ function getPublicAccountPayload(acc, st) {
 
 function getPublicStatePayload(acc, st) {
   const strategyType = getStrategyType(acc);
+  if (isTrendOnly(acc)) trendRuntime.publish(acc, st);
   return {
     account: {
       id: acc.id,
@@ -4166,7 +4234,8 @@ function getPublicStatePayload(acc, st) {
     state: {
       activeStrategyType: strategyType,
       activeStrategyLabel: getStrategyLabel(acc),
-      isTrendOnly: strategyType === "trend_only_v1",
+      isTrendOnly: isTrendOnly(acc),
+      isTrendOnlyV2: isTrendOnlyV2(acc),
       isSmartStrategy: strategyType === "smart_regime_v1",
       isClassicStrategy: strategyType === "classic",
       running: st.running,
@@ -4188,30 +4257,27 @@ function getPublicStatePayload(acc, st) {
       simRealizedPnl: st.simRealizedPnl,
       lastAction: st.lastAction,
       lastError: st.lastError,
-      updatedAt: st.updatedAt
+      updatedAt: st.updatedAt,
+      ...(isTrendOnly(acc) ? { trendOnly: st.trendOnly } : {})
     }
   };
 }
 
 function buildDashboardPayload(acc, st) {
   const strategyType = getStrategyType(acc);
-  if (strategyType === "trend_only_v1") trendRuntime.publish(acc, st);
+  if (isTrendOnly(acc)) trendRuntime.publish(acc, st);
   const { profitHistory: _profitHistory, ...state } = st;
   return {
-    config: {
-      ...acc,
-      strategyType,
-      strategyMode: getStrategyMode(acc),
-      strategyLabel: getStrategyLabel(acc)
-    },
+    config: sanitizeAccountForDashboard(acc, st),
     state: {
       ...state,
       activeStrategyType: strategyType,
       activeStrategyLabel: getStrategyLabel(acc),
-      isTrendOnly: strategyType === "trend_only_v1",
+      isTrendOnly: isTrendOnly(acc),
+      isTrendOnlyV2: isTrendOnlyV2(acc),
       isSmartStrategy: strategyType === "smart_regime_v1",
       isClassicStrategy: strategyType === "classic",
-      ...(strategyType === "trend_only_v1" ? { trendOnly: state.trendOnly } : {})
+      ...(isTrendOnly(acc) ? { trendOnly: state.trendOnly } : {})
     }
   };
 }
@@ -4516,8 +4582,9 @@ const server = http.createServer((req, res) => {
     const acc = getCurrentAccount(), st = stateMap[acc.id];
     if (req.method === "GET" && pathname === "/api/trend-only") {
       if (isTrendOnly(acc)) trendRuntime.publish(acc, st);
+      const T = trendEngine(acc);
       return jsonRes(res, 200, { ok: true, accountId: acc.id, accountName: acc.name, active: isTrendOnly(acc), paper: isSimulationAccount(acc), running: st.running,
-        config: TrendOnly.normalizeConfig(acc.trendOnlyConfig), state: isTrendOnly(acc) ? st.trendOnly : { weekendBlocked: TrendOnly.isWeekendBlocked(Date.now(), TrendOnly.normalizeConfig(acc.trendOnlyConfig)) }, lastAction: isTrendOnly(acc) ? st.lastAction : "旧策略保持运行，趋势模式未启用" });
+        strategyType: getStrategyType(acc), config: T.normalizeConfig(acc.trendOnlyConfig), state: isTrendOnly(acc) ? st.trendOnly : { weekendBlocked: T.isWeekendBlocked(Date.now(), T.normalizeConfig(acc.trendOnlyConfig)) }, lastAction: isTrendOnly(acc) ? st.lastAction : "旧策略保持运行，趋势模式未启用" });
     }
     if (req.method !== "POST") return jsonRes(res, 405, { ok: false });
     let body = "";
@@ -4534,15 +4601,16 @@ const server = http.createServer((req, res) => {
         if (pathname === "/api/trend-only/config") {
           if (st.running || Number(st.positionQty) > 0 || trendRuntime.busy(acc)) throw new Error("请先停止开仓，并平仓或核对未确认订单后修改配置");
           const cfg = loadConfig(), target = cfg.accounts.find(a => a.id === acc.id);
-          target.trendOnlyConfig = TrendOnly.normalizeConfig(data.config);
-          target.strategyType = "trend_only_v1"; target.strategyMode = "Trend Only V1";
+          const requestedType = ["trend_only_v1", "trend_only_v2"].includes(data.strategyType) ? data.strategyType : (isTrendOnly(acc) ? getStrategyType(acc) : "trend_only_v2");
+          target.trendOnlyConfig = trendEngine(requestedType).normalizeConfig(data.config);
+          target.strategyType = requestedType; target.strategyMode = requestedType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
           target.leverage = target.trendOnlyConfig.leverage;
           target.maxAdds = 0;
           // Initial activation is Paper. Live remains an explicit separate account setting.
           if (!isTrendOnly(acc)) { target.tradeMode = "simulation"; target.simulationEnabled = true; }
           saveConfig(cfg); config = cfg; trendRuntime.clearApproval(acc.id);
         } else {
-          if (!isTrendOnly(acc)) throw new Error("当前账户未选择 Trend Only V1");
+          if (!isTrendOnly(acc)) throw new Error("当前账户未选择 Trend Only 策略");
           if (pathname === "/api/trend-only/confirm") { trendRuntime.confirm(acc, data); await trendRuntime.tick(acc, st); }
           else if (pathname === "/api/trend-only/close") await trendRuntime.tick(acc, st, "manual_close");
           else throw new Error("未知趋势操作");
@@ -4652,22 +4720,14 @@ const server = http.createServer((req, res) => {
     const accountSummaries = config.accounts.map(acc => {
       const st = stateMap[acc.id];
       return {
-        id: acc.id,
-        name: acc.name,
-        platform: acc.platform,
-        address: acc.address,
-        symbol: acc.symbol,
-        quoteAsset: acc.quoteAsset,
-        side: isTrendOnly(acc) ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : isSmartStrategy(acc) ? (st.smartSide || "auto") : acc.side,
-        strategyType: getStrategyType(acc),
-        strategyMode: getStrategyMode(acc),
-        strategyLabel: getStrategyLabel(acc),
-        tradeMode: isSimulationAccount(acc) ? "simulation" : "live",
-        simulationEnabled: isSimulationAccount(acc),
+        ...sanitizeAccountForDashboard(acc, st),
         running: st.running,
         pnl: st.pnl,
         roi: st.roi,
         lastAction: st.lastAction,
+        lastError: st.lastError,
+        hasPosition: Number(st.positionQty || st.realPositionSize || st.trendOnly?.position?.positionSize || 0) > 0,
+        hasPendingOrder: !!st.trendOnly?.pendingOrder,
         balance: st.balance,
         available: st.available,
         marginRatio: st.marginRatio || 0
@@ -4698,22 +4758,16 @@ const server = http.createServer((req, res) => {
     const items = config.accounts.map(acc => {
       const st = stateMap[acc.id];
       return {
-        id: acc.id,
-        name: acc.name,
-        platform: acc.platform,
-        symbol: acc.symbol,
-        quoteAsset: acc.quoteAsset,
-        side: isTrendOnly(acc) ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.direction || "auto") : acc.side,
-        strategyType: getStrategyType(acc),
-        strategyMode: getStrategyMode(acc),
-        strategyLabel: getStrategyLabel(acc),
-        tradeMode: isSimulationAccount(acc) ? "simulation" : "live",
-        simulationEnabled: isSimulationAccount(acc),
+        ...sanitizeAccountForDashboard(acc, st),
         running: st.running,
         pnl: st.pnl,
         roi: st.roi,
         balance: st.balance,
         available: st.available,
+        lastAction: st.lastAction,
+        lastError: st.lastError,
+        hasPosition: Number(st.positionQty || st.realPositionSize || st.trendOnly?.position?.positionSize || 0) > 0,
+        hasPendingOrder: !!st.trendOnly?.pendingOrder,
         marginRatio: st.marginRatio || 0
       };
     });
@@ -4734,11 +4788,16 @@ const server = http.createServer((req, res) => {
 
         const current = cfg.accounts[idx];
         const currentState = stateMap[current.id];
-        if (isTrendOnly(next)) { next.trendOnlyConfig = TrendOnly.normalizeConfig(next.trendOnlyConfig || current.trendOnlyConfig); next.leverage = next.trendOnlyConfig.leverage; next.maxAdds = 0; }
+        for (const key of ["privateKey", "apiKey", "apiSecret", "starkPrivateKey", "publicKey", "vault"]) {
+          if (next[key] === undefined || next[key] === null || String(next[key]).trim() === "") {
+            delete next[key];
+          }
+        }
+        if (isTrendOnly(next)) { next.trendOnlyConfig = trendEngine(next).normalizeConfig(next.trendOnlyConfig || current.trendOnlyConfig); next.leverage = next.trendOnlyConfig.leverage; next.maxAdds = 0; }
         if ((isTrendOnly(current) || isTrendOnly(next)) && (currentState.tickRunning || currentState.running || trendRuntime.busy(current))) throw new Error("趋势策略运行、持仓或订单未确认时禁止修改配置");
         if (isTrendOnly(next) && !isTrendOnly(current)) { next.tradeMode = "simulation"; next.simulationEnabled = true; }
         if (isTrendOnly(current) && !next.strategyType) next.leverage = (next.trendOnlyConfig || current.trendOnlyConfig).leverage;
-        if (next.strategyType && next.strategyType !== "trend_only_v1") next.strategyMode = next.strategyType === "classic" ? "DCA基础模式" : "智能V1";
+        if (next.strategyType && !isTrendOnly(next)) next.strategyMode = next.strategyType === "classic" ? "DCA基础模式" : "智能V1";
         trendRuntime.clearApproval(current.id);
         const changesPositionContract =
           (next.strategyType && next.strategyType !== (current.strategyType || "classic")) ||
@@ -4756,7 +4815,7 @@ const server = http.createServer((req, res) => {
         config = cfg;
         ensureAccountStates();
 
-        return jsonRes(res, 200, { ok: true, config: cfg.accounts[idx] });
+        return jsonRes(res, 200, { ok: true, config: sanitizeAccountForDashboard(cfg.accounts[idx], stateMap[cfg.accounts[idx].id]) });
       } catch (e) {
         return jsonRes(res, 400, { ok: false, error: e.message || "保存配置失败" });
       }
@@ -4811,17 +4870,19 @@ const server = http.createServer((req, res) => {
           symbol: "ETH",
           quoteAsset: platform === "binance" ? "USDT" : (platform === "extended" ? "USD" : "USDC"),
           side: "long",
-          strategyType: "classic",
+          strategyType: "trend_only_v2",
+          strategyMode: "Trend Only V2",
+          trendOnlyConfig: TrendOnlyV2.normalizeConfig({}),
           smartStrategy: { ...SMART_STRATEGY_DEFAULTS },
           leverage: 10,
           baseAmount: 1000,
           addAmount: 1000,
           takeProfit: 0.01,
           addTrigger: 0.005,
-          maxAdds: 5,
+          maxAdds: 0,
           interval: DEFAULT_ACCOUNT_INTERVAL_MS,
-          tradeMode: "live",
-          simulationEnabled: false,
+          tradeMode: "simulation",
+          simulationEnabled: true,
           simulationBalance: 10000,
           simulationSlippageBps: 0
         };
@@ -4833,7 +4894,7 @@ const server = http.createServer((req, res) => {
         config = cfg;
         ensureAccountStates();
 
-        return jsonRes(res, 200, { ok: true, account: newAcc });
+        return jsonRes(res, 200, { ok: true, account: sanitizeAccountForDashboard(newAcc, stateMap[newAcc.id]) });
       } catch (e) {
         return jsonRes(res, 400, { ok: false, error: "创建账户失败" });
       }
@@ -4878,7 +4939,7 @@ const server = http.createServer((req, res) => {
 
         await runWithConcurrency(cfg.accounts || [], ACCOUNT_START_SYNC_CONCURRENCY, async (current) => {
           try {
-            if (isTrendOnly(current)) { results.push({ id: current.id, name: current.name, ok: false, skipped: true, error: "Trend Only V1 账户需要单独启动，避免 Live 信号确认被批量绕过。" }); return; }
+            if (isTrendOnly(current)) { results.push({ id: current.id, name: current.name, ok: false, skipped: true, error: `${getStrategyMode(current)} 账户需要单独启动，避免 Live 信号确认被批量绕过。` }); return; }
             validateAccountConfigPayload({
               platform: current.platform,
               strategyType: current.strategyType || "classic",
@@ -5109,7 +5170,7 @@ const server = http.createServer((req, res) => {
       try {
         const current = getCurrentAccount();
         const data = JSON.parse(body || "{}");
-        if (isTrendOnly(current)) throw new Error("Trend Only V1 禁止手动加仓，请使用趋势面板平仓");
+        if (isTrendOnly(current)) throw new Error("Trend Only 策略禁止手动加仓，请使用趋势面板平仓");
 
         const side = data.side || (current.side === "long" ? "buy" : "sell");
         const symbol = data.symbol || current.symbol;
@@ -5204,7 +5265,10 @@ const server = http.createServer((req, res) => {
     return jsonRes(res, 200, { ok: true, item: normalizeProfitVoucher(st.profitHistory[idx], accountId) });
   }
 
-  const filePath = path.join(__dirname, "public", pathname === "/" ? "index.html" : pathname);
+  let safePathname;
+  try { safePathname = pathname === "/" ? "index.html" : decodeURIComponent(pathname).replace(/^[/\\]+/, ""); }
+  catch { return jsonRes(res, 400, { ok: false, error: "请求路径编码无效" }); }
+  const filePath = path.resolve(PUBLIC_DIR, safePathname);
   serveFile(res, filePath);
 });
 

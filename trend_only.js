@@ -32,7 +32,7 @@ function normalizeConfig(input = {}) {
     if (!Number.isInteger(c[k]) || c[k] > 240 || c[k] < (k === "maxConsecutiveLosses" || k === "timeStopBars" ? 1 : 2)) throw Error(`趋势周期 ${k} 无效`);
   }
   if (!(c.emaFast < c.emaMid && c.emaMid < c.emaSlow) || c.adxPeriod > 100) throw Error("EMA/ADX 周期无效");
-  if (c.minAdxToTrade < 25 || c.minAdxToTrade > 100 || c.maxChopToTrade > 45) throw Error("趋势过滤阈值过宽");
+  if (c.minAdxToTrade < 1 || c.minAdxToTrade > 100 || c.maxChopToTrade > 100) throw Error("趋势过滤阈值无效");
   if (c.breakEvenAtR > 2 || c.trailStartAtR < 2) throw Error("R 倍数参数无效");
   if (!Number.isInteger(c.weekendExitHourUTC) || c.weekendExitHourUTC > 23) throw Error("周五保护时间必须为 UTC 0–23 点");
   if (!["no_new_position", "force_flat_before_weekend"].includes(c.weekendMode)) throw Error("周末模式无效");

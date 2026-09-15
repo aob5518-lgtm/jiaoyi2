@@ -1,5 +1,5 @@
 const {test}=require('node:test'), assert=require('node:assert/strict'),fs=require('fs'),os=require('os'),path=require('path');
-const T=require('../trend_only'),{createTrendRuntime}=require('../trend_runtime');
+const T=require('../trend_only'),V2=require('../trend_only_v2'),{createTrendRuntime}=require('../trend_runtime');
 function fixture(t,live=false){
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'trend-v1-test-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
   const acc={id:'a',name:'paper',platform:'hyperliquid',symbol:'ETH',address:'0xTEST',simulationBalance:10000,trendOnlyConfig:T.normalizeConfig({allowWeekendOpen:true})};
@@ -39,4 +39,9 @@ test('损坏运行态必须拒绝启动',t=>{const f=fixture(t);fs.writeFileSync
 test('写入意图失败不得调用交易所下单',async t=>{
   const f=fixture(t,true);await f.r.tick(f.acc,f.st);const p=f.r.get(f.acc).preview;f.r.confirm(f.acc,{confirmLive:true,signalTime:p.signal.signalTime,configHash:p.configHash});
   fs.mkdirSync(path.join(f.directory,'trend_only_runtime.json.tmp'));await assert.rejects(()=>f.r.tick(f.acc,f.st));assert.equal(f.orders(),0);
+});
+test('V2 每根已收盘 K 线写入信号回放并发布趋势记忆',async t=>{
+  const f=fixture(t);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true});
+  await f.r.tick(f.acc,f.st);const state=f.r.get(f.acc);
+  assert.equal(state.signalJournal.length,1);assert.ok(state.trendContext);assert.equal(f.st.trendOnly.signalJournal.length,1);
 });
