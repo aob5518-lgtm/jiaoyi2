@@ -660,7 +660,7 @@ const trendRuntime = createTrendRuntime({
     (stateMap[other.id]?.running || Number(stateMap[other.id]?.positionQty) > 0 || (isTrendOnly(other) && trendRuntime.busy(other)))),
   price: getFreshMarketPrice, candles: getPublicMarketKlines,
   hyperAccount: getHyperAccount, hyperMeta: getHlAssetMeta, binanceMeta: getBinanceSymbolMeta,
-  hyperOrder: placeHyperliquidOrder, hyperLeverage: syncHyperliquidLeverage,
+  hyperOrder: placeHyperliquidOrder, hyperStop: placeHyperliquidProtectiveStop, hyperCancel: cancelHyperliquidOrder, hyperLeverage: syncHyperliquidLeverage,
   request: (u, o) => fetchJsonWithRetry(u, o, "趋势交易所请求", 0, 10000)
 });
 let stateMap = {};
@@ -1861,6 +1861,37 @@ async function placeHyperliquidOrder({
     oid: fill.oid || "",
     result
   };
+}
+
+async function placeHyperliquidProtectiveStop({ account, symbol, side, size, stopPrice, clientOrderId }) {
+  const { asset, meta } = await getHlAssetMeta(symbol);
+  const exchange = createHlExchangeClient(account.privateKey);
+  const sizeDecimals = Number(meta?.szDecimals ?? 4);
+  const finalSize = formatSizeByDecimals(size, sizeDecimals);
+  const triggerPx = formatPrice(stopPrice, sizeDecimals);
+  // Hyperliquid market TP/SL executes as an aggressive trigger-limit order with a 10% market-slippage envelope.
+  const limitPx = formatPrice(Number(stopPrice) * (side === "sell" ? 0.90 : 1.10), sizeDecimals);
+  if (!(Number(finalSize) > 0 && Number(triggerPx) > 0)) throw new Error("Hyper 保护止损参数无效");
+  let result;
+  try {
+    result = await exchange.order({
+      orders: [{ a: asset, ...(clientOrderId ? { c: clientOrderId } : {}), b: side === "buy", p: limitPx, s: finalSize, r: true,
+        t: { trigger: { isMarket: true, triggerPx, tpsl: "sl" } } }],
+      grouping: "na"
+    });
+  } catch (error) { throw new Error("Hyper 保护止损单提交失败: " + (error?.message || error)); }
+  const statuses = result?.response?.data?.statuses || result?.data?.statuses || result?.statuses || [];
+  const first = statuses[0] || {};
+  const orderId = first.resting?.oid || first.resting?.orderId || first.oid || first.orderId;
+  if (!orderId) throw new Error("Hyper 保护止损单未返回可确认 orderId");
+  return { orderId: String(orderId), clientOrderId, stopPrice: Number(triggerPx), result };
+}
+
+async function cancelHyperliquidOrder({ account, symbol, orderId }) {
+  const { asset } = await getHlAssetMeta(symbol);
+  const exchange = createHlExchangeClient(account.privateKey);
+  try { return await exchange.cancel({ cancels: [{ a: asset, o: Number(orderId) }] }); }
+  catch (error) { throw new Error("Hyper 旧保护止损撤销失败: " + (error?.message || error)); }
 }
 
 async function syncHyperliquidLeverage(account) {
@@ -5041,6 +5072,10 @@ const server = http.createServer((req, res) => {
       try {
         const current = getCurrentAccount();
         if (isTrendOnly(current)) {
+          if (isTrendOnlyV2(current) && current.platform === "extended" && !isSimulationAccount(current)) {
+            const message = "Extended Live 趋势下单暂未开放；请使用 Paper 测试或切换 Hyperliquid/Binance。";
+            return jsonRes(res, 400, { ok: false, error: message, message });
+          }
           stateMap[current.id].running = true; persistAccountRunning(current.id, true);
           return jsonRes(res, 200, { ok: true, message: "趋势监控已启动；周末/震荡行情不会新开仓；Live 每次新仓仍须确认。" });
         }

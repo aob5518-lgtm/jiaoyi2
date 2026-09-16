@@ -5,6 +5,21 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
   const value = (input, digits = 3) => Number.isFinite(Number(input)) ? Number(input).toFixed(digits) : "-";
+  const replayBlockers = item => (item?.blockers || []).join("；");
+  function summarizeReplay(items) {
+    const all = Array.isArray(items) ? items.slice(0, 50) : [];
+    const matches = (item, pattern) => pattern.test(replayBlockers(item));
+    return {
+      allowed: all.filter(item => item.entryPermission === "allowed").length,
+      pullback: all.filter(item => item.entryPermission === "wait_pullback").length,
+      breakout: all.filter(item => item.entryPermission === "wait_breakout").length,
+      continuation: all.filter(item => item.entryPermission === "wait_continuation").length,
+      extended: all.filter(item => matches(item, /远离 EMA20|不追单/)).length,
+      chop: all.filter(item => matches(item, /CHOP/)).length,
+      higher: all.filter(item => matches(item, /高周期|4H/)).length,
+      risk: all.filter(item => matches(item, /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单结果未知/i)).length
+    };
+  }
   function marketLabel(trend) {
     if (trend.weekendBlocked) return "周末禁止新开仓";
     return ({ trend: "趋势行情", strong_trend: "强趋势", trend_continuation: "趋势延续", trend_pullback: "趋势回踩", trend_breakout: "趋势启动", extended_no_chase: "趋势已走远，等待回踩", chop: "震荡过滤", unclear: "不明确行情", data_insufficient: "行情数据不足" })[trend.signal?.regime] || "行情数据不足";
@@ -51,6 +66,9 @@
       ["初始止损价", value(position.initialStopLossPrice)], ["当前止损价", value(position.currentStopLossPrice)],
       ["保本状态", position.breakEvenActivated ? "已保本" : "未保本"], ["移动止盈", position.trailingActive ? "已启动" : "未启动"],
       ["防守模式", position.defensiveMode ? "趋势衰减，进入防守模式" : "未启用", position.defensiveMode ? "orange" : ""],
+      ["保护止损单状态", trend.stopSyncStatus || "not_required", trend.riskLock ? "red" : trend.stopSyncStatus === "synced" ? "green" : "orange"],
+      ["stopOrderId", trend.stopOrderId || "-"], ["保护止损价", value(trend.stopOrderPrice)], ["stopSyncStatus", trend.stopSyncStatus || "not_required", trend.riskLock ? "red" : ""],
+      ["最近同步时间", (trend.stopLastSyncAt || trend.stopLastSyncedAt) ? new Date(trend.stopLastSyncAt || trend.stopLastSyncedAt).toLocaleString("zh-CN") : "-"],
       ["最高价 / 最低价", `${value(position.highestPriceSinceEntry)} / ${value(position.lowestPriceSinceEntry)}`]
     ] : [["趋势仓位", "无"], ["当前价格", value(st.currentPrice)], ["当前盈亏", `${value(st.pnl)} U`], ["收益率", `${value(st.roi)}%`]];
     const strategyRows = [
@@ -70,9 +88,10 @@
       ["账户余额", st.balance ?? "-"], ["可用余额", st.available ?? "-"], ["单笔风险比例", `${value(Number(c.riskPerTrade) * 100, 2)}%`],
       ["日亏损限制", `${value(Number(c.maxDailyLossRatio) * 100, 2)}%`], ["连续亏损次数", trend.consecutiveLosses || 0],
       ["暂停至", pauseUntil], ["当前止损价", position ? value(position.currentStopLossPrice) : "-"],
+      ["保护止损", trend.stopSyncStatus || "not_required", trend.riskLock ? "red" : ""], ["risk_lock", trend.riskLock ? trend.riskLockReason || "已锁定" : "未锁定", trend.riskLock ? "red" : "green"],
       ["pendingOrder", orderState, orderClass], ["错误信息", st.lastError || "-", st.lastError ? "red" : "muted"]
     ];
     return { market, direction, weekend, nextAction: nextAction(trend, st.lastAction), positionRows, strategyRows, rightStatusRows, rightRiskRows };
   }
-  return { marketLabel, directionLabel, nextAction, buildTrendView };
+  return { marketLabel, directionLabel, nextAction, summarizeReplay, buildTrendView };
 });

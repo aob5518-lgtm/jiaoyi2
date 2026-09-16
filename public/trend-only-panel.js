@@ -6,7 +6,7 @@
     enabled: true, leverage: 10, allowWeekendOpen: false, weekendMode: "no_new_position", weekendExitHourUTC: 20,
     riskPerTrade: 0.01, maxPositionRatio: 0.1, maxDailyLossRatio: 0.03, maxConsecutiveLosses: 2,
     cooldownHoursAfterLossLimit: 12, atrPeriod: 14, adxPeriod: 14, chopPeriod: 14, emaFast: 20,
-    emaMid: 50, emaSlow: 200, minAdxToTrade: 25, maxChopToTrade: 45, stopLossAtrMultiplier: 1.5,
+    emaMid: 50, emaSlow: 200, minAdxToTrade: 25, stopLossAtrMultiplier: 1.5,
     trailingAtrMultiplier: 2, breakEvenAtR: 1, trailStartAtR: 3, timeStopBars: 8,
     minProfitForTimeStopR: 0.5, breakoutLookback: 20, requireMultiTimeframeConfirm: true,
     entryTimeframe: "15m", trendTimeframe: "1h", higherTimeframe: "4h", version: "v2",
@@ -15,14 +15,14 @@
     entryModes: ["breakout_entry", "pullback_entry", "continuation_entry"], pullbackEmaBandAtr: 0.5,
     pullbackConfirmLookback: 5, pullbackInvalidationAtr: 0.2, continuationLookback: 8, microBreakLookback: 5,
     maxEntryExtensionAtr: 1.5, maxStopDistanceAtr: 2.2, minStopDistanceAtr: 0.8, softBreakEvenAtR: 1,
-    realBreakEvenAtR: 1.5, lockProfitAtR: 2.5, defensiveTrailingAtrMultiplier: 1.2, reversalConfirmBars: 2
+    realBreakEvenAtR: 1.5, lockProfitAtR: 2.5, defensiveTrailingAtrMultiplier: 1.2, reversalConfirmBars: 2, reentryCooldownBars: 6
   };
   const labels = {
     enabled: "启用趋势策略", leverage: "杠杆（最高 10）", allowWeekendOpen: "允许周末开新仓", weekendMode: "周末保护模式",
     weekendExitHourUTC: "周五保护开始（UTC 小时）", riskPerTrade: "单笔风险比例（0.01=1%）", maxPositionRatio: "最大保证金比例",
     maxDailyLossRatio: "日亏损限制比例", maxConsecutiveLosses: "连续亏损次数", cooldownHoursAfterLossLimit: "亏损暂停小时",
     atrPeriod: "ATR 周期", adxPeriod: "ADX 周期", chopPeriod: "CHOP 周期", emaFast: "EMA 快线", emaMid: "EMA 中线",
-    emaSlow: "EMA 慢线", minAdxToTrade: "最低 ADX", maxChopToTrade: "最高 CHOP", stopLossAtrMultiplier: "初始止损 ATR 倍数",
+    emaSlow: "EMA 慢线", minAdxToTrade: "最低 ADX", stopLossAtrMultiplier: "初始止损 ATR 倍数",
     trailingAtrMultiplier: "移动止盈 ATR 倍数", breakEvenAtR: "保本启动 R", trailStartAtR: "移动止盈启动 R",
     timeStopBars: "时间止损 K 线数", minProfitForTimeStopR: "时间止损最低 R", breakoutLookback: "突破回看 K 线数",
     requireMultiTimeframeConfirm: "要求多周期确认", entryTimeframe: "入场周期", trendTimeframe: "趋势周期", higherTimeframe: "高周期",
@@ -31,7 +31,7 @@
     higherTimeframeMode: "多周期确认", entryModes: "入场模式", pullbackEmaBandAtr: "回踩 EMA 带宽 ATR", pullbackConfirmLookback: "回踩确认回看",
     pullbackInvalidationAtr: "回踩失效 ATR", continuationLookback: "延续结构回看", microBreakLookback: "微结构突破回看",
     maxEntryExtensionAtr: "最大追单距离 ATR", maxStopDistanceAtr: "最大止损距离 ATR", minStopDistanceAtr: "最小止损距离 ATR",
-    softBreakEvenAtR: "软保本启动 R", realBreakEvenAtR: "真实保本启动 R", lockProfitAtR: "锁定 1R 启动", defensiveTrailingAtrMultiplier: "防守移动止盈 ATR", reversalConfirmBars: "反转确认 K 线"
+    softBreakEvenAtR: "软保本启动 R", realBreakEvenAtR: "真实保本启动 R", lockProfitAtR: "锁定 1R 启动", defensiveTrailingAtrMultiplier: "防守移动止盈 ATR", reversalConfirmBars: "反转确认 K 线", reentryCooldownBars: "再入场冷却 K 线"
   };
   mount.innerHTML = `
     <div class="block-head">
@@ -54,7 +54,7 @@
     const merged = { ...DEFAULTS, ...config };
     fieldRoot.replaceChildren();
     const simpleKeys = new Set(["version", "leverage", "riskPerTrade", "allowWeekendOpen", "entryModes"]);
-    const v2Only = new Set(["version", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread", "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr", "maxStopDistanceAtr", "minStopDistanceAtr", "softBreakEvenAtR", "realBreakEvenAtR", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars"]);
+    const v2Only = new Set(["version", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread", "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr", "maxStopDistanceAtr", "minStopDistanceAtr", "softBreakEvenAtR", "realBreakEvenAtR", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars", "reentryCooldownBars"]);
     const selectedV2 = document.getElementById("strategyType")?.value === "trend_only_v2";
     document.getElementById("trendOnlyPanelTitle").textContent = selectedV2 ? "Trend Only V2 参数" : "Trend Only V1 参数";
     document.getElementById("trendUpgradeV2").hidden = selectedV2;
