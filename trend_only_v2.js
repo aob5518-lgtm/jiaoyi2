@@ -7,11 +7,11 @@ const DEFAULTS = Object.freeze({
   ...V1_BASE_DEFAULTS,
   version: "v2",
   chopIdealMax: 45,
-  chopTransitionMax: 52,
+  chopTransitionMax: 55,
   chopHardBlock: 61.8,
-  adxTrendStart: 25,
-  adxTrendValid: 30,
-  adxStrong: 35,
+  adxTrendStart: 22,
+  adxTrendValid: 28,
+  adxStrong: 32,
   adxVeryStrong: 40,
   minDiSpread: 8,
   higherTimeframeMode: "not_against",
@@ -31,6 +31,12 @@ const DEFAULTS = Object.freeze({
   defensiveTrailingAtrMultiplier: 1.2,
   reversalConfirmBars: 2,
   reentryCooldownBars: 6
+});
+
+const STRICTNESS_PRESETS = Object.freeze({
+  conservative: Object.freeze({ chopIdealMax: 45, chopTransitionMax: 52, chopHardBlock: 61.8, adxTrendStart: 25, adxTrendValid: 30, adxStrong: 35, higherTimeframeMode: "strict_align", maxEntryExtensionAtr: 1.2 }),
+  standard: Object.freeze({ chopIdealMax: 45, chopTransitionMax: 55, chopHardBlock: 61.8, adxTrendStart: 22, adxTrendValid: 28, adxStrong: 32, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.5 }),
+  sensitive: Object.freeze({ chopIdealMax: 48, chopTransitionMax: 58, chopHardBlock: 65, adxTrendStart: 20, adxTrendValid: 25, adxStrong: 30, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.8, riskPerTrade: 0.005 })
 });
 
 const ENTRY_MODES = new Set(["breakout_entry", "pullback_entry", "continuation_entry"]);
@@ -153,16 +159,32 @@ function detectMarketRegimeV2(candles, input) {
     structureHigh: Number.isFinite(input.structureHigh) ? input.structureHigh : input.pullbackHigh,
     structureLow: Number.isFinite(input.structureLow) ? input.structureLow : input.pullbackLow,
     distanceFromEmaAtr: Number.isFinite(input.close) && Number.isFinite(input.emaFast) && Number(input.atr) > 0 ? Math.abs(input.close - input.emaFast) / input.atr : null };
-  if (!required.every(Number.isFinite) || input.atr <= 0) { blockers.push("指标不足，禁止开仓"); return base; }
+  const finish = result => {
+    const raw = result.directionRaw || "none", states = result.states || { breakout: false, pullback: false, continuation: false };
+    const adx = adxState(input, c), adxPassed = adx.start || adx.valid || adx.strong;
+    const entryDirection = input.entryDirection || directionOf(input), timeframePassed = ["long", "short"].includes(raw) && timeframeAllowed(raw, input, c);
+    const entryConflict = ["long", "short"].includes(entryDirection) && ["long", "short"].includes(raw) && entryDirection !== raw;
+    const chopLabel = !Number.isFinite(input.chop) ? "数据不足" : input.chop < c.chopIdealMax ? "趋势" : input.chop < c.chopTransitionMax ? "过渡" : input.chop < c.chopHardBlock ? "偏震荡" : "震荡";
+    const diagnostics = {
+      chop: { value: Number.isFinite(input.chop) ? input.chop : null, threshold: { ideal: c.chopIdealMax, transition: c.chopTransitionMax, hardBlock: c.chopHardBlock }, passed: Number.isFinite(input.chop) && input.chop < c.chopHardBlock, label: chopLabel },
+      adx: { value: Number.isFinite(input.adx) ? input.adx : null, threshold: c.adxTrendStart, validThreshold: c.adxTrendValid, strongThreshold: c.adxStrong, rising: !!adx.rising, passed: !!adxPassed, label: !Number.isFinite(input.adx) ? "数据不足" : input.adx >= c.adxStrong ? "强趋势" : adxPassed ? "趋势有效" : "趋势强度不足" },
+      direction: { entryDirection, trendDirection: input.trendDirection || "none", higherDirection: input.higherDirection || "none", passed: timeframePassed && !entryConflict, timeframePassed, entryConflict, conflict: !timeframePassed || entryConflict },
+      breakout: { passed: !!states.breakout, breakoutHigh: Number.isFinite(input.breakoutHigh) ? input.breakoutHigh : null, breakoutLow: Number.isFinite(input.breakoutLow) ? input.breakoutLow : null },
+      entry: { breakout: !!states.breakout, pullback: !!states.pullback, continuation: !!states.continuation, extended: result.regime === "extended_no_chase" || isEntryExtended(raw, input.close, input.emaFast, input.atr, c) },
+      finalBlockers: [...(result.blockers || result.reasons || [])]
+    };
+    return { ...result, states, diagnostics };
+  };
+  if (!required.every(Number.isFinite) || input.atr <= 0) { blockers.push("指标不足，禁止开仓"); return finish(base); }
   const directionRaw = input.directionRaw || (["long", "short"].includes(input.trendDirection) ? input.trendDirection : directionOf(input));
   base.directionRaw = directionRaw;
-  if (!new Set(["long", "short"]).has(directionRaw)) { blockers.push("EMA 与 DI 尚未形成明确趋势方向"); return { ...base, regime: "unclear" }; }
+  if (!new Set(["long", "short"]).has(directionRaw)) { blockers.push("EMA 与 DI 尚未形成明确趋势方向"); return finish({ ...base, regime: "unclear" }); }
   const adx = adxState(input, c), tfAllowed = timeframeAllowed(directionRaw, input, c);
   let score = 20;
   if (input.chop < c.chopIdealMax) score += 20;
   else if (input.chop < c.chopTransitionMax) score += 12;
   else if (input.chop < c.chopHardBlock) score += 4;
-  else { blockers.push("CHOP 强震荡，禁止新开仓"); return { ...base, directionRaw, regime: "chop", score };
+  else { blockers.push("CHOP 强震荡，禁止新开仓"); return finish({ ...base, directionRaw, regime: "chop", score });
   }
   if (adx.start) score += 18; else if (adx.valid || adx.strong) score += 20; else blockers.push(`ADX=${input.adx.toFixed(1)} 或 DI 差值不足，趋势强度未确认`);
   if (tfAllowed) score += 20; else blockers.push(c.higherTimeframeMode === "strict_align" ? "4H 未确认同向" : "高周期方向明显反向");
@@ -174,12 +196,12 @@ function detectMarketRegimeV2(candles, input) {
   let entryMode = null, regime = adx.strong && !adx.rising ? "trend_continuation" : "strong_trend";
   if (extended) {
     blockers.push("趋势有效，但价格已远离 EMA20，等待回踩，不追单");
-    return { ...base, directionRaw, direction: directionRaw, regime: "extended_no_chase", entryPermission: "wait_pullback", blockers, reasons: blockers, score: Math.min(100, score), distanceFromEmaAtr: Math.abs(input.close - input.emaFast) / input.atr, states: { breakout, pullback, continuation } };
+    return finish({ ...base, directionRaw, direction: directionRaw, regime: "extended_no_chase", entryPermission: "wait_pullback", blockers, reasons: blockers, score: Math.min(100, score), distanceFromEmaAtr: Math.abs(input.close - input.emaFast) / input.atr, states: { breakout, pullback, continuation } });
   }
-  if (blockers.length) return { ...base, directionRaw, direction: directionRaw, regime: "unclear", entryPermission: tfAllowed ? "wait_continuation" : "blocked", blockers, reasons: blockers, score: Math.min(100, score), states: { breakout, pullback, continuation } };
+  if (blockers.length) return finish({ ...base, directionRaw, direction: directionRaw, regime: "unclear", entryPermission: tfAllowed ? "wait_continuation" : "blocked", blockers, reasons: blockers, score: Math.min(100, score), states: { breakout, pullback, continuation } });
   if (input.chop >= c.chopTransitionMax && !pullback) {
     blockers.push("CHOP 偏高，仅允许回踩确认入场");
-    return { ...base, directionRaw, direction: directionRaw, regime: "chop", entryPermission: "wait_pullback", blockers, reasons: blockers, score: Math.min(100, score), states: { breakout, pullback, continuation } };
+    return finish({ ...base, directionRaw, direction: directionRaw, regime: "chop", entryPermission: "wait_pullback", blockers, reasons: blockers, score: Math.min(100, score), states: { breakout, pullback, continuation } });
   }
   if (pullback && c.entryModes.includes("pullback_entry")) { entryMode = "pullback_entry"; regime = "trend_pullback"; }
   else if (breakout && input.chop < c.chopTransitionMax && c.entryModes.includes("breakout_entry")) { entryMode = "breakout_entry"; regime = "trend_breakout"; }
@@ -187,10 +209,10 @@ function detectMarketRegimeV2(candles, input) {
   if (!entryMode) {
     const entryPermission = input.chop >= c.chopTransitionMax ? "wait_pullback" : adx.strong ? "wait_continuation" : "wait_breakout";
     blockers.push(entryPermission === "wait_pullback" ? "等待回踩确认" : entryPermission === "wait_continuation" ? "趋势有效，等待延续结构确认" : "等待突破确认");
-    return { ...base, directionRaw, direction: directionRaw, regime, entryPermission, blockers, reasons: blockers, score: Math.min(100, score), states: { breakout, pullback, continuation } };
+    return finish({ ...base, directionRaw, direction: directionRaw, regime, entryPermission, blockers, reasons: blockers, score: Math.min(100, score), states: { breakout, pullback, continuation } });
   }
   score += 10;
-  return { ...base, directionRaw, tradeDirection: directionRaw, direction: directionRaw, regime, entryPermission: "allowed", entryMode, blockers: [], reasons: [`${entryMode} 条件通过，可准备${directionRaw === "long" ? "做多" : "做空"}`], score: Math.min(100, score), breakoutLevel: directionRaw === "long" ? input.breakoutHigh : input.breakoutLow, distanceFromEmaAtr: Math.abs(input.close - input.emaFast) / input.atr, states: { breakout, pullback, continuation } };
+  return finish({ ...base, directionRaw, tradeDirection: directionRaw, direction: directionRaw, regime, entryPermission: "allowed", entryMode, blockers: [], reasons: [`${entryMode} 条件通过，可准备${directionRaw === "long" ? "做多" : "做空"}`], score: Math.min(100, score), breakoutLevel: directionRaw === "long" ? input.breakoutHigh : input.breakoutLow, distanceFromEmaAtr: Math.abs(input.close - input.emaFast) / input.atr, states: { breakout, pullback, continuation } });
 }
 
 function initialState() {
@@ -313,7 +335,7 @@ function manageTrendOnlyPosition(account, market, i = {}) {
 }
 
 module.exports = {
-  DEFAULTS, INTERVALS: V1.INTERVALS, normalizeConfig, isWeekendBlocked: V1.isWeekendBlocked, weekendProtection: V1.weekendProtection, detectSwings,
+  DEFAULTS, STRICTNESS_PRESETS, INTERVALS: V1.INTERVALS, normalizeConfig, isWeekendBlocked: V1.isWeekendBlocked, weekendProtection: V1.weekendProtection, detectSwings,
   indicatorsFor, directionOf, detectMarketRegimeV2, detectMarketRegime: detectMarketRegimeV2, isEntryExtended, initialState, updateTrendContext,
   appendShadowSignal, tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose: V1.recordClose
 };

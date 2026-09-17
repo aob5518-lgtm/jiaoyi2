@@ -10,12 +10,17 @@
     trailingAtrMultiplier: 2, breakEvenAtR: 1, trailStartAtR: 3, timeStopBars: 8,
     minProfitForTimeStopR: 0.5, breakoutLookback: 20, requireMultiTimeframeConfirm: true,
     entryTimeframe: "15m", trendTimeframe: "1h", higherTimeframe: "4h", version: "v2",
-    chopIdealMax: 45, chopTransitionMax: 52, chopHardBlock: 61.8, adxTrendStart: 25, adxTrendValid: 30,
-    adxStrong: 35, adxVeryStrong: 40, minDiSpread: 8, higherTimeframeMode: "not_against",
+    chopIdealMax: 45, chopTransitionMax: 55, chopHardBlock: 61.8, adxTrendStart: 22, adxTrendValid: 28,
+    adxStrong: 32, adxVeryStrong: 40, minDiSpread: 8, higherTimeframeMode: "not_against",
     entryModes: ["breakout_entry", "pullback_entry", "continuation_entry"], pullbackEmaBandAtr: 0.5,
     pullbackConfirmLookback: 5, pullbackInvalidationAtr: 0.2, continuationLookback: 8, microBreakLookback: 5,
     maxEntryExtensionAtr: 1.5, maxStopDistanceAtr: 2.2, minStopDistanceAtr: 0.8, softBreakEvenAtR: 1,
     realBreakEvenAtR: 1.5, lockProfitAtR: 2.5, defensiveTrailingAtrMultiplier: 1.2, reversalConfirmBars: 2, reentryCooldownBars: 6
+  };
+  const STRICTNESS_PRESETS = {
+    conservative: { chopIdealMax: 45, chopTransitionMax: 52, chopHardBlock: 61.8, adxTrendStart: 25, adxTrendValid: 30, adxStrong: 35, higherTimeframeMode: "strict_align", maxEntryExtensionAtr: 1.2 },
+    standard: { chopIdealMax: 45, chopTransitionMax: 55, chopHardBlock: 61.8, adxTrendStart: 22, adxTrendValid: 28, adxStrong: 32, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.5 },
+    sensitive: { chopIdealMax: 48, chopTransitionMax: 58, chopHardBlock: 65, adxTrendStart: 20, adxTrendValid: 25, adxStrong: 30, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.8, riskPerTrade: 0.005 }
   };
   const labels = {
     enabled: "启用趋势策略", leverage: "杠杆（最高 10）", allowWeekendOpen: "允许周末开新仓", weekendMode: "周末保护模式",
@@ -36,10 +41,17 @@
   mount.innerHTML = `
     <div class="block-head">
       <div><div class="block-title" id="trendOnlyPanelTitle">Trend Only 参数</div><div class="config-section-note">趋势过滤单仓 · 无 DCA · UTC 周末默认禁开</div></div>
-      <div><button class="ghost" id="trendUpgradeV2" type="button">一键升级到 V2</button> <button class="ghost" id="trendRestoreDefaults" type="button">恢复推荐参数</button></div>
+      <div><button class="ghost" id="trendRestoreDefaults" type="button">恢复推荐参数</button></div>
+    </div>
+    <div class="strategy-context" id="trendV1Warning" style="margin-bottom:12px;">
+      <span>当前账户正在使用 Trend Only V1。V1 过滤更严格，容易长时间不开仓。建议切换到 Trend Only V2，V2 支持回踩入场、延续入场和信号回放。</span>
+      <button class="ghost" id="trendUpgradeV2" type="button">一键升级到 Trend Only V2</button>
     </div>
     <div class="config-section">
       <div class="config-section-head"><div class="config-section-title">行情、仓位与风控</div><div class="config-section-note">主配置页保存会同时保存以下参数。</div></div>
+      <label id="trendStrictnessWrap">策略严格度
+        <select id="trendStrictness"><option value="conservative">稳健模式</option><option value="standard">标准模式</option><option value="sensitive">灵敏模式（Paper 推荐）</option><option value="custom">自定义</option></select>
+      </label>
       <div class="smart-form-grid" id="trendOnlyFields"></div>
     </div>
     <div class="config-section">
@@ -57,7 +69,8 @@
     const v2Only = new Set(["version", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread", "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr", "maxStopDistanceAtr", "minStopDistanceAtr", "softBreakEvenAtR", "realBreakEvenAtR", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars", "reentryCooldownBars"]);
     const selectedV2 = document.getElementById("strategyType")?.value === "trend_only_v2";
     document.getElementById("trendOnlyPanelTitle").textContent = selectedV2 ? "Trend Only V2 参数" : "Trend Only V1 参数";
-    document.getElementById("trendUpgradeV2").hidden = selectedV2;
+    document.getElementById("trendV1Warning").hidden = selectedV2;
+    document.getElementById("trendStrictnessWrap").hidden = !selectedV2;
     for (const [key, fallback] of Object.entries(DEFAULTS)) {
       const label = document.createElement("label"); label.textContent = labels[key] || key;
       if (!simpleKeys.has(key)) label.classList.add("trend-advanced-field");
@@ -91,6 +104,8 @@
       }
       input.id = `trendOnly_${key}`; inputs[key] = input; label.append(input); fieldRoot.append(label);
     }
+    const presetName = Object.entries(STRICTNESS_PRESETS).find(([, preset]) => Object.entries(preset).every(([key, value]) => merged[key] === value))?.[0] || "custom";
+    document.getElementById("trendStrictness").value = presetName;
   }
   function getConfig() {
     const result = {};
@@ -135,6 +150,17 @@
   }
   function report(error) { document.getElementById("trendOnlyStatusMessage").textContent = error.message || String(error); }
   document.getElementById("trendRestoreDefaults").onclick = () => setConfig(DEFAULTS);
+  document.getElementById("trendStrictness").onchange = event => {
+    const name = event.target.value, preset = STRICTNESS_PRESETS[name];
+    if (!preset) return;
+    if (name === "sensitive" && document.getElementById("tradeMode")?.value === "live" && !window.confirm("灵敏模式会放宽过滤。Live 使用前需要再次确认，是否继续？")) {
+      event.target.value = "custom"; return;
+    }
+    for (const [key, value] of Object.entries(preset)) {
+      const input = inputs[key]; if (!input) continue;
+      if (input.type === "checkbox") input.checked = !!value; else input.value = value;
+    }
+  };
   document.getElementById("trendUpgradeV2").onclick = async () => {
     try {
       const selector = document.getElementById("strategyType"); if (selector) selector.value = "trend_only_v2";

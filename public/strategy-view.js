@@ -20,6 +20,36 @@
       risk: all.filter(item => matches(item, /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单结果未知/i)).length
     };
   }
+  function summarizeReplayWindow(items, hours, now = Date.now()) {
+    const cutoff = now - Number(hours) * 3600000;
+    const all = (Array.isArray(items) ? items : []).filter(item => Number(item.time) >= cutoff && Number(item.time) <= now);
+    const blockers = item => replayBlockers(item);
+    return {
+      total: all.length,
+      allowed: all.filter(item => item.entryPermission === "allowed").length,
+      pullback: all.filter(item => item.entryPermission === "wait_pullback").length,
+      breakout: all.filter(item => item.entryPermission === "wait_breakout").length,
+      continuation: all.filter(item => item.entryPermission === "wait_continuation").length,
+      chop: all.filter(item => /CHOP|震荡/.test(blockers(item))).length,
+      adx: all.filter(item => /ADX|趋势强度/.test(blockers(item))).length,
+      higher: all.filter(item => /高周期|4H|多周期/.test(blockers(item))).length,
+      extended: all.filter(item => /远离 EMA20|不追单/.test(blockers(item))).length,
+      risk: all.filter(item => /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单结果未知/i.test(blockers(item))).length
+    };
+  }
+  function strictnessWarnings(items, now = Date.now()) {
+    const all = Array.isArray(items) ? items : [], cutoff = now - 48 * 3600000;
+    if (!all.length || Math.min(...all.map(item => Number(item.time) || now)) > cutoff) return [];
+    const stats = summarizeReplayWindow(all, 48, now);
+    if (!stats.total || stats.allowed > 0) return [];
+    const warnings = ["过去 48 小时没有出现可开仓信号。请查看信号统计，可能是市场震荡，也可能是策略过滤过严。"];
+    if (stats.adx / stats.total > 0.7) warnings.push("主要原因：趋势强度不足。");
+    if (stats.chop / stats.total > 0.7) warnings.push("主要原因：震荡过滤过严或市场震荡。");
+    if (stats.higher / stats.total > 0.5) warnings.push("主要原因：高周期确认过严。");
+    if (stats.extended / stats.total > 0.5) warnings.push("主要原因：趋势已走远，系统等待回踩，不追单。");
+    return warnings;
+  }
+  const yesNo = passed => passed ? "通过" : "未通过";
   function marketLabel(trend) {
     if (trend.weekendBlocked) return "周末禁止新开仓";
     return ({ trend: "趋势行情", strong_trend: "强趋势", trend_continuation: "趋势延续", trend_pullback: "趋势回踩", trend_breakout: "趋势启动", extended_no_chase: "趋势已走远，等待回踩", chop: "震荡过滤", unclear: "不明确行情", data_insufficient: "行情数据不足" })[trend.signal?.regime] || "行情数据不足";
@@ -44,6 +74,46 @@
     if (/Live.*确认|二次确认/.test(lastAction)) return "Live 本次信号等待确认";
     if (/突破/.test((trend.signal?.reasons || []).join(" "))) return "等待突破";
     return "等待趋势";
+  }
+  function opportunityStatus(trend) {
+    const signal = trend.signal || {}, d = signal.diagnostics || {};
+    if (trend.riskLock || trend.pendingOrder || trend.weekendBlocked || Number(trend.pauseUntil) > Date.now() || trend.dailyLossLimitReached) return "风控禁止";
+    if (signal.entryPermission === "allowed" || signal.regime === "trend") return "可开仓";
+    if (signal.regime === "extended_no_chase") return "等待回踩";
+    const causes = [];
+    if (d.chop && !d.chop.passed) causes.push("震荡");
+    if (d.adx && !d.adx.passed) causes.push("ADX 弱");
+    if (d.direction && d.direction.timeframePassed === false) causes.push("方向冲突");
+    if (causes.length) return `无机会：${causes.join(" / ")}`;
+    if (["long", "short"].includes(d.direction?.trendDirection) && !["long", "short"].includes(d.direction?.entryDirection)) return "观察中：1H 有方向，但 15m 未确认";
+    if (signal.entryPermission === "wait_pullback") return "等待回踩";
+    if (signal.entryPermission === "wait_breakout" || d.breakout?.passed === false) return "等待突破";
+    if (signal.entryPermission === "wait_continuation") return "等待延续";
+    return "无机会";
+  }
+  function diagnosticSummary(trend) {
+    const signal = trend.signal || {}, d = signal.diagnostics || {}, blockers = d.finalBlockers || signal.blockers || signal.reasons || [];
+    const trendDirection = d.direction?.trendDirection;
+    if (["long", "short"].includes(trendDirection) && d.adx?.passed === false && d.chop?.label && ["偏震荡", "震荡", "过渡"].includes(d.chop.label)) {
+      const chopZone = d.chop.label === "过渡" ? "偏震荡" : d.chop.label;
+      return `1H 出现${trendDirection === "long" ? "做多" : "做空"}趋势，但当前 ADX=${value(d.adx.value, 2)} 低于趋势强度阈值 ${value(d.adx.threshold, 0)}，且 CHOP=${value(d.chop.value, 2)} 处于${chopZone}区，未形成可交易信号。当前不属于系统故障，而是策略过滤导致不开仓。`;
+    }
+    if (!blockers.length) return signal.entryPermission === "allowed" || signal.regime === "trend" ? "全部条件通过，当前存在可执行机会。" : "策略正在等待新的已收盘 K 线。";
+    return `不开仓原因：${blockers.join("；")}`;
+  }
+  function diagnosticRows(trend) {
+    const signal = trend.signal || {}, d = signal.diagnostics || {}, entry = d.entry || {};
+    const chopThreshold = typeof d.chop?.threshold === "object"
+      ? `理想 < ${d.chop.threshold.ideal} / 过渡 < ${d.chop.threshold.transition} / 阻断 ≥ ${d.chop.threshold.hardBlock}`
+      : `< ${d.chop?.threshold ?? "-"}`;
+    return [
+      ["机会状态", opportunityStatus(trend)],
+      ["CHOP 判断", `当前 ${value(d.chop?.value, 2)}｜阈值 ${chopThreshold}｜${yesNo(d.chop?.passed)}｜${d.chop?.label || "数据不足"}`, d.chop?.passed ? "green" : "orange"],
+      ["ADX 判断", `当前 ${value(d.adx?.value, 2)}｜阈值 ≥ ${value(d.adx?.threshold, 0)}｜${yesNo(d.adx?.passed)}｜${d.adx?.label || "数据不足"}`, d.adx?.passed ? "green" : "orange"],
+      ["方向判断", `15m ${directionLabel(d.direction?.entryDirection)}｜1H ${directionLabel(d.direction?.trendDirection)}｜4H ${directionLabel(d.direction?.higherDirection)}｜${d.direction?.conflict || d.direction?.passed === false ? "存在冲突或未确认" : "方向通过"}`],
+      ["入场条件", `突破 ${entry.breakout ? "是" : "否"}｜回踩确认 ${entry.pullback ? "是" : "否"}｜延续结构 ${entry.continuation ? "是" : "否"}｜远离 EMA20 ${entry.extended ? "是" : "否"}`],
+      ["风控条件", `周末 ${trend.weekendBlocked ? "禁止" : "通过"}｜pendingOrder ${trend.pendingOrder ? "有" : "无"}｜risk_lock ${trend.riskLock ? "是" : "否"}｜连亏冷却 ${Number(trend.pauseUntil) > Date.now() ? "是" : "否"}｜日亏损限制 ${trend.dailyLossLimitReached ? "触发" : "未触发"}`]
+    ];
   }
   function buildTrendView(cfg, st) {
     const trend = st.trendOnly || {};
@@ -73,7 +143,7 @@
     ] : [["趋势仓位", "无"], ["当前价格", value(st.currentPrice)], ["当前盈亏", `${value(st.pnl)} U`], ["收益率", `${value(st.roi)}%`]];
     const strategyRows = [
       ["策略", cfg.strategyType === "trend_only_v2" ? "Trend Only V2（突破 + 回踩 + 延续）" : "Trend Only V1（趋势过滤单仓）"],
-      ["市场阶段", market], ["原始趋势方向", direction], ["交易方向", tradeDirection], ["当前阻断原因", blockers.join("；") || "无"], ["周末过滤", weekend],
+      ["机会状态", opportunityStatus(trend)], ["市场阶段", market], ["原始趋势方向", direction], ["交易方向", tradeDirection], ["当前阻断原因", blockers.join("；") || "无"], ["周末过滤", weekend],
       ["CHOP", value(indicators.chop)], ["ADX", value(indicators.adx)], ["ATR", value(indicators.atr)], ["趋势评分", value(signal.score, 0)],
       ["1H 方向", directionLabel(indicators.trendDirection)], ["4H 方向", directionLabel(indicators.higherDirection)],
       ["入场模式", ({ breakout_entry: "突破", pullback_entry: "回踩", continuation_entry: "延续" })[signal.entryMode] || "等待"],
@@ -91,7 +161,7 @@
       ["保护止损", trend.stopSyncStatus || "not_required", trend.riskLock ? "red" : ""], ["risk_lock", trend.riskLock ? trend.riskLockReason || "已锁定" : "未锁定", trend.riskLock ? "red" : "green"],
       ["pendingOrder", orderState, orderClass], ["错误信息", st.lastError || "-", st.lastError ? "red" : "muted"]
     ];
-    return { market, direction, weekend, nextAction: nextAction(trend, st.lastAction), positionRows, strategyRows, rightStatusRows, rightRiskRows };
+    return { market, direction, weekend, opportunityStatus: opportunityStatus(trend), diagnosticRows: diagnosticRows(trend), diagnosticSummary: diagnosticSummary(trend), nextAction: nextAction(trend, st.lastAction), positionRows, strategyRows, rightStatusRows, rightRiskRows };
   }
-  return { marketLabel, directionLabel, nextAction, summarizeReplay, buildTrendView };
+  return { marketLabel, directionLabel, nextAction, opportunityStatus, diagnosticSummary, diagnosticRows, summarizeReplay, summarizeReplayWindow, strictnessWarnings, buildTrendView };
 });

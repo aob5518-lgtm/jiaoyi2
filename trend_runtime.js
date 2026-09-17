@@ -55,10 +55,12 @@ function createTrendRuntime(d) {
       syncMismatch: !!s.syncMismatch,
       lastLog: s.lastLog || "",
       dailyLoss: Number(s.dailyLoss || 0),
+      dayStartEquity: Number(s.dayStartEquity || 0),
+      dailyLossLimitReached: Number(s.dayStartEquity || 0) > 0 && Number(s.dailyLoss || 0) >= Number(s.dayStartEquity) * Number(acc.trendOnlyConfig?.maxDailyLossRatio || 0.03),
       consecutiveLosses: Number(s.consecutiveLosses || 0),
       pauseUntil: Number(s.pauseUntil || 0),
       trendContext: s.trendContext || null,
-      signalJournal: (s.signalJournal || []).slice(-50).reverse(),
+      signalJournal: (s.signalJournal || []).slice(-500).reverse(),
       riskLock: !!s.riskLock,
       riskLockReason: s.riskLockReason || "",
       stopOrderId: s.stopOrderId || "",
@@ -340,8 +342,7 @@ function createTrendRuntime(d) {
         const sets = await Promise.all([c.entryTimeframe, c.trendTimeframe, c.higherTimeframe].map(tf => d.candles(acc.symbol, tf, 300, acc.platform)));
         if (sets.some(x => x.stale)) throw Error("行情过期或使用跨交易所备用行情");
         const values = sets.map((x, n) => T.indicatorsFor(x.candles, c, [c.entryTimeframe, c.trendTimeframe, c.higherTimeframe][n]));
-        i = { ...values[0], config: c, trendDirection: T.directionOf(values[1]), higherDirection: T.directionOf(values[2]), price: Number(st.currentPrice) };
-        if (isV2(acc)) i.entryDirection = T.directionOf(values[0]);
+        i = { ...values[0], config: c, entryDirection: T.directionOf(values[0]), trendDirection: T.directionOf(values[1]), higherDirection: T.directionOf(values[2]), price: Number(st.currentPrice) };
         s.signal = T.detectMarketRegime(i.candles, i);
         if (isV2(acc)) {
           Object.assign(i, {
@@ -353,7 +354,7 @@ function createTrendRuntime(d) {
           T.updateTrendContext(s, s.signal, i);
           T.appendShadowSignal(s, acc.id, s.signal, i, s.signal.entryPermission === "allowed" ? "允许开仓" : (s.signal.blockers || []).join("；"));
         }
-        s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, trendDirection: i.trendDirection, higherDirection: i.higherDirection };
+        s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, entryDirection: i.entryDirection, trendDirection: i.trendDirection, higherDirection: i.higherDirection };
       } catch (e) { log(acc, st, `趋势行情暂不可用：${e.message}；已有价格止损继续执行`); return; }
       if (s.position) {
         const beforeStop = Number(s.position.currentStopLossPrice);

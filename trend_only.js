@@ -100,19 +100,34 @@ function directionOf(i) {
 function detectMarketRegime(candles, i) {
   const c = normalizeConfig(i.config), reasons = [];
   let regime = "unclear", direction = directionOf(i), score = 0;
-  if (![i.chop, i.adx, i.atr, i.close, i.emaFast, i.emaMid, i.emaSlope, i.diPlus, i.diMinus, i.breakoutHigh, i.breakoutLow].every(Number.isFinite) || i.atr <= 0) return { regime, direction: "none", score, reasons: ["指标不足，禁止开仓"] };
-  if (i.chop >= c.maxChopToTrade) { regime = i.chop >= 50 ? "chop" : "unclear"; reasons.push(`市场状态：CHOP=${i.chop.toFixed(1)}，${regime === "chop" ? "震荡行情" : "趋势不明确"}，禁止开仓。`); }
-  else score += 20;
+  const entryDirection = direction;
   const rising = i.adxHistory?.length === 3 && i.adxHistory[2] > i.adxHistory[1] && i.adxHistory[1] > i.adxHistory[0];
-  if (i.adx < c.minAdxToTrade || !rising) reasons.push(`ADX=${i.adx.toFixed(1)}，未达到趋势强度或连续上升要求。`); else score += 20;
+  const valid = [i.chop, i.adx, i.atr, i.close, i.emaFast, i.emaMid, i.emaSlope, i.diPlus, i.diMinus, i.breakoutHigh, i.breakoutLow].every(Number.isFinite) && i.atr > 0;
+  const chopPassed = valid && i.chop < c.maxChopToTrade;
+  const adxPassed = valid && i.adx >= c.minAdxToTrade && rising;
+  const breakout = valid && (entryDirection === "long" ? i.close > i.breakoutHigh : entryDirection === "short" && i.close < i.breakoutLow);
+  const mtf = valid && (!c.requireMultiTimeframeConfirm || (entryDirection !== "none" && i.trendDirection === entryDirection && i.higherDirection === entryDirection));
+  const higherTimeframePassed = valid && (!c.requireMultiTimeframeConfirm || (["long", "short"].includes(i.trendDirection) && i.higherDirection === i.trendDirection));
+  const entryConflict = entryDirection === "none" || (["long", "short"].includes(i.trendDirection) && entryDirection !== i.trendDirection);
+  const diagnostics = {
+    chop: { value: Number.isFinite(i.chop) ? i.chop : null, threshold: c.maxChopToTrade, passed: chopPassed, label: !Number.isFinite(i.chop) ? "数据不足" : i.chop >= 50 ? "震荡" : i.chop >= c.maxChopToTrade ? "过渡" : "趋势" },
+    adx: { value: Number.isFinite(i.adx) ? i.adx : null, threshold: c.minAdxToTrade, rising: !!rising, passed: adxPassed, label: !Number.isFinite(i.adx) ? "数据不足" : adxPassed ? "趋势有效" : "趋势强度不足" },
+    direction: { entryDirection, trendDirection: i.trendDirection || "none", higherDirection: i.higherDirection || "none", passed: entryDirection !== "none" && mtf, timeframePassed: !!higherTimeframePassed, entryConflict, conflict: !higherTimeframePassed || entryConflict },
+    breakout: { passed: !!breakout, breakoutHigh: Number.isFinite(i.breakoutHigh) ? i.breakoutHigh : null, breakoutLow: Number.isFinite(i.breakoutLow) ? i.breakoutLow : null },
+    entry: { breakout: !!breakout, pullback: false, continuation: false, extended: false },
+    finalBlockers: reasons
+  };
+  if (!valid) { reasons.push("指标不足，禁止开仓"); return { regime, direction: "none", directionRaw: entryDirection, tradeDirection: "none", entryPermission: "blocked", score, reasons, blockers: reasons, diagnostics, signalTime: i.signalTime }; }
+  if (!chopPassed) { regime = i.chop >= 50 ? "chop" : "unclear"; reasons.push(`市场状态：CHOP=${i.chop.toFixed(1)}，${regime === "chop" ? "震荡行情" : "趋势不明确"}，禁止开仓。`); }
+  else score += 20;
+  if (!adxPassed) reasons.push(`ADX=${i.adx.toFixed(1)}，未达到趋势强度或连续上升要求。`); else score += 20;
   if (direction === "none") reasons.push("EMA 与 DI 方向不明确或冲突，禁止开仓。"); else score += 20;
-  const breakout = direction === "long" ? i.close > i.breakoutHigh : direction === "short" && i.close < i.breakoutLow;
   if (!breakout) reasons.push("等待收盘突破确认。"); else score += 20;
-  const mtf = !c.requireMultiTimeframeConfirm || (direction !== "none" && i.trendDirection === direction && i.higherDirection === direction);
   if (!mtf) reasons.push(`多周期确认失败：${c.trendTimeframe}=${i.trendDirection || "none"}，${c.higherTimeframe}=${i.higherDirection || "none"}，禁止开仓。`); else score += 20;
   if (reasons.length) direction = "none";
   else { regime = "trend"; reasons.push(`趋势过滤通过：ADX=${i.adx.toFixed(1)}，EMA、DI、突破及多周期方向一致（${direction === "long" ? "做多" : "做空"}）。`); }
-  return { regime, direction, score, reasons, signalTime: i.signalTime, breakoutLevel: direction === "long" ? i.breakoutHigh : i.breakoutLow };
+  diagnostics.finalBlockers = direction === "none" ? [...reasons] : [];
+  return { regime, direction, directionRaw: entryDirection, tradeDirection: direction, entryPermission: direction === "none" ? "blocked" : "allowed", score, reasons, blockers: diagnostics.finalBlockers, diagnostics, signalTime: i.signalTime, breakoutLevel: direction === "long" ? i.breakoutHigh : i.breakoutLow };
 }
 function initialState() { return { position: null, pendingOrder: null, submittedIds: [], dailyDate: "", dailyLoss: 0, dayStartEquity: 0, consecutiveLosses: 0, pauseUntil: 0, lastEntrySignalTime: 0, journal: [] }; }
 function rollDay(s, equity, now) {

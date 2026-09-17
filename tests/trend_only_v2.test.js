@@ -32,6 +32,16 @@ test("V2 忽略旧 maxChopToTrade 并接受 transition=52", () => {
   const signal = V2.detectMarketRegimeV2([], input({ config, chop: 47.99, adx: 39 }));
   assert.equal(signal.directionRaw, "short"); assert.notEqual(signal.entryPermission, "blocked");
 });
+test("V2 CHOP=52.8、ADX=17.65、1H 做多时保留原始方向但禁止开仓", () => {
+  const signal = V2.detectMarketRegimeV2([], input({ chop: 52.8, adx: 17.65, adxHistory: [18, 17.8, 17.65], trendDirection: "long", higherDirection: "none" }));
+  assert.equal(signal.directionRaw, "long"); assert.notEqual(signal.entryPermission, "allowed");
+  assert.equal(signal.diagnostics.adx.passed, false); assert.equal(signal.diagnostics.chop.label, "过渡");
+});
+test("V2 三套严格度预设参数完整", () => {
+  assert.deepEqual(Object.keys(V2.STRICTNESS_PRESETS), ["conservative", "standard", "sensitive"]);
+  assert.equal(V2.STRICTNESS_PRESETS.standard.chopTransitionMax, 55);
+  assert.equal(V2.STRICTNESS_PRESETS.sensitive.riskPerTrade, 0.005);
+});
 test("ADX 高但未连续上升仍识别趋势延续", () => {
   const signal = V2.detectMarketRegimeV2([], input({ chop: 42, adx: 37, adxHistory: [38, 36, 37] }));
   assert.equal(signal.directionRaw, "short"); assert.equal(signal.regime, "trend_continuation");
