@@ -110,7 +110,7 @@ function detectMarketRegime(candles, i) {
   const higherTimeframePassed = valid && (!c.requireMultiTimeframeConfirm || (["long", "short"].includes(i.trendDirection) && i.higherDirection === i.trendDirection));
   const entryConflict = entryDirection === "none" || (["long", "short"].includes(i.trendDirection) && entryDirection !== i.trendDirection);
   const diagnostics = {
-    chop: { value: Number.isFinite(i.chop) ? i.chop : null, threshold: c.maxChopToTrade, passed: chopPassed, label: !Number.isFinite(i.chop) ? "数据不足" : i.chop >= 50 ? "震荡" : i.chop >= c.maxChopToTrade ? "过渡" : "趋势" },
+    chop: { value: Number.isFinite(i.chop) ? i.chop : null, threshold: c.maxChopToTrade, state: chopPassed ? "PASS" : "BLOCK", passed: chopPassed, conditional: false, label: !Number.isFinite(i.chop) ? "数据不足" : i.chop >= 50 ? "强震荡禁止交易" : i.chop >= c.maxChopToTrade ? "震荡过滤阻断" : "趋势通过" },
     adx: { value: Number.isFinite(i.adx) ? i.adx : null, threshold: c.minAdxToTrade, rising: !!rising, passed: adxPassed, label: !Number.isFinite(i.adx) ? "数据不足" : adxPassed ? "趋势有效" : "趋势强度不足" },
     direction: { entryDirection, trendDirection: i.trendDirection || "none", higherDirection: i.higherDirection || "none", passed: entryDirection !== "none" && mtf, timeframePassed: !!higherTimeframePassed, entryConflict, conflict: !higherTimeframePassed || entryConflict },
     breakout: { passed: !!breakout, breakoutHigh: Number.isFinite(i.breakoutHigh) ? i.breakoutHigh : null, breakoutLow: Number.isFinite(i.breakoutLow) ? i.breakoutLow : null },

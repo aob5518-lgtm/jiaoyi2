@@ -42,9 +42,34 @@ test('写入意图失败不得调用交易所下单',async t=>{
   fs.mkdirSync(path.join(f.directory,'trend_only_runtime.json.tmp'));await assert.rejects(()=>f.r.tick(f.acc,f.st));assert.equal(f.orders(),0);
 });
 test('V2 每根已收盘 K 线写入信号回放并发布趋势记忆',async t=>{
-  const f=fixture(t);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true});
+  const f=fixture(t);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true,maxEntryExtensionAtr:100,maxStopDistanceAtr:100,minStopDistanceAtr:0.1});
   await f.r.tick(f.acc,f.st);const state=f.r.get(f.acc);
   assert.equal(state.signalJournal.length,1);assert.ok(state.trendContext);assert.equal(f.st.trendOnly.signalJournal.length,1);
+  const item=state.signalJournal[0];assert.equal(item.signalPermission,item.entryPermission);assert.ok(item.executionPermission);assert.ok(item.finalDecision);
+  assert.equal(item.finalDecision,'ORDER_FILLED');assert.equal(item.orderSubmitted,true);assert.equal(item.orderFilled,true);
+  assert.equal(f.st.trendOnly.executionState,'POSITION_MANAGED');
+  await f.r.tick(f.acc,f.st);assert.equal(item.finalDecision,'POSITION_MANAGED');assert.equal(item.executionPermission,'allowed');assert.equal(item.orderFilled,true);
+});
+test('V2 信号允许但监控停止时记录执行阻断，不误报可开仓',async t=>{
+  const f=fixture(t);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true});f.st.running=false;
+  await f.r.tick(f.acc,f.st);const item=f.r.get(f.acc).signalJournal[0];
+  assert.equal(item.finalDecision,'MONITOR_STOPPED');assert.equal(item.executionPermission,'blocked');assert.match(item.executionBlocker,/监控已停止/);
+  assert.equal(f.st.trendOnly.executionState,'MONITOR_STOPPED');
+});
+test('V2 Live 信号通过但未确认时区分信号机会和执行许可',async t=>{
+  const f=fixture(t,true);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true,maxEntryExtensionAtr:100});
+  await f.r.tick(f.acc,f.st);const item=f.r.get(f.acc).signalJournal[0];
+  assert.equal(item.signalPermission,'allowed');assert.equal(item.executionPermission,'blocked');assert.equal(item.finalDecision,'WAIT_LIVE_CONFIRM');
+  assert.equal(f.st.trendOnly.executionState,'WAIT_LIVE_CONFIRM');assert.match(f.st.trendOnly.executionReason,/二次确认/);
+});
+test('统一 executionState 覆盖风控、平台、冲突、挂单、冷却与已有仓位',t=>{
+  const f=fixture(t,true);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true});const s=f.r.get(f.acc);
+  s.riskLock=true;s.riskLockReason='保护单失败';f.r.publish(f.acc,f.st);assert.equal(f.st.trendOnly.executionState,'RISK_LOCK');
+  s.riskLock=false;f.acc.platform='extended';f.r.publish(f.acc,f.st);assert.equal(f.st.trendOnly.executionState,'PLATFORM_UNSUPPORTED');
+  f.acc.platform='hyperliquid';f.d.conflictingAccount=()=>true;f.r.publish(f.acc,f.st);assert.equal(f.st.trendOnly.executionState,'ACCOUNT_CONFLICT');
+  f.d.conflictingAccount=()=>false;s.conflictingAccount=false;s.exchangeOpenOrders=true;f.r.publish(f.acc,f.st);assert.equal(f.st.trendOnly.executionState,'OPEN_ORDER_BLOCK');
+  s.exchangeOpenOrders=false;s.pauseUntil=Date.now()+60000;f.r.publish(f.acc,f.st);assert.equal(f.st.trendOnly.executionState,'RISK_LOCK');
+  s.pauseUntil=0;s.position=v2Position();f.r.publish(f.acc,f.st);assert.equal(f.st.trendOnly.executionState,'POSITION_MANAGED');
 });
 test('V2 Paper 模拟保护止损，不请求交易所',async t=>{
   const f=fixture(t);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true});f.r.get(f.acc).position=v2Position();

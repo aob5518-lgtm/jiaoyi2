@@ -5,12 +5,16 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
   const value = (input, digits = 3) => Number.isFinite(Number(input)) ? Number(input).toFixed(digits) : "-";
-  const replayBlockers = item => (item?.blockers || []).join("；");
+  const replayBlockers = item => [item?.executionBlocker, ...(item?.blockers || [])].filter(Boolean).join("；");
   function summarizeReplay(items) {
     const all = Array.isArray(items) ? items.slice(0, 50) : [];
     const matches = (item, pattern) => pattern.test(replayBlockers(item));
     return {
-      allowed: all.filter(item => item.entryPermission === "allowed").length,
+      signalOpportunities: all.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
+      executable: all.filter(item => item.executionPermission === "allowed").length,
+      submitted: all.filter(item => item.orderSubmitted || item.finalDecision === "ORDER_SUBMITTED").length,
+      filled: all.filter(item => item.orderFilled || item.finalDecision === "ORDER_FILLED").length,
+      allowed: all.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
       pullback: all.filter(item => item.entryPermission === "wait_pullback").length,
       breakout: all.filter(item => item.entryPermission === "wait_breakout").length,
       continuation: all.filter(item => item.entryPermission === "wait_continuation").length,
@@ -26,7 +30,11 @@
     const blockers = item => replayBlockers(item);
     return {
       total: all.length,
-      allowed: all.filter(item => item.entryPermission === "allowed").length,
+      signalOpportunities: all.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
+      executable: all.filter(item => item.executionPermission === "allowed").length,
+      submitted: all.filter(item => item.orderSubmitted || item.finalDecision === "ORDER_SUBMITTED").length,
+      filled: all.filter(item => item.orderFilled || item.finalDecision === "ORDER_FILLED").length,
+      allowed: all.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
       pullback: all.filter(item => item.entryPermission === "wait_pullback").length,
       breakout: all.filter(item => item.entryPermission === "wait_breakout").length,
       continuation: all.filter(item => item.entryPermission === "wait_continuation").length,
@@ -41,7 +49,7 @@
     const all = Array.isArray(items) ? items : [], cutoff = now - 48 * 3600000;
     if (!all.length || Math.min(...all.map(item => Number(item.time) || now)) > cutoff) return [];
     const stats = summarizeReplayWindow(all, 48, now);
-    if (!stats.total || stats.allowed > 0) return [];
+    if (!stats.total || stats.signalOpportunities > 0) return [];
     const warnings = ["过去 48 小时没有出现可开仓信号。请查看信号统计，可能是市场震荡，也可能是策略过滤过严。"];
     if (stats.adx / stats.total > 0.7) warnings.push("主要原因：趋势强度不足。");
     if (stats.chop / stats.total > 0.7) warnings.push("主要原因：震荡过滤过严或市场震荡。");
@@ -60,6 +68,8 @@
   function nextAction(trend, lastAction = "") {
     const pending = trend.pendingOrder;
     const position = trend.position;
+    const executionActions = { MONITOR_STOPPED: "启动趋势监控后再判断", ACCOUNT_CONFLICT: "解除同账户合约冲突", OPEN_ORDER_BLOCK: "等待交易所挂单结束", REENTRY_COOLDOWN: "等待再入场冷却结束", WAIT_LIVE_CONFIRM: "等待本次 Live 开仓确认", RISK_LOCK: "解除风控锁定后再开仓", PLATFORM_UNSUPPORTED: "切换 Paper 或 Hyperliquid/Binance", READY_TO_OPEN: "执行条件已通过，准备开仓", ORDER_SUBMITTED: "订单已提交，等待交易所确认", ORDER_FILLED: "订单已成交，进入持仓保护", POSITION_MANAGED: "管理现有仓位与止损" };
+    if (executionActions[trend.executionState]) return executionActions[trend.executionState];
     if (pending?.status === "unknown_order_state") return "订单结果未知，禁止重复下单";
     if (pending) return "订单处理中，等待交易所确认";
     if (position?.defensiveMode) return "防守模式";
@@ -77,11 +87,18 @@
   }
   function opportunityStatus(trend) {
     const signal = trend.signal || {}, d = signal.diagnostics || {};
+    const executionLabels = {
+      NO_SIGNAL: "无机会", WAIT_PULLBACK: "等待回踩", WAIT_BREAKOUT: "等待突破", WAIT_CONTINUATION: "等待延续",
+      MONITOR_STOPPED: "监控已停止", ACCOUNT_CONFLICT: "账户冲突", OPEN_ORDER_BLOCK: "挂单阻断", REENTRY_COOLDOWN: "再入场冷却",
+      WAIT_LIVE_CONFIRM: "等待 Live 确认", RISK_LOCK: "风控禁止", PLATFORM_UNSUPPORTED: "平台暂不支持", ORDER_SUBMITTED: "订单已提交",
+      ORDER_FILLED: "订单已成交", POSITION_MANAGED: "持仓保护中", READY_TO_OPEN: "可执行开仓"
+    };
+    if (executionLabels[trend.executionState]) return executionLabels[trend.executionState];
     if (trend.riskLock || trend.pendingOrder || trend.weekendBlocked || Number(trend.pauseUntil) > Date.now() || trend.dailyLossLimitReached) return "风控禁止";
     if (signal.entryPermission === "allowed" || signal.regime === "trend") return "可开仓";
     if (signal.regime === "extended_no_chase") return "等待回踩";
     const causes = [];
-    if (d.chop && !d.chop.passed) causes.push("震荡");
+    if (d.chop?.state === "BLOCK" || (d.chop && d.chop.state === undefined && !d.chop.passed)) causes.push("震荡");
     if (d.adx && !d.adx.passed) causes.push("ADX 弱");
     if (d.direction && d.direction.timeframePassed === false) causes.push("方向冲突");
     if (causes.length) return `无机会：${causes.join(" / ")}`;
@@ -94,8 +111,8 @@
   function diagnosticSummary(trend) {
     const signal = trend.signal || {}, d = signal.diagnostics || {}, blockers = d.finalBlockers || signal.blockers || signal.reasons || [];
     const trendDirection = d.direction?.trendDirection;
-    if (["long", "short"].includes(trendDirection) && d.adx?.passed === false && d.chop?.label && ["偏震荡", "震荡", "过渡"].includes(d.chop.label)) {
-      const chopZone = d.chop.label === "过渡" ? "偏震荡" : d.chop.label;
+    if (["long", "short"].includes(trendDirection) && d.adx?.passed === false && d.chop?.label && /震荡|过渡/.test(d.chop.label)) {
+      const chopZone = /过渡/.test(d.chop.label) ? "偏震荡" : d.chop.label.replace(/，.*$/, "").replace(/禁止交易$/, "");
       return `1H 出现${trendDirection === "long" ? "做多" : "做空"}趋势，但当前 ADX=${value(d.adx.value, 2)} 低于趋势强度阈值 ${value(d.adx.threshold, 0)}，且 CHOP=${value(d.chop.value, 2)} 处于${chopZone}区，未形成可交易信号。当前不属于系统故障，而是策略过滤导致不开仓。`;
     }
     if (!blockers.length) return signal.entryPermission === "allowed" || signal.regime === "trend" ? "全部条件通过，当前存在可执行机会。" : "策略正在等待新的已收盘 K 线。";
@@ -106,9 +123,11 @@
     const chopThreshold = typeof d.chop?.threshold === "object"
       ? `理想 < ${d.chop.threshold.ideal} / 过渡 < ${d.chop.threshold.transition} / 阻断 ≥ ${d.chop.threshold.hardBlock}`
       : `< ${d.chop?.threshold ?? "-"}`;
+    const chopResult = d.chop?.state === "CONDITIONAL" ? "条件通过" : d.chop?.state === "BLOCK" ? "阻断" : yesNo(d.chop?.passed);
     return [
       ["机会状态", opportunityStatus(trend)],
-      ["CHOP 判断", `当前 ${value(d.chop?.value, 2)}｜阈值 ${chopThreshold}｜${yesNo(d.chop?.passed)}｜${d.chop?.label || "数据不足"}`, d.chop?.passed ? "green" : "orange"],
+      ["执行层状态", `${trend.executionState || "NO_SIGNAL"}｜${trend.executionReason || "等待执行判断"}`, ["RISK_LOCK", "PLATFORM_UNSUPPORTED", "ACCOUNT_CONFLICT"].includes(trend.executionState) ? "red" : ""],
+      ["CHOP 判断", `当前 ${value(d.chop?.value, 2)}｜阈值 ${chopThreshold}｜${chopResult}｜${d.chop?.label || "数据不足"}`, d.chop?.state === "PASS" || (d.chop?.state === undefined && d.chop?.passed) ? "green" : "orange"],
       ["ADX 判断", `当前 ${value(d.adx?.value, 2)}｜阈值 ≥ ${value(d.adx?.threshold, 0)}｜${yesNo(d.adx?.passed)}｜${d.adx?.label || "数据不足"}`, d.adx?.passed ? "green" : "orange"],
       ["方向判断", `15m ${directionLabel(d.direction?.entryDirection)}｜1H ${directionLabel(d.direction?.trendDirection)}｜4H ${directionLabel(d.direction?.higherDirection)}｜${d.direction?.conflict || d.direction?.passed === false ? "存在冲突或未确认" : "方向通过"}`],
       ["入场条件", `突破 ${entry.breakout ? "是" : "否"}｜回踩确认 ${entry.pullback ? "是" : "否"}｜延续结构 ${entry.continuation ? "是" : "否"}｜远离 EMA20 ${entry.extended ? "是" : "否"}`],

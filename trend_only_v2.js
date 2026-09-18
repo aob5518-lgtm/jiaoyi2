@@ -34,12 +34,37 @@ const DEFAULTS = Object.freeze({
 });
 
 const STRICTNESS_PRESETS = Object.freeze({
-  conservative: Object.freeze({ chopIdealMax: 45, chopTransitionMax: 52, chopHardBlock: 61.8, adxTrendStart: 25, adxTrendValid: 30, adxStrong: 35, higherTimeframeMode: "strict_align", maxEntryExtensionAtr: 1.2 }),
-  standard: Object.freeze({ chopIdealMax: 45, chopTransitionMax: 55, chopHardBlock: 61.8, adxTrendStart: 22, adxTrendValid: 28, adxStrong: 32, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.5 }),
+  conservative: Object.freeze({ chopIdealMax: 45, chopTransitionMax: 52, chopHardBlock: 61.8, adxTrendStart: 25, adxTrendValid: 30, adxStrong: 35, higherTimeframeMode: "strict_align", maxEntryExtensionAtr: 1.2, riskPerTrade: 0.01 }),
+  standard: Object.freeze({ chopIdealMax: 45, chopTransitionMax: 55, chopHardBlock: 61.8, adxTrendStart: 22, adxTrendValid: 28, adxStrong: 32, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.5, riskPerTrade: 0.01 }),
   sensitive: Object.freeze({ chopIdealMax: 48, chopTransitionMax: 58, chopHardBlock: 65, adxTrendStart: 20, adxTrendValid: 25, adxStrong: 30, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.8, riskPerTrade: 0.005 })
 });
 
 const ENTRY_MODES = new Set(["breakout_entry", "pullback_entry", "continuation_entry"]);
+const JOURNAL_BUFFER_BARS = 32;
+function journalRetentionBars(entryTimeframe = "15m", hours = 72) {
+  const interval = Number(V1.INTERVALS[entryTimeframe] || V1.INTERVALS["15m"]);
+  return Math.ceil(Number(hours) * 3600000 / interval) + JOURNAL_BUFFER_BARS;
+}
+function signalStats(items, hours, now = Date.now()) {
+  const cutoff = now - Number(hours) * 3600000;
+  const all = (Array.isArray(items) ? items : []).filter(item => Number(item.time) >= cutoff && Number(item.time) <= now);
+  const blockers = item => [item.executionBlocker, ...(item.blockers || [])].filter(Boolean).join("；");
+  return {
+    total: all.length,
+    signalOpportunities: all.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
+    executable: all.filter(item => item.executionPermission === "allowed").length,
+    submitted: all.filter(item => item.orderSubmitted || item.finalDecision === "ORDER_SUBMITTED").length,
+    filled: all.filter(item => item.orderFilled || item.finalDecision === "ORDER_FILLED").length,
+    pullback: all.filter(item => item.signalPermission === "wait_pullback" || item.entryPermission === "wait_pullback").length,
+    breakout: all.filter(item => item.signalPermission === "wait_breakout" || item.entryPermission === "wait_breakout").length,
+    continuation: all.filter(item => item.signalPermission === "wait_continuation" || item.entryPermission === "wait_continuation").length,
+    chop: all.filter(item => /CHOP|震荡/.test(blockers(item))).length,
+    adx: all.filter(item => /ADX|趋势强度/.test(blockers(item))).length,
+    higher: all.filter(item => /高周期|4H|多周期/.test(blockers(item))).length,
+    extended: all.filter(item => /远离 EMA20|不追单/.test(blockers(item))).length,
+    risk: all.filter(item => /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单状态|挂单/i.test(blockers(item))).length
+  };
+}
 function normalizeConfig(input = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw Error("趋势 V2 配置必须是对象");
   const v1Input = {};
@@ -164,9 +189,10 @@ function detectMarketRegimeV2(candles, input) {
     const adx = adxState(input, c), adxPassed = adx.start || adx.valid || adx.strong;
     const entryDirection = input.entryDirection || directionOf(input), timeframePassed = ["long", "short"].includes(raw) && timeframeAllowed(raw, input, c);
     const entryConflict = ["long", "short"].includes(entryDirection) && ["long", "short"].includes(raw) && entryDirection !== raw;
-    const chopLabel = !Number.isFinite(input.chop) ? "数据不足" : input.chop < c.chopIdealMax ? "趋势" : input.chop < c.chopTransitionMax ? "过渡" : input.chop < c.chopHardBlock ? "偏震荡" : "震荡";
+    const chopState = !Number.isFinite(input.chop) || input.chop >= c.chopHardBlock ? "BLOCK" : input.chop >= c.chopTransitionMax ? "CONDITIONAL" : "PASS";
+    const chopLabel = !Number.isFinite(input.chop) ? "数据不足" : input.chop < c.chopIdealMax ? "优质趋势" : input.chop < c.chopTransitionMax ? "趋势过渡" : input.chop < c.chopHardBlock ? "偏震荡，仅允许高质量回踩" : "强震荡禁止交易";
     const diagnostics = {
-      chop: { value: Number.isFinite(input.chop) ? input.chop : null, threshold: { ideal: c.chopIdealMax, transition: c.chopTransitionMax, hardBlock: c.chopHardBlock }, passed: Number.isFinite(input.chop) && input.chop < c.chopHardBlock, label: chopLabel },
+      chop: { value: Number.isFinite(input.chop) ? input.chop : null, threshold: { ideal: c.chopIdealMax, transition: c.chopTransitionMax, hardBlock: c.chopHardBlock }, state: chopState, passed: chopState === "PASS", conditional: chopState === "CONDITIONAL", label: chopLabel },
       adx: { value: Number.isFinite(input.adx) ? input.adx : null, threshold: c.adxTrendStart, validThreshold: c.adxTrendValid, strongThreshold: c.adxStrong, rising: !!adx.rising, passed: !!adxPassed, label: !Number.isFinite(input.adx) ? "数据不足" : input.adx >= c.adxStrong ? "强趋势" : adxPassed ? "趋势有效" : "趋势强度不足" },
       direction: { entryDirection, trendDirection: input.trendDirection || "none", higherDirection: input.higherDirection || "none", passed: timeframePassed && !entryConflict, timeframePassed, entryConflict, conflict: !timeframePassed || entryConflict },
       breakout: { passed: !!states.breakout, breakoutHigh: Number.isFinite(input.breakoutHigh) ? input.breakoutHigh : null, breakoutLow: Number.isFinite(input.breakoutLow) ? input.breakoutLow : null },
@@ -216,7 +242,7 @@ function detectMarketRegimeV2(candles, input) {
 }
 
 function initialState() {
-  return { ...V1.initialState(), trendContext: null, signalJournal: [], lastJournalSignalTime: 0, lastExitSignalTime: 0, lastExitEntryMode: "", lastExitReason: "", lastExitDirection: "", lastExitStructureHigh: null, lastExitStructureLow: null, reversalCount: 0, riskLock: false, riskLockReason: "", stopOrderId: "", stopOrderPrice: null, stopSyncStatus: "not_required", stopLastSyncAt: 0 };
+  return { ...V1.initialState(), trendContext: null, signalJournal: [], lastJournalSignalTime: 0, executionState: "NO_SIGNAL", executionReason: "", conflictingAccount: false, exchangeOpenOrders: false, lastExitSignalTime: 0, lastExitEntryMode: "", lastExitReason: "", lastExitDirection: "", lastExitStructureHigh: null, lastExitStructureLow: null, reversalCount: 0, riskLock: false, riskLockReason: "", stopOrderId: "", stopOrderPrice: null, stopSyncStatus: "not_required", stopLastSyncAt: 0 };
 }
 function trendId(signal) { return `${signal.directionRaw}:${signal.regime}:${signal.signalTime || 0}`; }
 function updateTrendContext(state, signal, i, now = Date.now()) {
@@ -238,13 +264,17 @@ function appendShadowSignal(state, accountId, signal, i, finalAction = "") {
   if (!signal.signalTime || signal.signalTime === state.lastJournalSignalTime) return false;
   state.lastJournalSignalTime = signal.signalTime;
   state.signalJournal ||= [];
+  const signalPermission = signal.entryPermission;
+  const initialDecision = signalPermission === "wait_pullback" ? "WAIT_PULLBACK" : signalPermission === "wait_breakout" ? "WAIT_BREAKOUT" : signalPermission === "wait_continuation" ? "WAIT_CONTINUATION" : signalPermission === "allowed" ? "READY_TO_OPEN" : "NO_SIGNAL";
   state.signalJournal.push({ accountId, time: signal.signalTime, price: i.close, regime: signal.regime, directionRaw: signal.directionRaw, tradeDirection: signal.tradeDirection,
-    entryPermission: signal.entryPermission, entryMode: signal.entryMode, score: signal.score, chop: i.chop, adx: i.adx, diPlus: i.diPlus, diMinus: i.diMinus,
+    entryPermission: signalPermission, signalPermission, executionPermission: signalPermission === "allowed" ? "pending" : "blocked", executionBlocker: "", finalDecision: initialDecision,
+    orderSubmitted: false, orderFilled: false, entryMode: signal.entryMode, score: signal.score, chop: i.chop, adx: i.adx, diPlus: i.diPlus, diMinus: i.diMinus,
     emaFast: i.emaFast, emaMid: i.emaMid, trendDirection: i.trendDirection, higherDirection: i.higherDirection,
     distanceFromEmaAtr: Number.isFinite(signal.distanceFromEmaAtr) ? signal.distanceFromEmaAtr : Math.abs(i.close - i.emaFast) / i.atr,
     breakoutState: !!signal.states?.breakout, pullbackState: !!signal.states?.pullback, continuationState: !!signal.states?.continuation,
     blockers: signal.blockers || [], finalAction });
-  if (state.signalJournal.length > 1000) state.signalJournal.splice(0, state.signalJournal.length - 1000);
+  const keep = journalRetentionBars(i.config?.entryTimeframe || "15m");
+  if (state.signalJournal.length > keep) state.signalJournal.splice(0, state.signalJournal.length - keep);
   return true;
 }
 function riskMultiplier(entryMode) { return entryMode === "continuation_entry" ? 0.7 : 1; }
@@ -337,5 +367,5 @@ function manageTrendOnlyPosition(account, market, i = {}) {
 module.exports = {
   DEFAULTS, STRICTNESS_PRESETS, INTERVALS: V1.INTERVALS, normalizeConfig, isWeekendBlocked: V1.isWeekendBlocked, weekendProtection: V1.weekendProtection, detectSwings,
   indicatorsFor, directionOf, detectMarketRegimeV2, detectMarketRegime: detectMarketRegimeV2, isEntryExtended, initialState, updateTrendContext,
-  appendShadowSignal, tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose: V1.recordClose
+  journalRetentionBars, signalStats, appendShadowSignal, tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose: V1.recordClose
 };

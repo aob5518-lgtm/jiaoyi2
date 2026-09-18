@@ -35,11 +35,12 @@ test("V2 忽略旧 maxChopToTrade 并接受 transition=52", () => {
 test("V2 CHOP=52.8、ADX=17.65、1H 做多时保留原始方向但禁止开仓", () => {
   const signal = V2.detectMarketRegimeV2([], input({ chop: 52.8, adx: 17.65, adxHistory: [18, 17.8, 17.65], trendDirection: "long", higherDirection: "none" }));
   assert.equal(signal.directionRaw, "long"); assert.notEqual(signal.entryPermission, "allowed");
-  assert.equal(signal.diagnostics.adx.passed, false); assert.equal(signal.diagnostics.chop.label, "过渡");
+  assert.equal(signal.diagnostics.adx.passed, false); assert.equal(signal.diagnostics.chop.label, "趋势过渡");
 });
 test("V2 三套严格度预设参数完整", () => {
   assert.deepEqual(Object.keys(V2.STRICTNESS_PRESETS), ["conservative", "standard", "sensitive"]);
   assert.equal(V2.STRICTNESS_PRESETS.standard.chopTransitionMax, 55);
+  assert.equal(V2.STRICTNESS_PRESETS.standard.riskPerTrade, 0.01);
   assert.equal(V2.STRICTNESS_PRESETS.sensitive.riskPerTrade, 0.005);
 });
 test("ADX 高但未连续上升仍识别趋势延续", () => {
@@ -121,11 +122,39 @@ for (const [name, price, expected] of [["1R 移动到 -0.2R", 102, { stop: 99.6,
   if (expected.soft) assert.equal(p.softBreakEvenActivated, true); if (expected.breakEven) assert.equal(p.breakEvenActivated, true);
   if (expected.locked) assert.equal(p.locked1R, true); if (expected.trailing) assert.equal(p.trailingActive, true);
 });
-test("每根已收盘 K 线写一次 shadow signal，最多保留 1000 条", () => {
+test("每根已收盘 K 线写一次 shadow signal，并按周期保留完整 72 小时", () => {
   const state = V2.initialState();
   for (let n = 1; n <= 1002; n++) { const i = input({ signalTime: now + n * 900000 }); const signal = V2.detectMarketRegimeV2([], i); assert.equal(V2.appendShadowSignal(state, "v2", signal, i, "review"), true); }
-  assert.equal(state.signalJournal.length, 1000);
+  assert.equal(state.signalJournal.length, V2.journalRetentionBars("15m"));
   const i = input({ signalTime: state.lastJournalSignalTime }), signal = V2.detectMarketRegimeV2([], i); assert.equal(V2.appendShadowSignal(state, "v2", signal, i), false);
+});
+test("1m、5m、15m 日志保留量都覆盖 72 小时并包含缓冲", () => {
+  for (const timeframe of ["1m", "5m", "15m"]) {
+    const interval = V2.INTERVALS[timeframe], required = Math.ceil(72 * 3600000 / interval), keep = V2.journalRetentionBars(timeframe), state = V2.initialState();
+    assert.ok(keep > required, timeframe);
+    for (let n = 1; n <= keep + 10; n++) V2.appendShadowSignal(state, "v2", { signalTime: now + n * interval, regime: "unclear", directionRaw: "none", tradeDirection: "none", entryPermission: "blocked", blockers: [] }, { ...input(), signalTime: now + n * interval, config: V2.normalizeConfig({ entryTimeframe: timeframe }) });
+    assert.equal(state.signalJournal.length, keep, timeframe);
+    assert.ok(state.signalJournal.at(-1).time - state.signalJournal[0].time >= 72 * 3600000, timeframe);
+  }
+});
+test("CHOP 诊断使用 PASS / CONDITIONAL / BLOCK 三态", () => {
+  const pass = V2.detectMarketRegimeV2([], input({ chop: 50 }));
+  const conditional = V2.detectMarketRegimeV2([], input({ chop: 58 }));
+  const block = V2.detectMarketRegimeV2([], input({ chop: 62 }));
+  assert.equal(pass.diagnostics.chop.state, "PASS");
+  assert.equal(conditional.diagnostics.chop.state, "CONDITIONAL");
+  assert.equal(conditional.diagnostics.chop.passed, false);
+  assert.match(conditional.diagnostics.chop.label, /仅允许高质量回踩/);
+  assert.equal(block.diagnostics.chop.state, "BLOCK");
+});
+test("信号统计区分策略机会、最终可执行、提交与成交", () => {
+  const items = [
+    { time: now, signalPermission: "allowed", executionPermission: "blocked", finalDecision: "WAIT_LIVE_CONFIRM" },
+    { time: now, signalPermission: "allowed", executionPermission: "allowed", finalDecision: "ORDER_SUBMITTED", orderSubmitted: true },
+    { time: now, signalPermission: "allowed", executionPermission: "allowed", finalDecision: "ORDER_FILLED", orderSubmitted: true, orderFilled: true }
+  ];
+  const stats = V2.signalStats(items, 24, now);
+  assert.equal(stats.signalOpportunities, 3); assert.equal(stats.executable, 2); assert.equal(stats.submitted, 2); assert.equal(stats.filled, 1);
 });
 test("V2 仓位计划保持单仓且按延续入场降低风险", () => {
   const a = account(), i = input({ chop: 44, swingContinuationShort: true, qtyStep: 0.001, minNotional: 10 });

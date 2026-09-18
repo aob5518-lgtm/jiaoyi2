@@ -18,8 +18,8 @@
     realBreakEvenAtR: 1.5, lockProfitAtR: 2.5, defensiveTrailingAtrMultiplier: 1.2, reversalConfirmBars: 2, reentryCooldownBars: 6
   };
   const STRICTNESS_PRESETS = {
-    conservative: { chopIdealMax: 45, chopTransitionMax: 52, chopHardBlock: 61.8, adxTrendStart: 25, adxTrendValid: 30, adxStrong: 35, higherTimeframeMode: "strict_align", maxEntryExtensionAtr: 1.2 },
-    standard: { chopIdealMax: 45, chopTransitionMax: 55, chopHardBlock: 61.8, adxTrendStart: 22, adxTrendValid: 28, adxStrong: 32, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.5 },
+    conservative: { chopIdealMax: 45, chopTransitionMax: 52, chopHardBlock: 61.8, adxTrendStart: 25, adxTrendValid: 30, adxStrong: 35, higherTimeframeMode: "strict_align", maxEntryExtensionAtr: 1.2, riskPerTrade: 0.01 },
+    standard: { chopIdealMax: 45, chopTransitionMax: 55, chopHardBlock: 61.8, adxTrendStart: 22, adxTrendValid: 28, adxStrong: 32, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.5, riskPerTrade: 0.01 },
     sensitive: { chopIdealMax: 48, chopTransitionMax: 58, chopHardBlock: 65, adxTrendStart: 20, adxTrendValid: 25, adxStrong: 30, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.8, riskPerTrade: 0.005 }
   };
   const labels = {
@@ -44,7 +44,7 @@
       <div><button class="ghost" id="trendRestoreDefaults" type="button">恢复推荐参数</button></div>
     </div>
     <div class="strategy-context" id="trendV1Warning" style="margin-bottom:12px;">
-      <span>当前账户正在使用 Trend Only V1。V1 过滤更严格，容易长时间不开仓。建议切换到 Trend Only V2，V2 支持回踩入场、延续入场和信号回放。</span>
+      <span>当前账户正在使用 Trend Only V1。V1 过滤更严格，容易长时间不开仓。建议切换到 Trend Only V2，V2 支持回踩入场、延续入场和信号回放。<small id="trendUpgradeStatus" style="display:block;margin-top:6px;"></small></span>
       <button class="ghost" id="trendUpgradeV2" type="button">一键升级到 Trend Only V2</button>
     </div>
     <div class="config-section">
@@ -138,6 +138,11 @@
       ["当前 R", position?.rMultiple ?? "-"], ["当前止损价", position?.currentStopLossPrice ?? "-"], ["订单状态", trend.pendingOrder?.status || "无待确认订单"]];
     document.getElementById("trendOnlyStatus").innerHTML = pairs.map(([key, value]) => `<div class="data-row"><div class="data-k">${esc(key)}</div><div class="data-v">${esc(value)}</div></div>`).join("");
     document.getElementById("trendOnlyReasons").textContent = (signal.reasons || []).join("；") || "暂无信号原因";
+    const upgradeButton = document.getElementById("trendUpgradeV2"), upgradeStatus = document.getElementById("trendUpgradeStatus");
+    if (data.strategyType === "trend_only_v1") {
+      upgradeButton.disabled = !!(position || trend.pendingOrder);
+      upgradeStatus.textContent = position ? "当前有趋势仓位，平仓后才能升级。" : trend.pendingOrder ? "订单尚未确认，暂不能升级。" : data.running ? "需要先停止趋势监控才能升级；点击后可确认停止并继续升级。" : "当前可以安全升级。";
+    }
   }
   async function refresh() {
     const data = await api("/api/trend-only");
@@ -163,9 +168,15 @@
   };
   document.getElementById("trendUpgradeV2").onclick = async () => {
     try {
-      const selector = document.getElementById("strategyType"); if (selector) selector.value = "trend_only_v2";
-      setConfig(DEFAULTS);
       const data = await refresh();
+      if (data.state?.position) throw Error("当前有趋势仓位，平仓后才能升级。");
+      if (data.state?.pendingOrder) throw Error("订单尚未确认，暂不能升级。");
+      if (data.running) {
+        if (!window.confirm("需要先停止趋势监控才能升级。是否停止监控并继续升级？")) return;
+        await api("/api/stop", {});
+      }
+      const selector = document.getElementById("strategyType"); if (selector) selector.value = "trend_only_v2";
+      setConfig({ ...DEFAULTS, ...(data.config || {}), version: "v2", leverage: 10 });
       await api("/api/trend-only/config", { accountId: data.accountId, strategyType: "trend_only_v2", config: getConfig() });
       document.dispatchEvent(new Event("trend-only-upgraded"));
       location.reload();

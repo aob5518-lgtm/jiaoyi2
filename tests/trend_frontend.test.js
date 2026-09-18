@@ -53,7 +53,7 @@ test("信号回放统计正确区分等待、追单、CHOP、高周期与风控�
     { entryPermission: "blocked", blockers: ["CHOP 强震荡，禁止新开仓"] },
     { entryPermission: "blocked", blockers: ["risk_lock：保护止损单未确认"] }
   ]);
-  assert.deepEqual(counts, { allowed: 1, pullback: 1, breakout: 1, continuation: 1, extended: 1, chop: 1, higher: 1, risk: 1 });
+  assert.deepEqual(counts, { signalOpportunities: 1, executable: 0, submitted: 0, filled: 0, allowed: 1, pullback: 1, breakout: 1, continuation: 1, extended: 1, chop: 1, higher: 1, risk: 1 });
 });
 
 test("24/72 小时统计包含 ADX、CHOP、多周期与追单阻断", () => {
@@ -94,6 +94,16 @@ test("V1 总览和配置页显示升级 V2 强提示", () => {
   assert.match(html, /id="overviewUpgradeV2Btn"/);
   assert.match(panel, /当前账户正在使用 Trend Only V1。V1 过滤更严格/);
   assert.match(panel, /一键升级到 Trend Only V2/);
+  assert.match(html, /当前有趋势仓位，平仓后才能升级/);
+  assert.match(html, /需要先停止趋势监控才能升级/);
+  assert.match(panel, /订单尚未确认，暂不能升级/);
+});
+
+test("机会状态优先采用 executionState，而不是信号 allowed", () => {
+  const view = require("../public/strategy-view.js");
+  assert.equal(view.opportunityStatus({ executionState: "MONITOR_STOPPED", signal: { entryPermission: "allowed" } }), "监控已停止");
+  assert.equal(view.opportunityStatus({ executionState: "WAIT_LIVE_CONFIRM", signal: { entryPermission: "allowed" } }), "等待 Live 确认");
+  assert.equal(view.opportunityStatus({ executionState: "ACCOUNT_CONFLICT", signal: { entryPermission: "allowed" } }), "账户冲突");
 });
 
 test("V2 运行时回填结构字段且 Extended Live 有明确提示", () => {

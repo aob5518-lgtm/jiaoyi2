@@ -26,16 +26,66 @@ function createTrendRuntime(d) {
     st.lastAction = message;
     if (get(acc).lastLog !== message) { d.log(acc.id, message); get(acc).lastLog = message; }
   }
-  function annotateSignal(acc, reason, finalAction) {
+  function journalItem(s, signalTime = s.signal?.signalTime) {
+    return (s.signalJournal || []).findLast?.(entry => entry.time === signalTime) || (s.signalJournal || []).find(entry => entry.time === signalTime);
+  }
+  function setDecision(acc, finalDecision, executionReason = "", options = {}) {
+    const s = get(acc);
+    s.executionState = finalDecision;
+    s.executionReason = executionReason || "";
     if (!isV2(acc)) return;
-    const s = get(acc), item = (s.signalJournal || []).findLast?.(entry => entry.time === s.signal?.signalTime) || (s.signalJournal || []).at(-1);
-    if (!item || item.time !== s.signal?.signalTime) return;
-    item.finalAction = finalAction || reason || item.finalAction;
-    if (reason && !(item.blockers || []).includes(reason)) item.blockers = [...(item.blockers || []), reason];
+    const item = journalItem(s, options.signalTime);
+    if (!item) return;
+    item.signalPermission ||= item.entryPermission || "blocked";
+    const nextPermission = options.executionPermission || (["READY_TO_OPEN", "ORDER_SUBMITTED", "ORDER_FILLED"].includes(finalDecision) ? "allowed" : "blocked");
+    item.executionPermission = (item.orderSubmitted || item.orderFilled) && nextPermission === "blocked" ? "allowed" : nextPermission;
+    item.executionBlocker = options.executionBlocker ?? (item.executionPermission === "allowed" ? "" : executionReason || "");
+    item.finalDecision = finalDecision;
+    item.finalAction = options.finalAction || executionReason || item.finalAction;
+    if (options.orderSubmitted) item.orderSubmitted = true;
+    if (options.orderFilled) { item.orderSubmitted = true; item.orderFilled = true; }
+    if (executionReason && item.executionPermission !== "allowed" && !(item.blockers || []).includes(executionReason)) item.blockers = [...(item.blockers || []), executionReason];
+  }
+  function annotateSignal(acc, reason, finalAction, finalDecision = "NO_SIGNAL") {
+    setDecision(acc, finalDecision, reason, { finalAction });
+  }
+  function decisionFromSignal(signal) {
+    if (signal?.entryPermission === "allowed") return "READY_TO_OPEN";
+    if (signal?.entryPermission === "wait_pullback") return "WAIT_PULLBACK";
+    if (signal?.entryPermission === "wait_breakout") return "WAIT_BREAKOUT";
+    if (signal?.entryPermission === "wait_continuation") return "WAIT_CONTINUATION";
+    return "NO_SIGNAL";
+  }
+  function decisionFromBlocker(reason = "") {
+    if (/Extended Live|平台.*不支持/.test(reason)) return "PLATFORM_UNSUPPORTED";
+    if (/Live.*确认|二次确认/.test(reason)) return "WAIT_LIVE_CONFIRM";
+    if (/再入场冷却|同一趋势冷却|同一根 K 线/.test(reason)) return "REENTRY_COOLDOWN";
+    if (/risk_lock|日亏损|连续亏损|风控暂停|权益无效/.test(reason)) return "RISK_LOCK";
+    if (/pendingOrder|订单状态|挂单|重复下单/.test(reason)) return "OPEN_ORDER_BLOCK";
+    if (/已有仓位|禁止加仓/.test(reason)) return "POSITION_MANAGED";
+    return "NO_SIGNAL";
+  }
+  function executionSnapshot(acc, st, weekendBlocked) {
+    const s = get(acc), signal = s.signal || {};
+    if (s.pendingOrder) return { state: "ORDER_SUBMITTED", reason: s.pendingOrder.status === "unknown_order_state" ? "订单状态尚未确认，禁止重复下单" : "订单已提交，等待交易所确认" };
+    if (s.riskLock) return { state: "RISK_LOCK", reason: s.riskLockReason || "保护止损单未确认" };
+    if (s.position) return { state: "POSITION_MANAGED", reason: "当前已有趋势仓位，执行持仓保护" };
+    if (!st.running) return { state: "MONITOR_STOPPED", reason: "趋势监控已停止" };
+    if (!paper(acc) && acc.platform === "extended") return { state: "PLATFORM_UNSUPPORTED", reason: "Extended Live 趋势下单暂未开放" };
+    if (d.conflictingAccount?.(acc) || s.conflictingAccount) return { state: "ACCOUNT_CONFLICT", reason: "同一交易账户与合约已被其他策略占用" };
+    if (s.exchangeOpenOrders) return { state: "OPEN_ORDER_BLOCK", reason: "交易所存在挂单" };
+    if (weekendBlocked) return { state: "NO_SIGNAL", reason: "周末过滤：禁止新开仓" };
+    if (Number(s.pauseUntil) > Date.now()) return { state: "RISK_LOCK", reason: "连续亏损冷却中" };
+    if (Number(s.dayStartEquity) > 0 && Number(s.dailyLoss) >= Number(s.dayStartEquity) * Number(acc.trendOnlyConfig?.maxDailyLossRatio || 0.03)) return { state: "RISK_LOCK", reason: "日亏损达到上限" };
+    if (!paper(acc) && signal.entryPermission === "allowed") {
+      const approval = approvals.get(acc.id), confirmed = approval && approval.signalTime === signal.signalTime && approval.expires >= Date.now() && approval.configHash === configHash(acc);
+      if (!confirmed) return { state: "WAIT_LIVE_CONFIRM", reason: "Live 开仓等待本次信号二次确认" };
+    }
+    return { state: s.executionState || decisionFromSignal(signal), reason: s.executionReason || (signal.blockers || signal.reasons || []).join("；") };
   }
   function publish(acc, st) {
     const s = get(acc), p = s.position;
-    const T = engine(acc), weekendBlocked = T.isWeekendBlocked(Date.now(), T.normalizeConfig(acc.trendOnlyConfig));
+    const T = engine(acc), config = T.normalizeConfig(acc.trendOnlyConfig), weekendBlocked = T.isWeekendBlocked(Date.now(), config);
     const rawStopOrderPrice = s.stopOrderPrice ?? s.stopSyncedPrice;
     const stopOrderPrice = rawStopOrderPrice === null || rawStopOrderPrice === undefined || rawStopOrderPrice === "" ? null : Number(rawStopOrderPrice);
     const signal = s.signal || {
@@ -45,9 +95,14 @@ function createTrendRuntime(d) {
       reasons: [weekendBlocked ? "周末过滤：当前为周六/周日，禁止新开仓" : (s.lastLog || "行情数据不足，等待已收盘 K 线")]
     };
     const indicators = s.indicators || { atr: null, adx: null, chop: null, trendDirection: "none", higherDirection: "none" };
+    const execution = executionSnapshot(acc, st, weekendBlocked);
+    const retention = isV2(acc) ? V2.journalRetentionBars(config.entryTimeframe) : 0;
+    const fullJournal = isV2(acc) ? (s.signalJournal || []).slice(-retention) : [];
     st.trendOnly = {
       weekendBlocked,
       signal,
+      executionState: execution.state,
+      executionReason: execution.reason,
       indicators,
       position: p || null,
       preview: s.preview || null,
@@ -60,7 +115,9 @@ function createTrendRuntime(d) {
       consecutiveLosses: Number(s.consecutiveLosses || 0),
       pauseUntil: Number(s.pauseUntil || 0),
       trendContext: s.trendContext || null,
-      signalJournal: (s.signalJournal || []).slice(-500).reverse(),
+      signalJournal: fullJournal.slice().reverse(),
+      signalStats24h: isV2(acc) ? V2.signalStats(fullJournal, 24) : null,
+      signalStats72h: isV2(acc) ? V2.signalStats(fullJournal, 72) : null,
       riskLock: !!s.riskLock,
       riskLockReason: s.riskLockReason || "",
       stopOrderId: s.stopOrderId || "",
@@ -236,13 +293,15 @@ function createTrendRuntime(d) {
   async function settle(acc, st, o, result) {
     const T = engine(acc);
     const s = get(acc);
-    if (!result.terminal) { o.status = "unknown_order_state"; save(); return false; }
+    if (!result.terminal) { o.status = "unknown_order_state"; setDecision(acc, "ORDER_SUBMITTED", "订单已提交，但交易所状态尚未确认", { signalTime: o.plan?.signal?.signalTime, executionPermission: "allowed", orderSubmitted: o.kind === "open" }); save(); return false; }
     if (result.fill) {
       if (o.kind === "open") {
         s.position = T.positionFromFill(o.plan, result.fill, o.createdAt, o.config);
         s.lastEntrySignalTime = o.plan.signal.signalTime;
         log(acc, st, `趋势开仓成功：${acc.symbol} ${s.position.side === "long" ? "做多" : "做空"}，${s.position.leverage}倍杠杆，入场价 ${s.position.entryPrice}，初始止损 ${s.position.initialStopLossPrice}`);
         if (isV2(acc)) await syncProtectiveStop(acc, st, true);
+        if (s.riskLock) setDecision(acc, "RISK_LOCK", `开仓已成交，但保护止损同步失败：${s.riskLockReason}`, { signalTime: o.plan.signal.signalTime, executionPermission: "allowed", executionBlocker: s.riskLockReason, orderFilled: true, finalAction: "已成交，持仓进入风险锁定" });
+        else setDecision(acc, "ORDER_FILLED", "开仓订单已成交", { signalTime: o.plan.signal.signalTime, executionPermission: "allowed", orderFilled: true, finalAction: "实际成交" });
       } else {
         if (isV2(acc)) {
           s.lastExitSignalTime = Number(s.signal?.signalTime || s.position?.lastManagedSignalTime || s.position?.signalTime || Date.now());
@@ -258,7 +317,10 @@ function createTrendRuntime(d) {
         if (paper(acc)) s.simBalance += v.pnl;
         log(acc, st, `趋势平仓成交：${o.reason}，数量 ${result.fill.qty}，净盈亏 ${v.pnl.toFixed(4)}`);
       }
-    } else log(acc, st, "交易所已确认订单结束且无成交，等待新的信号或下一次退出检查");
+    } else {
+      if (o.kind === "open") setDecision(acc, "NO_SIGNAL", "订单已结束但未成交", { signalTime: o.plan?.signal?.signalTime });
+      log(acc, st, "交易所已确认订单结束且无成交，等待新的信号或下一次退出检查");
+    }
     s.pendingOrder = null;
     save(); flushJournal(acc); publish(acc, st);
     return true;
@@ -283,6 +345,7 @@ function createTrendRuntime(d) {
     if (s.submittedIds.includes(id)) throw Error("clientOrderId 已提交");
     s.submittedIds.push(id); s.pendingOrder = o;
     if (kind === "open") s.lastEntrySignalTime = plan.signal.signalTime;
+    if (kind === "open") setDecision(acc, "ORDER_SUBMITTED", "开仓订单已提交", { signalTime: plan.signal.signalTime, executionPermission: "allowed", orderSubmitted: true, finalAction: "提交订单" });
     if (paper(acc)) {
       const sign = (side === "long" ? 1 : -1) * (kind === "open" ? 1 : -1);
       o.paperFill = { qty, price: Number(st.currentPrice) * (1 + sign * Number(acc.simulationSlippageBps || 0) / 10000), clientOrderId: id, exchangeOrderId: `paper-${id}` };
@@ -303,6 +366,7 @@ function createTrendRuntime(d) {
       return await settle(acc, st, o, await lookup(acc, o));
     } catch (e) {
       o.status = "unknown_order_state"; save();
+      if (kind === "open") setDecision(acc, "ORDER_SUBMITTED", "订单已提交，但交易所返回状态未知", { signalTime: plan.signal.signalTime, executionPermission: "allowed", orderSubmitted: true });
       log(acc, st, "订单结果未知，保留 pendingOrder；先查询交易所状态，禁止重新下单");
       return false;
     }
@@ -317,10 +381,12 @@ function createTrendRuntime(d) {
         if (!await settle(acc, st, s.pendingOrder, await lookup(acc, s.pendingOrder))) { log(acc, st, "未知订单状态：查询中，禁止重复下单"); return; }
       }
       const remote = await sync(acc, st);
+      s.exchangeOpenOrders = remote.openOrders.length > 0;
+      s.conflictingAccount = !!d.conflictingAccount?.(acc);
       if (s.position && (Math.abs(remote.qty - s.position.positionSize) > 1e-8 || (!paper(acc) && remote.side !== s.position.side))) {
         if (!await reconcileExternalExit(acc, st, remote)) { s.syncMismatch = true; log(acc, st, "交易所仓位与趋势记录不一致：保留原始凭证并暂停下单，需核对外部成交"); return; }
       }
-      if (!s.position && remote.qty > 0) { log(acc, st, "存在非趋势策略仓位，禁止接管或新开仓"); return; }
+      if (!s.position && remote.qty > 0) { setDecision(acc, "ACCOUNT_CONFLICT", "存在非趋势策略仓位，禁止接管或新开仓"); log(acc, st, "存在非趋势策略仓位，禁止接管或新开仓"); return; }
       s.syncMismatch = false;
       if (s.position && isV2(acc)) {
         if (!paper(acc) && (!s.stopOrderId || !remoteHasStop(remote, s.stopOrderId))) {
@@ -352,7 +418,8 @@ function createTrendRuntime(d) {
             states: s.signal.states || { breakout: false, pullback: false, continuation: false }
           });
           T.updateTrendContext(s, s.signal, i);
-          T.appendShadowSignal(s, acc.id, s.signal, i, s.signal.entryPermission === "allowed" ? "允许开仓" : (s.signal.blockers || []).join("；"));
+          T.appendShadowSignal(s, acc.id, s.signal, i, (s.signal.blockers || []).join("；"));
+          setDecision(acc, decisionFromSignal(s.signal), (s.signal.blockers || []).join("；"), { executionPermission: s.signal.entryPermission === "allowed" ? "pending" : "blocked" });
         }
         s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, entryDirection: i.entryDirection, trendDirection: i.trendDirection, higherDirection: i.higherDirection };
       } catch (e) { log(acc, st, `趋势行情暂不可用：${e.message}；已有价格止损继续执行`); return; }
@@ -360,22 +427,28 @@ function createTrendRuntime(d) {
         const beforeStop = Number(s.position.currentStopLossPrice);
         const result = T.manageTrendOnlyPosition(account(acc, st), { price: st.currentPrice }, i);
         result.logs.forEach(m => log(acc, st, m)); save();
-        if (result.reason) { annotateSignal(acc, result.reason, "平仓信号"); await submit(acc, st, "close", null, result.reason); }
-        else { if (isV2(acc) && Number(s.position.currentStopLossPrice) !== beforeStop) await syncProtectiveStop(acc, st, true); const actionText = s.position.defensiveMode ? "趋势衰减，进入防守模式" : s.position.trailingActive ? "移动止盈中" : s.position.breakEvenActivated ? "已保本，等待趋势延续" : "已开仓，等待 1R"; annotateSignal(acc, "当前已有仓位", actionText); log(acc, st, actionText); }
+        if (result.reason) { annotateSignal(acc, result.reason, "平仓信号", "POSITION_MANAGED"); await submit(acc, st, "close", null, result.reason); }
+        else {
+          if (isV2(acc) && Number(s.position.currentStopLossPrice) !== beforeStop) await syncProtectiveStop(acc, st, true);
+          if (s.riskLock) annotateSignal(acc, `risk_lock：${s.riskLockReason || "保护止损单未确认"}`, "持仓保护异常", "RISK_LOCK");
+          else { const actionText = s.position.defensiveMode ? "趋势衰减，进入防守模式" : s.position.trailingActive ? "移动止盈中" : s.position.breakEvenActivated ? "已保本，等待趋势延续" : "已开仓，等待 1R"; annotateSignal(acc, "当前已有仓位", actionText, "POSITION_MANAGED"); log(acc, st, actionText); }
+        }
         return;
       }
-      if (!st.running) { annotateSignal(acc, "趋势监控已停止，禁止新开仓", "监控已停止"); log(acc, st, "趋势监控已停止，禁止新开仓"); return; }
-      if (d.conflictingAccount?.(acc)) { annotateSignal(acc, "同一交易账户与合约已被其他策略占用", "风控暂停"); log(acc, st, "同一交易账户与合约已被其他策略占用，禁止新开仓"); return; }
-      if (remote.openOrders.length) { annotateSignal(acc, "交易所存在挂单", "等待挂单完成"); log(acc, st, "交易所存在挂单，禁止新开仓"); return; }
+      if (!st.running) { annotateSignal(acc, "趋势监控已停止，禁止新开仓", "监控已停止", "MONITOR_STOPPED"); log(acc, st, "趋势监控已停止，禁止新开仓"); return; }
+      if (s.conflictingAccount) { annotateSignal(acc, "同一交易账户与合约已被其他策略占用", "风控暂停", "ACCOUNT_CONFLICT"); log(acc, st, "同一交易账户与合约已被其他策略占用，禁止新开仓"); return; }
+      if (remote.openOrders.length) { annotateSignal(acc, "交易所存在挂单", "等待挂单完成", "OPEN_ORDER_BLOCK"); log(acc, st, "交易所存在挂单，禁止新开仓"); return; }
       const approval = approvals.get(acc.id);
       const confirmed = approval && approval.signalTime === s.signal.signalTime && approval.expires >= Date.now() && approval.configHash === configHash(acc);
       const a = { ...account(acc, st), confirmLive: !!confirmed };
-      const bounds = await constraints(acc);
+      let bounds;
+      try { bounds = await constraints(acc); }
+      catch (error) { annotateSignal(acc, `交易所交易规则读取失败：${error.message}`, "执行层暂不可用", "RISK_LOCK"); throw error; }
       const preview = T.tryOpenTrendOnlyPosition({ ...a, confirmLive: true }, s.signal, { ...i, ...bounds });
       s.preview = preview.allowed ? { ...preview, expires: Date.now() + 60000, configHash: configHash(acc) } : null;
       const plan = T.tryOpenTrendOnlyPosition(a, s.signal, { ...i, ...bounds });
-      if (!plan.allowed) { annotateSignal(acc, plan.reason, plan.reason); log(acc, st, plan.reason); return; }
-      annotateSignal(acc, "", paper(acc) ? "Paper 开仓" : "Live 信号已确认，准备开仓");
+      if (!plan.allowed) { const decision = s.signal.entryPermission === "allowed" ? decisionFromBlocker(plan.reason) : decisionFromSignal(s.signal); annotateSignal(acc, plan.reason, plan.reason, decision); log(acc, st, plan.reason); return; }
+      setDecision(acc, "READY_TO_OPEN", "全部执行条件通过", { executionPermission: "allowed", finalAction: paper(acc) ? "Paper 准备开仓" : "Live 信号已确认，准备开仓" });
       await submit(acc, st, "open", plan);
     } finally { publish(acc, st); save(); }
   }

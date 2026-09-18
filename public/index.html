@@ -2870,7 +2870,7 @@
             </div>
 
             <div class="strategy-context" id="trendV1OverviewWarning" hidden style="margin-bottom:16px;">
-              <span>当前账户正在使用 Trend Only V1。V1 过滤更严格，容易长时间不开仓。建议切换到 Trend Only V2，V2 支持回踩入场、延续入场和信号回放。</span>
+              <span>当前账户正在使用 Trend Only V1。V1 过滤更严格，容易长时间不开仓。建议切换到 Trend Only V2，V2 支持回踩入场、延续入场和信号回放。<small id="overviewUpgradeV2Status" style="display:block;margin-top:6px;"></small></span>
               <button class="ghost" id="overviewUpgradeV2Btn" type="button">一键升级到 Trend Only V2</button>
             </div>
 
@@ -3917,10 +3917,11 @@
         ["clientOrderId", pending?.clientOrderId || "-", warn]
       ];
       const diagnosticRows = [
-        ["机会状态", trend.weekendBlocked || pending ? "风控禁止" : signal.entryPermission === "allowed" || signal.regime === "trend" ? "可开仓" : "无机会"],
+        ["机会状态", trend.executionState || (trend.weekendBlocked || pending ? "风控禁止" : signal.entryPermission === "allowed" || signal.regime === "trend" ? "可开仓" : "无机会")],
+        ["执行层原因", trend.executionReason || "等待执行判断"],
         ["当前判断", (signal.blockers?.length ? signal.blockers : signal.reasons || []).join("；") || "等待指标"]
       ];
-      return { market, direction, weekend, nextAction, signalRows, positionRows, diagnosticRows, diagnosticSummary: diagnosticRows[1][1], rightStatusRows: [], rightRiskRows: [] };
+      return { market, direction, weekend, nextAction, signalRows, positionRows, diagnosticRows, diagnosticSummary: diagnosticRows[2][1], rightStatusRows: [], rightRiskRows: [] };
     }
 
     function getTrendView(cfg, st) {
@@ -3935,14 +3936,17 @@
       return fallbackTrendView(cfg, st);
     }
 
-    function renderSignalReplay(items) {
-      const all = Array.isArray(items) ? items : [], recent50 = all.slice(0, 50), blockersOf = item => (item.blockers || []).join("；");
+    function renderSignalReplay(items, serverStats24h, serverStats72h) {
+      const all = Array.isArray(items) ? items : [], recent50 = all.slice(0, 50), blockersOf = item => [item.executionBlocker, ...(item.blockers || [])].filter(Boolean).join("；");
       const isExtended = item => /远离 EMA20|不追单/.test(blockersOf(item));
       const isChop = item => /CHOP/.test(blockersOf(item));
       const isHigher = item => /高周期|4H/.test(blockersOf(item));
       const isRisk = item => /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单结果未知/i.test(blockersOf(item));
       const counts = window.StrategyView?.summarizeReplay?.(recent50) || {
-        allowed: recent50.filter(item => item.entryPermission === "allowed").length,
+        signalOpportunities: recent50.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
+        executable: recent50.filter(item => item.executionPermission === "allowed").length,
+        submitted: recent50.filter(item => item.orderSubmitted || item.finalDecision === "ORDER_SUBMITTED").length,
+        filled: recent50.filter(item => item.orderFilled || item.finalDecision === "ORDER_FILLED").length,
         pullback: recent50.filter(item => item.entryPermission === "wait_pullback").length,
         breakout: recent50.filter(item => item.entryPermission === "wait_breakout").length,
         continuation: recent50.filter(item => item.entryPermission === "wait_continuation").length,
@@ -3951,24 +3955,24 @@
         higher: recent50.filter(isHigher).length,
         risk: recent50.filter(isRisk).length
       };
-      const renderWindowStats = (id, hours) => {
-        const stats = window.StrategyView?.summarizeReplayWindow?.(all, hours) || { total: 0, allowed: 0, pullback: 0, breakout: 0, continuation: 0, chop: 0, adx: 0, higher: 0, extended: 0, risk: 0 };
-        $(id).innerHTML = [row("总判断次数", stats.total), row("允许开仓", stats.allowed), row("等待回踩", stats.pullback), row("等待突破", stats.breakout), row("等待延续", stats.continuation), row("CHOP 阻断", stats.chop), row("ADX 阻断", stats.adx), row("多周期冲突", stats.higher), row("追单阻断", stats.extended), row("风控阻断", stats.risk)].join("");
+      const renderWindowStats = (id, hours, serverStats) => {
+        const stats = serverStats || window.StrategyView?.summarizeReplayWindow?.(all, hours) || { total: 0, signalOpportunities: 0, executable: 0, submitted: 0, filled: 0, pullback: 0, breakout: 0, continuation: 0, chop: 0, adx: 0, higher: 0, extended: 0, risk: 0 };
+        $(id).innerHTML = [row("总判断次数", stats.total), row("策略机会数", stats.signalOpportunities || 0), row("最终可执行数", stats.executable || 0), row("提交订单数", stats.submitted || 0), row("实际成交数", stats.filled || 0), row("等待回踩", stats.pullback), row("等待突破", stats.breakout), row("等待延续", stats.continuation), row("CHOP 阻断", stats.chop), row("ADX 阻断", stats.adx), row("多周期冲突", stats.higher), row("追单阻断", stats.extended), row("风控阻断", stats.risk)].join("");
       };
-      renderWindowStats("signalReplayStats24h", 24);
-      renderWindowStats("signalReplayStats72h", 72);
+      renderWindowStats("signalReplayStats24h", 24, serverStats24h);
+      renderWindowStats("signalReplayStats72h", 72, serverStats72h);
       const warnings = window.StrategyView?.strictnessWarnings?.(all) || [];
       $("signalStrictnessWarning").hidden = !warnings.length;
       $("signalStrictnessWarning").textContent = warnings.join(" ");
-      $("signalReplayStats").innerHTML = [row("允许开仓", counts.allowed), row("等待回踩", counts.pullback), row("等待突破", counts.breakout), row("等待延续", counts.continuation), row("追单阻断", counts.extended), row("CHOP 阻断", counts.chop), row("高周期反向", counts.higher), row("风控阻断", counts.risk)].join("");
+      $("signalReplayStats").innerHTML = [row("策略机会数", counts.signalOpportunities || 0), row("最终可执行数", counts.executable || 0), row("提交订单数", counts.submitted || 0), row("实际成交数", counts.filled || 0), row("等待回踩", counts.pullback), row("等待突破", counts.breakout), row("等待延续", counts.continuation), row("追单阻断", counts.extended), row("CHOP 阻断", counts.chop), row("高周期反向", counts.higher), row("风控阻断", counts.risk)].join("");
       const filter = $("signalReplayFilter")?.value || "all";
-      const filtered = recent50.filter(item => filter === "all" || filter === "allowed" && item.entryPermission === "allowed" || filter === "blocked" && item.entryPermission !== "allowed" || filter === "wait_pullback" && item.entryPermission === "wait_pullback" || filter === "wait_breakout" && item.entryPermission === "wait_breakout" || filter === "wait_continuation" && item.entryPermission === "wait_continuation" || filter === "extended" && isExtended(item) || filter === "chop" && isChop(item) || filter === "higher" && isHigher(item));
+      const filtered = recent50.filter(item => filter === "all" || filter === "allowed" && (item.signalPermission === "allowed" || item.entryPermission === "allowed") || filter === "blocked" && (item.signalPermission || item.entryPermission) !== "allowed" || filter === "wait_pullback" && (item.signalPermission || item.entryPermission) === "wait_pullback" || filter === "wait_breakout" && (item.signalPermission || item.entryPermission) === "wait_breakout" || filter === "wait_continuation" && (item.signalPermission || item.entryPermission) === "wait_continuation" || filter === "extended" && isExtended(item) || filter === "chop" && isChop(item) || filter === "higher" && isHigher(item));
       const regimeMap = { strong_trend: "强趋势", trend_breakout: "趋势启动", trend_pullback: "趋势回踩", trend_continuation: "趋势延续", extended_no_chase: "等待回踩", chop: "震荡", unclear: "不明确", data_insufficient: "数据不足" };
       const directionMap = { long: "做多", short: "做空", none: "无" };
       $("signalReplayList").innerHTML = filtered.length ? filtered.map(item => row(
         `${new Date(item.time).toLocaleString("zh-CN")} · 价格 ${item.price ?? "-"}`,
-        `阶段 ${regimeMap[item.regime] || item.regime || "-"}｜原始 ${directionMap[item.directionRaw] || "无"}｜交易 ${directionMap[item.tradeDirection] || "暂不交易"}｜模式 ${item.entryMode || "-"}｜CHOP ${fmt(item.chop, 2)}｜ADX ${fmt(item.adx, 2)}｜距 EMA20 ${fmt(item.distanceFromEmaAtr, 2)} ATR｜阻断 ${blockersOf(item) || "无"}｜动作 ${item.finalAction || "-"}`,
-        item.entryPermission === "allowed" ? "green" : "orange"
+        `阶段 ${regimeMap[item.regime] || item.regime || "-"}｜原始 ${directionMap[item.directionRaw] || "无"}｜交易 ${directionMap[item.tradeDirection] || "暂不交易"}｜模式 ${item.entryMode || "-"}｜CHOP ${fmt(item.chop, 2)}｜ADX ${fmt(item.adx, 2)}｜距 EMA20 ${fmt(item.distanceFromEmaAtr, 2)} ATR｜信号 ${item.signalPermission || item.entryPermission || "-"}｜执行 ${item.executionPermission || "-"}｜最终 ${item.finalDecision || "-"}｜阻断 ${item.executionBlocker || blockersOf(item) || "无"}`,
+        item.executionPermission === "allowed" ? "green" : "orange"
       )).join("") : row("暂无匹配回放", "等待新的已收盘 K 线");
     }
 
@@ -3995,10 +3999,11 @@
       $("metricPriceLabel").textContent = trendOnlyMode ? "下一步动作" : "当前价格";
       $("metricPrice").textContent = trendOnlyMode ? trendView.nextAction : (st.currentPrice ? fmt(st.currentPrice, 2) : "-");
       const protection = st.trendOnly || {};
-      const actionStateClass = st.lastError || protection.riskLock || protection.pendingOrder?.status === "unknown_order_state" ? "red"
+      const executionState = protection.executionState;
+      const actionStateClass = st.lastError || protection.riskLock || protection.pendingOrder?.status === "unknown_order_state" || ["RISK_LOCK", "ACCOUNT_CONFLICT", "PLATFORM_UNSUPPORTED"].includes(executionState) ? "red"
         : protection.position && protection.position.defensiveMode ? "orange"
-        : protection.position || signal.entryPermission === "allowed" ? "green"
-        : protection.pendingOrder || ["wait_pullback", "wait_continuation", "wait_breakout"].includes(signal.entryPermission) ? "orange" : "muted";
+        : ["READY_TO_OPEN", "ORDER_FILLED", "POSITION_MANAGED"].includes(executionState) ? "green"
+        : ["MONITOR_STOPPED", "OPEN_ORDER_BLOCK", "REENTRY_COOLDOWN", "WAIT_LIVE_CONFIRM", "ORDER_SUBMITTED", "WAIT_PULLBACK", "WAIT_BREAKOUT", "WAIT_CONTINUATION"].includes(executionState) ? "orange" : "muted";
       $("metricPrice").className = `hero-v ${trendOnlyMode ? actionStateClass : ""}`;
       $("metricBalanceLabel").textContent = trendOnlyMode ? "账户风险" : "账户资金";
       $("metricBalance").textContent = trendOnlyMode ? (st.lastError || protection.riskLock ? "异常" : protection.pendingOrder ? "待确认" : "正常") : `${st.balance ?? "-"}`;
@@ -4062,6 +4067,12 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       }
       $("strategyInfo").innerHTML = strategyRows.join("");
       $("trendV1OverviewWarning").hidden = cfg.strategyType !== "trend_only_v1";
+      if (cfg.strategyType === "trend_only_v1") {
+        const upgradePosition = st.trendOnly?.position || Number(st.positionQty) > 0;
+        const upgradePending = st.trendOnly?.pendingOrder;
+        $("overviewUpgradeV2Btn").disabled = !!(upgradePosition || upgradePending);
+        $("overviewUpgradeV2Status").textContent = upgradePosition ? "当前有趋势仓位，平仓后才能升级。" : upgradePending ? "订单尚未确认，暂不能升级。" : st.running ? "需要先停止趋势监控才能升级；点击后可确认停止并继续升级。" : "当前可以安全升级。";
+      }
       $("trendDiagnosticsPanel").hidden = !trendOnlyMode;
       if (trendOnlyMode) {
         $("trendDiagnosticsRows").innerHTML = (trendView.diagnosticRows || []).map(([key, value, cls]) => row(key, value, cls)).join("");
@@ -4069,7 +4080,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       }
       const replayPanel = $("signalReplayPanel");
       replayPanel.hidden = cfg.strategyType !== "trend_only_v2";
-      if (cfg.strategyType === "trend_only_v2") renderSignalReplay(st.trendOnly?.signalJournal || []);
+      if (cfg.strategyType === "trend_only_v2") renderSignalReplay(st.trendOnly?.signalJournal || [], st.trendOnly?.signalStats24h, st.trendOnly?.signalStats72h);
 
       const rightType = st.lastError ? "danger" : st.running ? "normal" : "warning";
       const rightText = st.lastError ? "异常" : st.running ? "运行中" : "未运行";
@@ -4305,9 +4316,17 @@ window.closeVoucherModal = function() {
     async function upgradeCurrentTrendToV2() {
       const cfg = latestStatusData?.config || {};
       if (cfg.strategyType !== "trend_only_v1") return;
+      const state = latestStatusData?.state || {}, trend = state.trendOnly || {};
+      if (trend.position || Number(state.positionQty) > 0) return showToast("当前有趋势仓位，平仓后才能升级。", "error");
+      if (trend.pendingOrder) return showToast("订单尚未确认，暂不能升级。", "error");
       const button = $("overviewUpgradeV2Btn");
       setButtonLoading(button, true, "升级中");
       try {
+        if (state.running) {
+          if (!window.confirm("需要先停止趋势监控才能升级。是否停止监控并继续升级？")) return;
+          const stopped = await api("/api/stop", { method: "POST" });
+          if (!stopped.ok) throw Error(stopped.error || "停止趋势监控失败");
+        }
         const result = await api("/api/trend-only/config", {
           method: "POST",
           body: JSON.stringify({ accountId: currentAccountId, strategyType: "trend_only_v2", config: { ...(cfg.trendOnlyConfig || {}), version: "v2", leverage: 10 } })
@@ -4564,7 +4583,7 @@ window.closeVoucherModal = function() {
     $("advancedModeBtn").addEventListener("click", () => { configMode = "advanced"; applyConfigMode(); });
     $("accountSearch").addEventListener("input", () => renderAccountList(latestAccounts, currentAccountId, latestStatusData?.state || {}));
     $("accountFilter").addEventListener("change", () => renderAccountList(latestAccounts, currentAccountId, latestStatusData?.state || {}));
-    $("signalReplayFilter").addEventListener("change", () => renderSignalReplay(latestStatusData?.state?.trendOnly?.signalJournal || []));
+    $("signalReplayFilter").addEventListener("change", () => renderSignalReplay(latestStatusData?.state?.trendOnly?.signalJournal || [], latestStatusData?.state?.trendOnly?.signalStats24h, latestStatusData?.state?.trendOnly?.signalStats72h));
     $("overviewUpgradeV2Btn").addEventListener("click", upgradeCurrentTrendToV2);
     $("strategyType").addEventListener("change", () => {
       if (isTrendOnlyType($("strategyType").value)) window.TrendOnlyPanel?.setConfig(window.TrendOnlyPanel?.getConfig() || window.__pendingTrendOnlyConfig || {});
