@@ -72,6 +72,7 @@
         "continuationLookback": 8,
         "microBreakLookback": 5,
         "maxEntryExtensionAtr": 1.5,
+        "maxPostFillRiskDeviation": 0.15,
         "maxStopDistanceAtr": 2.2,
         "minStopDistanceAtr": 0.8,
         "softBreakEvenAtR": 1,

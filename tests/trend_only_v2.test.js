@@ -186,3 +186,45 @@ test("risk_lock 状态禁止新开仓", () => {
   const signal = V2.detectMarketRegimeV2([], i);
   assert.match(V2.tryOpenTrendOnlyPosition(a, signal, i).reason, /risk_lock.*保护止损单未确认/);
 });
+
+test("1H short + 15m long 即使延续结构成立也等待入场周期对齐", () => {
+  const signal = V2.detectMarketRegimeV2([], input({ entryDirection: "long", trendDirection: "short", higherDirection: "none", chop: 44, swingContinuationShort: true }));
+  assert.equal(signal.directionRaw, "short");
+  assert.equal(signal.entryPermission, "wait_entry_alignment");
+  assert.match(signal.blockers.join(" "), /15m 当前明确反向/);
+});
+
+test("1H short + 15m none 在回踩确认后可以开空", () => {
+  const signal = V2.detectMarketRegimeV2([], input({ entryDirection: "none", trendDirection: "short", higherDirection: "none", chop: 44, pullbackConfirmedShort: true }));
+  assert.equal(signal.entryPermission, "allowed");
+  assert.equal(signal.entryMode, "pullback_entry");
+});
+
+function fillPlan(side, overrides = {}) {
+  return {
+    side, qty: 10, leverage: 10, stopDistance: 2, atrAtEntry: 2,
+    initialStopLossPrice: side === "long" ? 98 : 102,
+    plannedRiskAmount: 100, riskAmount: 100, equity: 10000, costRate: 0.002,
+    entryMode: "breakout_entry", trendId: "trend-1", riskMultiplier: 1, effectiveRisk: 0.01,
+    signal: { score: 80, reasons: [], signalTime: now, breakoutLevel: 100, structureLow: 97, structureHigh: 103 },
+    ...overrides
+  };
+}
+
+test("Long 跳空成交使计划止损位于错误侧时会按真实成交价修复", () => {
+  const position = V2.positionFromFill(fillPlan("long", { initialStopLossPrice: 106 }), { qty: 1, price: 105, clientOrderId: "l", exchangeOrderId: "1" }, now, {});
+  assert.ok(position.initialStopLossPrice < position.entryPrice);
+  assert.equal(position.stopRepairedAfterFill, true);
+});
+
+test("Short 跳空成交使计划止损位于错误侧时会按真实成交价修复", () => {
+  const position = V2.positionFromFill(fillPlan("short", { initialStopLossPrice: 94 }), { qty: 1, price: 95, clientOrderId: "s", exchangeOrderId: "2" }, now, {});
+  assert.ok(position.initialStopLossPrice > position.entryPrice);
+  assert.equal(position.stopRepairedAfterFill, true);
+});
+
+test("成交后实际风险超过计划 15% 时标记 post-fill risk lock", () => {
+  const position = V2.positionFromFill(fillPlan("long", { plannedRiskAmount: 10, riskAmount: 10 }), { qty: 10, price: 105, clientOrderId: "r", exchangeOrderId: "3" }, now, {});
+  assert.ok(position.actualRiskAmount > position.plannedRiskAmount * 1.15);
+  assert.equal(position.postFillRiskExceeded, true);
+});

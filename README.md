@@ -27,6 +27,9 @@ npm start
 - `config.json`、`auth.json`、运行态、成交历史和私钥文件已加入 `.gitignore`，不要提交这些文件。
 - 停止趋势监控只会阻止新开仓；已有趋势仓位仍继续执行保护性退出。
 - Live 前必须配置可用的交易所凭证；Hyperliquid/Binance 的 V2 仓位成交后会立即创建交易所原生保护止损，同步失败会进入 `risk_lock`。
+- V2 会按真实成交价重新校验止损与实际风险；实际风险超过计划 15% 时进入 `POST_FILL_RISK_LOCK`，无法建立合法止损时立即 reduce-only 退出。
+- `auth.json` 的旧明文密码仅用于兼容迁移；首次成功登录后会自动改存为 scrypt `passwordHash`，登录失败会被限流。
+- 生产环境必须由 HTTPS 反向代理提供服务，并设置 `TRUST_PROXY=true`（或 `HTTPS_PROXY_ENABLED=true`）；生产 Cookie 强制 `HttpOnly`、`Secure`、`SameSite=Lax`。
 - Extended Live 趋势下单暂未开放，请使用 Paper 或切换 Hyperliquid/Binance。
 
 ## Trend Only V2 推荐规则

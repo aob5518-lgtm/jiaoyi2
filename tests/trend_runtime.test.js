@@ -93,3 +93,26 @@ test('V2 Binance Live 通过 Algo API 创建 STOP_MARKET reduceOnly 保护单',a
   f.d.request=async(url,options)=>{if(url.includes('positionSide/dual'))return{dualSidePosition:false};if(options?.method==='POST')return{algoStatus:'REJECTED'};return{};};
   assert.equal(await f.r.syncProtection(f.acc,f.st),false);assert.equal(f.r.get(f.acc).riskLock,true);
 });
+
+test('V2 状态只发布最近 50 条 journal，运行时分页仍能读取完整历史',t=>{
+  const f=fixture(t);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true});const s=f.r.get(f.acc);
+  s.signalJournal=Array.from({length:80},(_,index)=>({time:index+1,finalDecision:index%2?'NO_SIGNAL':'READY_TO_OPEN'}));
+  f.r.publish(f.acc,f.st);
+  assert.equal(f.st.trendOnly.signalJournal.length,50);
+  const page=f.r.signalJournal(f.acc,{limit:20,offset:50});assert.equal(page.total,80);assert.equal(page.items.length,20);assert.equal(page.items[0].time,30);
+  assert.equal(f.r.signalJournal(f.acc,{finalDecision:'READY_TO_OPEN'}).total,40);
+});
+
+test('新保护止损成功但旧单撤销失败时记录 orphan，并可重试清理',async t=>{
+  const f=fixture(t,true);f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true});const s=f.r.get(f.acc);s.position=v2Position();
+  let nextId=9001,cancelFails=true;f.d.hyperStop=async()=>({orderId:String(nextId++),stopPrice:s.position.currentStopLossPrice});f.d.hyperCancel=async()=>{if(cancelFails)throw Error('cancel timeout');return{ok:true};};
+  assert.equal(await f.r.syncProtection(f.acc,f.st),true);s.position.currentStopLossPrice=99;
+  assert.equal(await f.r.syncProtection(f.acc,f.st),true);assert.deepEqual(s.orphanStopOrderIds,['9001']);assert.equal(s.stopProtectionHealth,'ORPHAN_ORDER');
+  await f.r.reconcileProtection(f.acc,{openOrders:[{oid:'9001'}]});assert.deepEqual(s.orphanStopOrderIds,['9001']);
+  cancelFails=false;await f.r.reconcileProtection(f.acc,{openOrders:[{oid:'9001'}]});assert.deepEqual(s.orphanStopOrderIds,[]);assert.equal(s.stopProtectionHealth,'HEALTHY');
+});
+test('成交后实际风险超过计划 15% 会进入 POST_FILL_RISK_LOCK',t=>{
+  const f=fixture(t);f.acc.strategyType='trend_only_v2';const s=f.r.get(f.acc);s.position={...v2Position(),postFillRiskExceeded:true,actualRiskAmount:116,plannedRiskAmount:100};
+  assert.equal(f.r.enforcePostFillRisk(f.acc),true);assert.equal(s.riskLock,true);assert.equal(s.riskLockType,'POST_FILL_RISK_LOCK');
+  f.r.publish(f.acc,f.st);assert.equal(f.st.trendOnly.executionState,'POST_FILL_RISK_LOCK');
+});

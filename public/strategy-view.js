@@ -6,6 +6,19 @@
   "use strict";
   const value = (input, digits = 3) => Number.isFinite(Number(input)) ? Number(input).toFixed(digits) : "-";
   const replayBlockers = item => [item?.executionBlocker, ...(item?.blockers || [])].filter(Boolean).join("；");
+  function replayFilterMatch(item, filter = "all") {
+    const signalPermission = item?.signalPermission || item?.entryPermission || "blocked", decision = item?.finalDecision;
+    return ({
+      all: true, signal_allowed: signalPermission === "allowed", executable: item?.executionPermission === "allowed",
+      strategy_blocked: signalPermission !== "allowed", execution_blocked: item?.executionPermission === "blocked",
+      wait_pullback: signalPermission === "wait_pullback" || decision === "WAIT_PULLBACK",
+      wait_breakout: signalPermission === "wait_breakout" || decision === "WAIT_BREAKOUT",
+      wait_continuation: signalPermission === "wait_continuation" || decision === "WAIT_CONTINUATION",
+      live_confirm: decision === "WAIT_LIVE_CONFIRM", account_conflict: decision === "ACCOUNT_CONFLICT",
+      open_order: decision === "OPEN_ORDER_BLOCK", reentry: decision === "REENTRY_COOLDOWN",
+      risk_lock: ["RISK_LOCK", "POST_FILL_RISK_LOCK"].includes(decision), unsupported: decision === "PLATFORM_UNSUPPORTED"
+    })[filter] === true;
+  }
   function summarizeReplay(items) {
     const all = Array.isArray(items) ? items.slice(0, 50) : [];
     const matches = (item, pattern) => pattern.test(replayBlockers(item));
@@ -28,12 +41,21 @@
     const cutoff = now - Number(hours) * 3600000;
     const all = (Array.isArray(items) ? items : []).filter(item => Number(item.time) >= cutoff && Number(item.time) <= now);
     const blockers = item => replayBlockers(item);
+    const modes = {};
+    for (const mode of ["breakout_entry", "pullback_entry", "continuation_entry"]) {
+      const rows = all.filter(item => item.entryMode === mode), exits = rows.filter(item => Number.isFinite(Number(item.realizedPnl)));
+      modes[mode] = { signals: rows.length, executed: rows.filter(item => item.executionPermission === "allowed").length, filled: rows.filter(item => item.orderFilled || item.finalDecision === "ORDER_FILLED").length, wins: exits.filter(item => Number(item.realizedPnl) > 0).length, losses: exits.filter(item => Number(item.realizedPnl) < 0).length, avgR: exits.length ? exits.reduce((sum, item) => sum + Number(item.realizedR || 0), 0) / exits.length : 0, totalPnl: exits.reduce((sum, item) => sum + Number(item.realizedPnl || 0), 0) };
+    }
+    const exits = all.filter(item => Number.isFinite(Number(item.realizedPnl)));
     return {
       total: all.length,
+      directionEstablished: all.filter(item => ["long", "short"].includes(item.directionRaw)).length,
       signalOpportunities: all.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
       executable: all.filter(item => item.executionPermission === "allowed").length,
       submitted: all.filter(item => item.orderSubmitted || item.finalDecision === "ORDER_SUBMITTED").length,
       filled: all.filter(item => item.orderFilled || item.finalDecision === "ORDER_FILLED").length,
+      profitableExits: exits.filter(item => Number(item.realizedPnl) > 0).length,
+      losingExits: exits.filter(item => Number(item.realizedPnl) < 0).length,
       allowed: all.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
       pullback: all.filter(item => item.entryPermission === "wait_pullback").length,
       breakout: all.filter(item => item.entryPermission === "wait_breakout").length,
@@ -42,7 +64,8 @@
       adx: all.filter(item => /ADX|趋势强度/.test(blockers(item))).length,
       higher: all.filter(item => /高周期|4H|多周期/.test(blockers(item))).length,
       extended: all.filter(item => /远离 EMA20|不追单/.test(blockers(item))).length,
-      risk: all.filter(item => /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单结果未知/i.test(blockers(item))).length
+      risk: all.filter(item => /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单结果未知/i.test(blockers(item))).length,
+      modes
     };
   }
   function strictnessWarnings(items, now = Date.now()) {
@@ -68,7 +91,7 @@
   function nextAction(trend, lastAction = "") {
     const pending = trend.pendingOrder;
     const position = trend.position;
-    const executionActions = { MONITOR_STOPPED: "启动趋势监控后再判断", ACCOUNT_CONFLICT: "解除同账户合约冲突", OPEN_ORDER_BLOCK: "等待交易所挂单结束", REENTRY_COOLDOWN: "等待再入场冷却结束", WAIT_LIVE_CONFIRM: "等待本次 Live 开仓确认", RISK_LOCK: "解除风控锁定后再开仓", PLATFORM_UNSUPPORTED: "切换 Paper 或 Hyperliquid/Binance", READY_TO_OPEN: "执行条件已通过，准备开仓", ORDER_SUBMITTED: "订单已提交，等待交易所确认", ORDER_FILLED: "订单已成交，进入持仓保护", POSITION_MANAGED: "管理现有仓位与止损" };
+    const executionActions = { MONITOR_STOPPED: "启动趋势监控后再判断", ACCOUNT_CONFLICT: "解除同账户合约冲突", OPEN_ORDER_BLOCK: "等待交易所挂单结束", REENTRY_COOLDOWN: "等待再入场冷却结束", WAIT_LIVE_CONFIRM: "等待本次 Live 开仓确认", WAIT_ENTRY_ALIGNMENT: "等待 15m 入场周期重新确认", RISK_LOCK: "解除风控锁定后再开仓", POST_FILL_RISK_LOCK: "成交后实际风险超限，已锁定新开仓", PLATFORM_UNSUPPORTED: "切换 Paper 或 Hyperliquid/Binance", READY_TO_OPEN: "执行条件已通过，准备开仓", ORDER_SUBMITTED: "订单已提交，等待交易所确认", ORDER_FILLED: "订单已成交，进入持仓保护", POSITION_MANAGED: "管理现有仓位与止损" };
     if (executionActions[trend.executionState]) return executionActions[trend.executionState];
     if (pending?.status === "unknown_order_state") return "订单结果未知，禁止重复下单";
     if (pending) return "订单处理中，等待交易所确认";
@@ -90,7 +113,7 @@
     const executionLabels = {
       NO_SIGNAL: "无机会", WAIT_PULLBACK: "等待回踩", WAIT_BREAKOUT: "等待突破", WAIT_CONTINUATION: "等待延续",
       MONITOR_STOPPED: "监控已停止", ACCOUNT_CONFLICT: "账户冲突", OPEN_ORDER_BLOCK: "挂单阻断", REENTRY_COOLDOWN: "再入场冷却",
-      WAIT_LIVE_CONFIRM: "等待 Live 确认", RISK_LOCK: "风控禁止", PLATFORM_UNSUPPORTED: "平台暂不支持", ORDER_SUBMITTED: "订单已提交",
+      WAIT_LIVE_CONFIRM: "等待 Live 确认", WAIT_ENTRY_ALIGNMENT: "等待 15m 重新确认", RISK_LOCK: "风控禁止", POST_FILL_RISK_LOCK: "成交后风险锁定", PLATFORM_UNSUPPORTED: "平台暂不支持", ORDER_SUBMITTED: "订单已提交",
       ORDER_FILLED: "订单已成交", POSITION_MANAGED: "持仓保护中", READY_TO_OPEN: "可执行开仓"
     };
     if (executionLabels[trend.executionState]) return executionLabels[trend.executionState];
@@ -156,6 +179,8 @@
       ["保本状态", position.breakEvenActivated ? "已保本" : "未保本"], ["移动止盈", position.trailingActive ? "已启动" : "未启动"],
       ["防守模式", position.defensiveMode ? "趋势衰减，进入防守模式" : "未启用", position.defensiveMode ? "orange" : ""],
       ["保护止损单状态", trend.stopSyncStatus || "not_required", trend.riskLock ? "red" : trend.stopSyncStatus === "synced" ? "green" : "orange"],
+      ["保护止损健康", trend.stopProtectionHealth || "NOT_REQUIRED", trend.stopProtectionHealth === "HEALTHY" || trend.stopProtectionHealth === "NOT_REQUIRED" ? "green" : trend.stopProtectionHealth === "FAILED" ? "red" : "orange"],
+      ["残留保护单", trend.orphanStopOrderCount ? `存在未确认撤销保护单：${trend.orphanStopOrderCount}` : "无", trend.orphanStopOrderCount ? "orange" : "green"],
       ["stopOrderId", trend.stopOrderId || "-"], ["保护止损价", value(trend.stopOrderPrice)], ["stopSyncStatus", trend.stopSyncStatus || "not_required", trend.riskLock ? "red" : ""],
       ["最近同步时间", (trend.stopLastSyncAt || trend.stopLastSyncedAt) ? new Date(trend.stopLastSyncAt || trend.stopLastSyncedAt).toLocaleString("zh-CN") : "-"],
       ["最高价 / 最低价", `${value(position.highestPriceSinceEntry)} / ${value(position.lowestPriceSinceEntry)}`]
@@ -177,10 +202,10 @@
       ["账户余额", st.balance ?? "-"], ["可用余额", st.available ?? "-"], ["单笔风险比例", `${value(Number(c.riskPerTrade) * 100, 2)}%`],
       ["日亏损限制", `${value(Number(c.maxDailyLossRatio) * 100, 2)}%`], ["连续亏损次数", trend.consecutiveLosses || 0],
       ["暂停至", pauseUntil], ["当前止损价", position ? value(position.currentStopLossPrice) : "-"],
-      ["保护止损", trend.stopSyncStatus || "not_required", trend.riskLock ? "red" : ""], ["risk_lock", trend.riskLock ? trend.riskLockReason || "已锁定" : "未锁定", trend.riskLock ? "red" : "green"],
+      ["保护止损", trend.stopProtectionHealth || trend.stopSyncStatus || "NOT_REQUIRED", trend.riskLock ? "red" : ""], ["残留保护单", trend.orphanStopOrderCount ? `存在未确认撤销保护单：${trend.orphanStopOrderCount}` : "无", trend.orphanStopOrderCount ? "orange" : "green"], ["risk_lock", trend.riskLock ? trend.riskLockReason || "已锁定" : "未锁定", trend.riskLock ? "red" : "green"],
       ["pendingOrder", orderState, orderClass], ["错误信息", st.lastError || "-", st.lastError ? "red" : "muted"]
     ];
     return { market, direction, weekend, opportunityStatus: opportunityStatus(trend), diagnosticRows: diagnosticRows(trend), diagnosticSummary: diagnosticSummary(trend), nextAction: nextAction(trend, st.lastAction), positionRows, strategyRows, rightStatusRows, rightRiskRows };
   }
-  return { marketLabel, directionLabel, nextAction, opportunityStatus, diagnosticSummary, diagnosticRows, summarizeReplay, summarizeReplayWindow, strictnessWarnings, buildTrendView };
+  return { marketLabel, directionLabel, nextAction, opportunityStatus, diagnosticSummary, diagnosticRows, summarizeReplay, summarizeReplayWindow, strictnessWarnings, replayFilterMatch, buildTrendView };
 });

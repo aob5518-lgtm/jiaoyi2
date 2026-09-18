@@ -1,20 +1,20 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os'),vm=require('vm'),{EventEmitter}=require('events'),{createRequire}=require('module');
 const base=path.resolve(__dirname,'..');
-function setup(t){
+function setup(t,env={}){
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'trend-server-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
  const acc={id:'legacy',name:'legacy',platform:'hyperliquid',address:'0xabc',privateKey:'0x'+'1'.repeat(64),apiKey:'key',apiSecret:'secret',starkPrivateKey:'stark-secret',publicKey:'pub',vault:'vault',symbol:'ETH',quoteAsset:'USDC',side:'long',strategyType:'classic',tradeMode:'simulation',simulationEnabled:true,simulationBalance:10000,leverage:5,baseAmount:100,addAmount:100,takeProfit:.01,addTrigger:.01,maxAdds:2,interval:15000,running:false};
  fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify({currentAccountId:acc.id,accounts:[acc]}));
  fs.writeFileSync(path.join(directory,'auth.json'),JSON.stringify({adminUsername:'test',adminPassword:'test'}));
  const raw=fs.readFileSync(path.join(base,'server.js'),'utf8').split('\ninitSdk()')[0];
  let handler;const req=createRequire(path.join(base,'server.js'));
- const ctx={require:n=>n==='http'?{createServer:fn=>{handler=fn;return{close(){}};}}:req(n),__dirname:directory,console,Buffer,URL,URLSearchParams,AbortController,fetch:()=>{throw Error('禁止测试访问网络');},setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{},process:{...process,on(){}}};
+ const ctx={require:n=>n==='http'?{createServer:fn=>{handler=fn;return{close(){}};}}:req(n),__dirname:directory,console,Buffer,URL,URLSearchParams,AbortController,fetch:()=>{throw Error('禁止测试访问网络');},setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{},process:{...process,env:{...process.env,...env},on(){}}};
  vm.createContext(ctx);vm.runInContext(raw,ctx);vm.runInContext('ensureAccountStates()',ctx);
  async function call(url,body,auth=true){
   const sid=auth?vm.runInContext('createSession("test")',ctx):'';
   const req=new EventEmitter();Object.assign(req,{url,method:body===undefined?'GET':'POST',headers:{cookie:'sid='+sid},destroy(){}});
   return await new Promise((resolve)=>{let code,headers={};const res={writeHead:(n,h={})=>{code=n;headers=h;},end:text=>{let data;try{data=JSON.parse(text);}catch(e){data=text;}resolve({code,headers,data,text:String(text||'')});}};handler(req,res);if(body!==undefined){req.emit('data',JSON.stringify(body));req.emit('end');}});
  }
- return{ctx,call};
+ return{ctx,call,directory};
 }
 test('趋势状态接口不可改写旧策略持仓',async t=>{const f=setup(t);vm.runInContext('stateMap.legacy.positionQty=2;stateMap.legacy.entryPrice=100',f.ctx);const r=await f.call('/api/trend-only');assert.equal(r.code,200);assert.equal(r.data.active,false);assert.equal(vm.runInContext('stateMap.legacy.positionQty',f.ctx),2);});
 test('未登录不能读取或确认 Live',async t=>{const f=setup(t);assert.equal((await f.call('/api/trend-only',undefined,false)).code,401);assert.equal((await f.call('/api/trend-only/confirm',{confirmLive:true},false)).code,401);});
@@ -66,4 +66,28 @@ test('批量启动跳过 Trend Only 并返回明确原因',async t=>{
  assert.equal(r.data.successCount,0);
  assert.equal(r.data.skippedCount,1);
  assert.match(r.data.skipped[0].reason,/Trend Only V2/);
+});
+test('/api/public/status 对 Trend Only 内部 journal 与订单字段严格脱敏',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{}});
+ vm.runInContext('Object.assign(trendRuntime.get(config.accounts[0]),{signalJournal:[{time:1,executionBlocker:"secret"}],stopOrderId:"stop-secret",riskLockReason:"risk-secret",trendContext:{internal:true},signal:{regime:"trend",directionRaw:"long",tradeDirection:"long"}})',f.ctx);
+ const r=await f.call('/api/public/status?id=legacy',undefined,false),text=JSON.stringify(r.data);
+ assert.equal(r.code,200);for(const field of ['signalJournal','stopOrderId','clientOrderId','trendContext','riskLockReason','executionBlocker'])assert.equal(text.includes(field),false,field);
+ assert.deepEqual(Object.keys(r.data.state.trendOnly).sort(),['direction','hasPosition','marketStage','marketStatus','nextAction','pnl','roi','running','tradeDirection','updatedAt'].sort());
+});
+test('/api/status 仅返回 50 条 journal，分页接口可读取完整历史',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{}});
+ vm.runInContext('trendRuntime.get(config.accounts[0]).signalJournal=Array.from({length:80},(_,i)=>({time:i+1,finalDecision:i%2?"NO_SIGNAL":"READY_TO_OPEN"}))',f.ctx);
+ const status=await f.call('/api/status');assert.equal(status.data.state.trendOnly.signalJournal.length,50);
+ const page=await f.call('/api/trend-only/signal-journal?id=legacy&limit=20&offset=50');assert.equal(page.code,200);assert.equal(page.data.total,80);assert.equal(page.data.items.length,20);assert.equal(page.data.items[0].time,30);
+ assert.equal((await f.call('/api/trend-only/signal-journal?id=legacy',undefined,false)).code,401);
+});
+test('旧明文管理员密码首次成功登录后迁移为 scrypt hash，并限制连续失败',async t=>{
+ const f=setup(t),ok=await f.call('/api/login',{username:'test',password:'test'},false);assert.equal(ok.code,200);assert.match(ok.headers['Set-Cookie'],/HttpOnly; SameSite=Lax/);
+ const migrated=JSON.parse(fs.readFileSync(path.join(f.directory,'auth.json'),'utf8'));assert.match(migrated.passwordHash,/^scrypt\$/);assert.equal('adminPassword'in migrated,false);
+ for(let i=0;i<5;i++)assert.equal((await f.call('/api/login',{username:'test',password:'bad'},false)).code,401);
+ assert.equal((await f.call('/api/login',{username:'test',password:'bad'},false)).code,429);
+});
+test('生产环境登录 Cookie 强制 Secure、HttpOnly 与 SameSite=Lax',async t=>{
+ const f=setup(t,{NODE_ENV:'production',TRUST_PROXY:'true'}),r=await f.call('/api/login',{username:'test',password:'test'},false);assert.equal(r.code,200);
+ assert.match(r.headers['Set-Cookie'],/HttpOnly; SameSite=Lax; Secure/);
 });

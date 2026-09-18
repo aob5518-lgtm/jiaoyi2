@@ -34,7 +34,7 @@ test("Trend Only V2 展示阻断原因、信号回放且不显示 DCA 字段", (
   assert.match(view, /交易方向/);
   assert.match(read("public/trend-only-panel.js"), /一键升级到 Trend Only V2/);
   assert.match(html, /id="signalReplayFilter"/);
-  assert.match(html, /允许开仓.*等待回踩.*等待突破.*等待延续.*追单阻断.*CHOP 阻断.*高周期反向.*风控阻断/s);
+  assert.match(html, /策略机会.*最终可执行.*策略阻断.*执行阻断.*等待回踩.*等待突破.*等待延续.*Live确认.*账户冲突.*挂单阻断.*再入场冷却.*risk_lock.*平台不支持/s);
   assert.match(html, /距 EMA20.*distanceFromEmaAtr/s);
   assert.match(html, /function marketStatusClass/);
   assert.match(view, /保护止损单状态|stopOrderId|stopOrderPrice|stopLastSyncAt/);
@@ -54,6 +54,14 @@ test("信号回放统计正确区分等待、追单、CHOP、高周期与风控�
     { entryPermission: "blocked", blockers: ["risk_lock：保护止损单未确认"] }
   ]);
   assert.deepEqual(counts, { signalOpportunities: 1, executable: 0, submitted: 0, filled: 0, allowed: 1, pullback: 1, breakout: 1, continuation: 1, extended: 1, chop: 1, higher: 1, risk: 1 });
+});
+
+test("signal allowed 但 execution blocked 会进入执行阻断筛选", () => {
+  const view = require("../public/strategy-view.js"), item = { signalPermission: "allowed", executionPermission: "blocked", finalDecision: "WAIT_LIVE_CONFIRM" };
+  assert.equal(view.replayFilterMatch(item, "signal_allowed"), true);
+  assert.equal(view.replayFilterMatch(item, "execution_blocked"), true);
+  assert.equal(view.replayFilterMatch(item, "strategy_blocked"), false);
+  assert.equal(view.replayFilterMatch(item, "live_confirm"), true);
 });
 
 test("24/72 小时统计包含 ADX、CHOP、多周期与追单阻断", () => {

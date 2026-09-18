@@ -441,6 +441,52 @@ function ensureFileExists(filePath, fallbackContent) {
   }
 }
 
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const HTTPS_PROXY_TRUSTED = [process.env.TRUST_PROXY, process.env.HTTPS_PROXY_ENABLED, process.env.BEHIND_HTTPS_PROXY]
+  .some(value => /^(1|true|yes)$/i.test(String(value || "")));
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 5;
+const loginFailures = new Map();
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const digest = crypto.scryptSync(String(password || ""), salt, 64).toString("hex");
+  return `scrypt$${salt}$${digest}`;
+}
+
+function verifyPassword(password, encoded) {
+  const [scheme, salt, expectedHex] = String(encoded || "").split("$");
+  if (scheme !== "scrypt" || !salt || !/^[a-f0-9]{128}$/i.test(expectedHex || "")) return false;
+  const actual = crypto.scryptSync(String(password || ""), salt, 64);
+  const expected = Buffer.from(expectedHex, "hex");
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
+function saveAuthConfig(auth) {
+  const tempPath = `${AUTH_PATH}.tmp-${process.pid}`;
+  fs.writeFileSync(tempPath, JSON.stringify(auth, null, 2), "utf-8");
+  fs.renameSync(tempPath, AUTH_PATH);
+}
+
+function sessionCookie(sid, maxAge) {
+  return `sid=${encodeURIComponent(sid || "")}; Path=/; HttpOnly; SameSite=Lax${IS_PRODUCTION ? "; Secure" : ""}; Max-Age=${maxAge}`;
+}
+
+function loginKey(req, username) {
+  const forwarded = HTTPS_PROXY_TRUSTED ? String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() : "";
+  const ip = forwarded || req.socket?.remoteAddress || "unknown";
+  return `${ip}:${String(username || "").toLowerCase()}`;
+}
+
+function loginRateState(key, now = Date.now()) {
+  const current = loginFailures.get(key);
+  if (!current || now - current.startedAt >= LOGIN_WINDOW_MS) {
+    const fresh = { count: 0, startedAt: now };
+    loginFailures.set(key, fresh);
+    return fresh;
+  }
+  return current;
+}
+
 ensureFileExists(HISTORY_PATH, "{}");
 ensureFileExists(SIM_ORDERS_PATH, "{}");
 ensureFileExists(SMART_RUNTIME_PATH, "{}");
@@ -449,12 +495,22 @@ ensureFileExists(
   JSON.stringify(
     {
       adminUsername: "admin",
-      adminPassword: "admin123456"
+      passwordHash: hashPassword("admin123456")
     },
     null,
     2
   )
 );
+
+if (IS_PRODUCTION && !HTTPS_PROXY_TRUSTED) {
+  console.error("[SECURITY][HIGH] NODE_ENV=production 但未声明可信 HTTPS 反向代理。请启用 HTTPS，并设置 TRUST_PROXY=true（或 HTTPS_PROXY_ENABLED=true）。");
+}
+try {
+  const authAtStartup = JSON.parse(fs.readFileSync(AUTH_PATH, "utf-8"));
+  if (authAtStartup.adminPassword && !authAtStartup.passwordHash) {
+    console.warn("[SECURITY] auth.json 仍使用明文管理员密码；下次成功登录后将自动迁移为 scrypt passwordHash。");
+  }
+} catch (_) {}
 
 function loadConfig() {
   return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
@@ -4244,9 +4300,33 @@ function getPublicAccountPayload(acc, st) {
   };
 }
 
+function sanitizeTrendOnlyForPublic(trend = {}, st = {}) {
+  const signal = trend.signal || {};
+  const nextActions = {
+    NO_SIGNAL: "等待交易机会", WAIT_PULLBACK: "等待回踩", WAIT_BREAKOUT: "等待突破", WAIT_CONTINUATION: "等待延续",
+    WAIT_ENTRY_ALIGNMENT: "等待 15m 重新确认", READY_TO_OPEN: "满足开仓条件", MONITOR_STOPPED: "趋势监控已停止",
+    ACCOUNT_CONFLICT: "账户存在策略冲突", OPEN_ORDER_BLOCK: "等待现有订单结束", REENTRY_COOLDOWN: "再入场冷却中",
+    WAIT_LIVE_CONFIRM: "等待 Live 开仓确认", RISK_LOCK: "风控禁止开仓", POST_FILL_RISK_LOCK: "成交后风险锁定",
+    PLATFORM_UNSUPPORTED: "当前平台不支持趋势实盘", ORDER_SUBMITTED: "订单已提交", ORDER_FILLED: "订单已成交", POSITION_MANAGED: "持仓保护中"
+  };
+  return {
+    marketStatus: trend.weekendBlocked ? "weekend_blocked" : (signal.regime || "data_insufficient"),
+    direction: signal.directionRaw || signal.direction || "none",
+    running: !!st.running,
+    hasPosition: !!trend.position,
+    pnl: Number(st.pnl || 0),
+    roi: Number(st.roi || 0),
+    nextAction: nextActions[trend.executionState] || "等待趋势判断",
+    updatedAt: st.updatedAt || "",
+    marketStage: signal.regime || "data_insufficient",
+    tradeDirection: signal.tradeDirection || "none"
+  };
+}
+
 function getPublicStatePayload(acc, st) {
   const strategyType = getStrategyType(acc);
   if (isTrendOnly(acc)) trendRuntime.publish(acc, st);
+  const trendPublic = isTrendOnly(acc) ? sanitizeTrendOnlyForPublic(st.trendOnly, st) : null;
   return {
     account: {
       id: acc.id,
@@ -4262,7 +4342,17 @@ function getPublicStatePayload(acc, st) {
       tradeMode: isSimulationAccount(acc) ? "simulation" : "live",
       simulationEnabled: isSimulationAccount(acc)
     },
-    state: {
+    state: isTrendOnly(acc) ? {
+      activeStrategyType: strategyType,
+      activeStrategyLabel: getStrategyLabel(acc),
+      isTrendOnly: true,
+      isTrendOnlyV2: isTrendOnlyV2(acc),
+      running: !!st.running,
+      pnl: Number(st.pnl || 0),
+      roi: Number(st.roi || 0),
+      updatedAt: st.updatedAt || "",
+      trendOnly: trendPublic
+    } : {
       activeStrategyType: strategyType,
       activeStrategyLabel: getStrategyLabel(acc),
       isTrendOnly: isTrendOnly(acc),
@@ -4289,7 +4379,7 @@ function getPublicStatePayload(acc, st) {
       lastAction: st.lastAction,
       lastError: st.lastError,
       updatedAt: st.updatedAt,
-      ...(isTrendOnly(acc) ? { trendOnly: st.trendOnly } : {})
+      ...(isTrendOnly(acc) ? { trendOnly: trendPublic } : {})
     }
   };
 }
@@ -4335,19 +4425,38 @@ const server = http.createServer((req, res) => {
       try {
         const { username, password } = JSON.parse(body || "{}");
         const auth = loadAuthConfig();
+        const rateKey = loginKey(req, username);
+        const rate = loginRateState(rateKey);
+        if (rate.count >= LOGIN_MAX_FAILURES) {
+          const retryAfter = Math.max(1, Math.ceil((LOGIN_WINDOW_MS - (Date.now() - rate.startedAt)) / 1000));
+          return jsonRes(res, 429, { ok: false, error: "登录失败次数过多，请稍后再试" }, { "Retry-After": String(retryAfter) });
+        }
 
-        if (username === auth.adminUsername && password === auth.adminPassword) {
+        const usernameMatches = username === auth.adminUsername;
+        const passwordMatches = auth.passwordHash
+          ? verifyPassword(password, auth.passwordHash)
+          : typeof auth.adminPassword === "string" && password === auth.adminPassword;
+
+        if (usernameMatches && passwordMatches) {
+          loginFailures.delete(rateKey);
+          if (!auth.passwordHash && typeof auth.adminPassword === "string") {
+            const migrated = { ...auth, passwordHash: hashPassword(password) };
+            delete migrated.adminPassword;
+            saveAuthConfig(migrated);
+            console.warn("[SECURITY] 管理员密码已从明文迁移为 scrypt passwordHash。");
+          }
           const sid = createSession(username);
           return jsonRes(
             res,
             200,
             { ok: true },
             {
-              "Set-Cookie": `sid=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`
+              "Set-Cookie": sessionCookie(sid, 7 * 24 * 60 * 60)
             }
           );
         }
 
+        rate.count += 1;
         return jsonRes(res, 401, { ok: false, error: "用户名或密码错误" });
       } catch (e) {
         return jsonRes(res, 400, { ok: false, error: "登录请求无效" });
@@ -4365,7 +4474,7 @@ const server = http.createServer((req, res) => {
       200,
       { ok: true },
       {
-        "Set-Cookie": "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        "Set-Cookie": sessionCookie("", 0)
       }
     );
   }
@@ -4611,6 +4720,12 @@ const server = http.createServer((req, res) => {
   if (pathname.startsWith("/api/trend-only")) {
     if (!isAuthenticated(req)) return jsonRes(res, 401, { ok: false, error: "请先登录" });
     const acc = getCurrentAccount(), st = stateMap[acc.id];
+    if (req.method === "GET" && pathname === "/api/trend-only/signal-journal") {
+      const target = getAccountById(parsed.query.id || acc.id);
+      if (!target) return jsonRes(res, 404, { ok: false, error: "账户不存在" });
+      if (!isTrendOnly(target)) return jsonRes(res, 400, { ok: false, error: "该账户未启用 Trend Only" });
+      return jsonRes(res, 200, { ok: true, accountId: target.id, ...trendRuntime.signalJournal(target, parsed.query) });
+    }
     if (req.method === "GET" && pathname === "/api/trend-only") {
       if (isTrendOnly(acc)) trendRuntime.publish(acc, st);
       const T = trendEngine(acc);

@@ -2901,9 +2901,11 @@
               <div class="config-section-note" style="margin:10px 0;">最近 50 根已收盘 K 线的策略判断、允许入场状态和阻断原因。</div>
               <div class="account-tools" style="margin:10px 0;">
                 <select id="signalReplayFilter" aria-label="信号回放筛选">
-                  <option value="all">全部</option><option value="allowed">允许开仓</option><option value="blocked">被阻断</option>
+                  <option value="all">全部</option><option value="signal_allowed">策略机会</option><option value="executable">最终可执行</option>
+                  <option value="strategy_blocked">策略阻断</option><option value="execution_blocked">执行阻断</option>
                   <option value="wait_pullback">等待回踩</option><option value="wait_breakout">等待突破</option><option value="wait_continuation">等待延续</option>
-                  <option value="extended">追单风险</option><option value="chop">CHOP 阻断</option><option value="higher">高周期反向</option>
+                  <option value="live_confirm">Live确认</option><option value="account_conflict">账户冲突</option><option value="open_order">挂单阻断</option>
+                  <option value="reentry">再入场冷却</option><option value="risk_lock">risk_lock</option><option value="unsupported">平台不支持</option>
                 </select>
               </div>
               <div class="config-section-note" style="margin:10px 0 6px;">最近 24 小时</div>
@@ -3957,7 +3959,9 @@
       };
       const renderWindowStats = (id, hours, serverStats) => {
         const stats = serverStats || window.StrategyView?.summarizeReplayWindow?.(all, hours) || { total: 0, signalOpportunities: 0, executable: 0, submitted: 0, filled: 0, pullback: 0, breakout: 0, continuation: 0, chop: 0, adx: 0, higher: 0, extended: 0, risk: 0 };
-        $(id).innerHTML = [row("总判断次数", stats.total), row("策略机会数", stats.signalOpportunities || 0), row("最终可执行数", stats.executable || 0), row("提交订单数", stats.submitted || 0), row("实际成交数", stats.filled || 0), row("等待回踩", stats.pullback), row("等待突破", stats.breakout), row("等待延续", stats.continuation), row("CHOP 阻断", stats.chop), row("ADX 阻断", stats.adx), row("多周期冲突", stats.higher), row("追单阻断", stats.extended), row("风控阻断", stats.risk)].join("");
+        const modeLabel = { breakout_entry: "突破", pullback_entry: "回踩", continuation_entry: "延续" };
+        const modeRows = Object.entries(stats.modes || {}).map(([mode, value]) => row(`${modeLabel[mode] || mode}漏斗`, `信号 ${value.signals || 0}｜执行 ${value.executed || 0}｜成交 ${value.filled || 0}｜胜/负 ${value.wins || 0}/${value.losses || 0}｜平均 R ${fmt(value.avgR, 2)}｜盈亏 ${fmt(value.totalPnl, 2)} U`));
+        $(id).innerHTML = [row("策略判断总数", stats.total), row("趋势方向成立", stats.directionEstablished || 0), row("策略机会 signal allowed", stats.signalOpportunities || 0), row("执行允许", stats.executable || 0), row("订单提交", stats.submitted || 0), row("订单成交", stats.filled || 0), row("盈利退出 / 亏损退出", `${stats.profitableExits || 0} / ${stats.losingExits || 0}`), ...modeRows, row("等待回踩", stats.pullback), row("等待突破", stats.breakout), row("等待延续", stats.continuation), row("CHOP 阻断", stats.chop), row("ADX 阻断", stats.adx), row("多周期冲突", stats.higher), row("追单阻断", stats.extended), row("风控阻断", stats.risk)].join("");
       };
       renderWindowStats("signalReplayStats24h", 24, serverStats24h);
       renderWindowStats("signalReplayStats72h", 72, serverStats72h);
@@ -3966,7 +3970,22 @@
       $("signalStrictnessWarning").textContent = warnings.join(" ");
       $("signalReplayStats").innerHTML = [row("策略机会数", counts.signalOpportunities || 0), row("最终可执行数", counts.executable || 0), row("提交订单数", counts.submitted || 0), row("实际成交数", counts.filled || 0), row("等待回踩", counts.pullback), row("等待突破", counts.breakout), row("等待延续", counts.continuation), row("追单阻断", counts.extended), row("CHOP 阻断", counts.chop), row("高周期反向", counts.higher), row("风控阻断", counts.risk)].join("");
       const filter = $("signalReplayFilter")?.value || "all";
-      const filtered = recent50.filter(item => filter === "all" || filter === "allowed" && (item.signalPermission === "allowed" || item.entryPermission === "allowed") || filter === "blocked" && (item.signalPermission || item.entryPermission) !== "allowed" || filter === "wait_pullback" && (item.signalPermission || item.entryPermission) === "wait_pullback" || filter === "wait_breakout" && (item.signalPermission || item.entryPermission) === "wait_breakout" || filter === "wait_continuation" && (item.signalPermission || item.entryPermission) === "wait_continuation" || filter === "extended" && isExtended(item) || filter === "chop" && isChop(item) || filter === "higher" && isHigher(item));
+      const signalPermission = item => item.signalPermission || item.entryPermission || "blocked";
+      const decisionIs = (item, value) => item.finalDecision === value;
+      const matchesReplayFilter = item => window.StrategyView?.replayFilterMatch ? window.StrategyView.replayFilterMatch(item, filter) : ({
+        all: true,
+        signal_allowed: signalPermission(item) === "allowed",
+        executable: item.executionPermission === "allowed",
+        strategy_blocked: signalPermission(item) !== "allowed",
+        execution_blocked: item.executionPermission === "blocked",
+        wait_pullback: signalPermission(item) === "wait_pullback" || decisionIs(item, "WAIT_PULLBACK"),
+        wait_breakout: signalPermission(item) === "wait_breakout" || decisionIs(item, "WAIT_BREAKOUT"),
+        wait_continuation: signalPermission(item) === "wait_continuation" || decisionIs(item, "WAIT_CONTINUATION"),
+        live_confirm: decisionIs(item, "WAIT_LIVE_CONFIRM"), account_conflict: decisionIs(item, "ACCOUNT_CONFLICT"),
+        open_order: decisionIs(item, "OPEN_ORDER_BLOCK"), reentry: decisionIs(item, "REENTRY_COOLDOWN"),
+        risk_lock: ["RISK_LOCK", "POST_FILL_RISK_LOCK"].includes(item.finalDecision), unsupported: decisionIs(item, "PLATFORM_UNSUPPORTED")
+      })[filter] === true;
+      const filtered = recent50.filter(matchesReplayFilter);
       const regimeMap = { strong_trend: "强趋势", trend_breakout: "趋势启动", trend_pullback: "趋势回踩", trend_continuation: "趋势延续", extended_no_chase: "等待回踩", chop: "震荡", unclear: "不明确", data_insufficient: "数据不足" };
       const directionMap = { long: "做多", short: "做空", none: "无" };
       $("signalReplayList").innerHTML = filtered.length ? filtered.map(item => row(
@@ -4000,10 +4019,10 @@
       $("metricPrice").textContent = trendOnlyMode ? trendView.nextAction : (st.currentPrice ? fmt(st.currentPrice, 2) : "-");
       const protection = st.trendOnly || {};
       const executionState = protection.executionState;
-      const actionStateClass = st.lastError || protection.riskLock || protection.pendingOrder?.status === "unknown_order_state" || ["RISK_LOCK", "ACCOUNT_CONFLICT", "PLATFORM_UNSUPPORTED"].includes(executionState) ? "red"
+      const actionStateClass = st.lastError || protection.riskLock || protection.pendingOrder?.status === "unknown_order_state" || ["RISK_LOCK", "POST_FILL_RISK_LOCK", "ACCOUNT_CONFLICT", "PLATFORM_UNSUPPORTED"].includes(executionState) ? "red"
         : protection.position && protection.position.defensiveMode ? "orange"
         : ["READY_TO_OPEN", "ORDER_FILLED", "POSITION_MANAGED"].includes(executionState) ? "green"
-        : ["MONITOR_STOPPED", "OPEN_ORDER_BLOCK", "REENTRY_COOLDOWN", "WAIT_LIVE_CONFIRM", "ORDER_SUBMITTED", "WAIT_PULLBACK", "WAIT_BREAKOUT", "WAIT_CONTINUATION"].includes(executionState) ? "orange" : "muted";
+        : ["MONITOR_STOPPED", "OPEN_ORDER_BLOCK", "REENTRY_COOLDOWN", "WAIT_LIVE_CONFIRM", "WAIT_ENTRY_ALIGNMENT", "ORDER_SUBMITTED", "WAIT_PULLBACK", "WAIT_BREAKOUT", "WAIT_CONTINUATION"].includes(executionState) ? "orange" : "muted";
       $("metricPrice").className = `hero-v ${trendOnlyMode ? actionStateClass : ""}`;
       $("metricBalanceLabel").textContent = trendOnlyMode ? "账户风险" : "账户资金";
       $("metricBalance").textContent = trendOnlyMode ? (st.lastError || protection.riskLock ? "异常" : protection.pendingOrder ? "待确认" : "正常") : `${st.balance ?? "-"}`;

@@ -29,6 +29,14 @@ function createTrendRuntime(d) {
   function journalItem(s, signalTime = s.signal?.signalTime) {
     return (s.signalJournal || []).findLast?.(entry => entry.time === signalTime) || (s.signalJournal || []).find(entry => entry.time === signalTime);
   }
+  function recordJournalExit(s, position, voucher) {
+    const item = journalItem(s, position?.signalTime);
+    if (!item || !voucher) return;
+    item.exitReason = voucher.closeReason;
+    item.realizedPnl = Number(voucher.pnl || 0);
+    item.realizedR = Number(voucher.rMultiple || 0);
+    item.exitTime = voucher.exitTime || voucher.time || Date.now();
+  }
   function setDecision(acc, finalDecision, executionReason = "", options = {}) {
     const s = get(acc);
     s.executionState = finalDecision;
@@ -54,6 +62,7 @@ function createTrendRuntime(d) {
     if (signal?.entryPermission === "wait_pullback") return "WAIT_PULLBACK";
     if (signal?.entryPermission === "wait_breakout") return "WAIT_BREAKOUT";
     if (signal?.entryPermission === "wait_continuation") return "WAIT_CONTINUATION";
+    if (signal?.entryPermission === "wait_entry_alignment") return "WAIT_ENTRY_ALIGNMENT";
     return "NO_SIGNAL";
   }
   function decisionFromBlocker(reason = "") {
@@ -68,7 +77,7 @@ function createTrendRuntime(d) {
   function executionSnapshot(acc, st, weekendBlocked) {
     const s = get(acc), signal = s.signal || {};
     if (s.pendingOrder) return { state: "ORDER_SUBMITTED", reason: s.pendingOrder.status === "unknown_order_state" ? "订单状态尚未确认，禁止重复下单" : "订单已提交，等待交易所确认" };
-    if (s.riskLock) return { state: "RISK_LOCK", reason: s.riskLockReason || "保护止损单未确认" };
+    if (s.riskLock) return { state: s.riskLockType === "POST_FILL_RISK_LOCK" ? "POST_FILL_RISK_LOCK" : "RISK_LOCK", reason: s.riskLockReason || "保护止损单未确认" };
     if (s.position) return { state: "POSITION_MANAGED", reason: "当前已有趋势仓位，执行持仓保护" };
     if (!st.running) return { state: "MONITOR_STOPPED", reason: "趋势监控已停止" };
     if (!paper(acc) && acc.platform === "extended") return { state: "PLATFORM_UNSUPPORTED", reason: "Extended Live 趋势下单暂未开放" };
@@ -115,13 +124,15 @@ function createTrendRuntime(d) {
       consecutiveLosses: Number(s.consecutiveLosses || 0),
       pauseUntil: Number(s.pauseUntil || 0),
       trendContext: s.trendContext || null,
-      signalJournal: fullJournal.slice().reverse(),
+      signalJournal: fullJournal.slice(-50).reverse(),
       signalStats24h: isV2(acc) ? V2.signalStats(fullJournal, 24) : null,
       signalStats72h: isV2(acc) ? V2.signalStats(fullJournal, 72) : null,
       riskLock: !!s.riskLock,
       riskLockReason: s.riskLockReason || "",
       stopOrderId: s.stopOrderId || "",
       stopSyncStatus: s.stopSyncStatus || "not_required",
+      stopProtectionHealth: s.stopProtectionHealth || (p ? "FAILED" : "NOT_REQUIRED"),
+      orphanStopOrderCount: (s.orphanStopOrderIds || []).length,
       stopOrderPrice: Number.isFinite(stopOrderPrice) ? stopOrderPrice : null,
       stopLastSyncAt: Number(s.stopLastSyncAt || s.stopLastSyncedAt || 0),
       // Old dashboard aliases remain during rolling upgrades.
@@ -161,7 +172,8 @@ function createTrendRuntime(d) {
     if (!(qty > 0) || Math.abs(qty - delta) > 1e-8) return false;
     const fill = { qty, price: fills.reduce((n, f) => n + f.qty * f.price, 0) / qty, clientOrderId: 'exchange-sync-' + fills.map(f => f.id).join('-'), exchangeOrderId: fills.map(f => f.oid).join(','), platformTradeId: fills.map(f => f.id).join(','), txHash: fills[0].hash };
     if (isV2(acc)) { await cancelProtectiveStop(acc, s, { ignoreFailure: true }); s.riskLock = false; s.riskLockReason = ""; }
-    T.recordClose(account(acc, st), fill, 'exchange_sync_exit', Math.max(...fills.map(f => f.time)));
+    const closingPosition = { ...p }, voucher = T.recordClose(account(acc, st), fill, 'exchange_sync_exit', Math.max(...fills.map(f => f.time)));
+    if (isV2(acc)) recordJournalExit(s, closingPosition, voucher);
     s.externalTradeIds = [...seen, ...fills.map(f => f.id)];
     save(); flushJournal(acc); log(acc, st, '交易所外部平仓已核对真实成交，已写入历史凭证'); return true;
   }
@@ -186,18 +198,44 @@ function createTrendRuntime(d) {
   }
   function clearStopState(s) {
     s.stopOrderId = ""; s.stopClientOrderId = ""; s.stopSyncStatus = "not_required"; s.stopLastSyncAt = Date.now(); s.stopOrderPrice = null; s.stopSyncedPrice = null; s.stopLastSyncedAt = s.stopLastSyncAt;
+    s.stopProtectionHealth = (s.orphanStopOrderIds || []).length ? "ORPHAN_ORDER" : "NOT_REQUIRED";
+  }
+  async function cancelStopOrderById(acc, orderId) {
+    if (!orderId || paper(acc)) return true;
+    if (acc.platform === "hyperliquid") await d.hyperCancel({ account: acc, symbol: acc.symbol, orderId });
+    else if (acc.platform === "binance") { const meta = await d.binanceMeta(acc.symbol); await signed(acc, "/fapi/v1/algoOrder", { symbol: meta.symbol, algoId: String(orderId) }, "DELETE"); }
+    else throw Error("当前平台不支持撤销趋势保护单");
+    return true;
   }
   async function cancelProtectiveStop(acc, s, { ignoreFailure = false } = {}) {
-    const orderId = s.stopOrderId;
-    if (!orderId || paper(acc)) { clearStopState(s); return true; }
-    try {
-      if (acc.platform === "hyperliquid") await d.hyperCancel({ account: acc, symbol: acc.symbol, orderId });
-      else if (acc.platform === "binance") { const meta = await d.binanceMeta(acc.symbol); await signed(acc, "/fapi/v1/algoOrder", { symbol: meta.symbol, algoId: String(orderId) }, "DELETE"); }
-      clearStopState(s); return true;
-    } catch (error) {
-      if (!ignoreFailure) throw error;
-      s.stopSyncStatus = "cancel_unconfirmed"; s.stopLastSyncAt = Date.now(); return false;
+    const ids = [...new Set([s.stopOrderId, ...(s.orphanStopOrderIds || [])].filter(Boolean).map(String))];
+    if (paper(acc)) { s.orphanStopOrderIds = []; clearStopState(s); return true; }
+    const failed = [];
+    for (const orderId of ids) {
+      try { await cancelStopOrderById(acc, orderId); }
+      catch (error) { failed.push(orderId); if (!s.lastOrphanCancelError) s.lastOrphanCancelError = error.message || String(error); }
     }
+    s.orphanStopOrderIds = failed; clearStopState(s);
+    if (failed.length) {
+      s.stopSyncStatus = "cancel_unconfirmed"; s.stopProtectionHealth = "ORPHAN_ORDER"; s.stopLastSyncAt = Date.now();
+      if (!ignoreFailure) throw Error(`保护止损单撤销未确认：${failed.join(",")}`);
+      return false;
+    }
+    s.lastOrphanCancelError = ""; return true;
+  }
+  async function reconcileOrphanStops(acc, s, remote) {
+    const ids = [...new Set((s.orphanStopOrderIds || []).filter(Boolean).map(String))];
+    if (!ids.length) return;
+    const remaining = [];
+    for (const orderId of ids) {
+      if (!remoteHasStop(remote, orderId)) continue;
+      try { await cancelStopOrderById(acc, orderId); }
+      catch (error) { remaining.push(orderId); s.lastOrphanCancelError = error.message || String(error); }
+    }
+    s.orphanStopOrderIds = remaining;
+    s.stopProtectionHealth = remaining.length ? "ORPHAN_ORDER" : (s.position ? "HEALTHY" : "NOT_REQUIRED");
+    if (!remaining.length) s.lastOrphanCancelError = "";
+    save();
   }
   async function syncProtectiveStop(acc, st, force = false) {
     const s = get(acc), p = s.position;
@@ -206,7 +244,7 @@ function createTrendRuntime(d) {
     if (!(desired > 0)) return false;
     if (!force && s.stopSyncStatus === "synced" && Number(s.stopOrderPrice ?? s.stopSyncedPrice) === desired && s.stopOrderId) return true;
     const oldOrderId = s.stopOrderId, clientOrderId = "0x" + crypto.randomBytes(16).toString("hex");
-    s.stopSyncStatus = "syncing"; s.stopLastSyncAt = Date.now(); save();
+    s.stopSyncStatus = "syncing"; s.stopProtectionHealth = "SYNCING"; s.stopLastSyncAt = Date.now(); save();
     try {
       let placed;
       if (paper(acc)) placed = { orderId: `paper-stop-${clientOrderId}`, stopPrice: desired };
@@ -223,17 +261,22 @@ function createTrendRuntime(d) {
         placed = { orderId: String(result.algoId), stopPrice: Number(params.triggerPrice) };
       } else throw Error("Extended Live 趋势下单暂未开放；请使用 Paper 测试或切换 Hyperliquid/Binance。");
       if (!placed?.orderId) throw Error("保护止损单未返回 orderId");
-      s.stopOrderId = String(placed.orderId); s.stopClientOrderId = clientOrderId; s.stopOrderPrice = Number(placed.stopPrice ?? desired); s.stopSyncedPrice = s.stopOrderPrice; s.stopSyncStatus = "synced"; s.stopLastSyncAt = Date.now(); s.stopLastSyncedAt = s.stopLastSyncAt;
-      s.riskLock = false; s.riskLockReason = ""; save();
+      s.stopOrderId = String(placed.orderId); s.stopClientOrderId = clientOrderId; s.stopOrderPrice = Number(placed.stopPrice ?? desired); s.stopSyncedPrice = s.stopOrderPrice; s.stopSyncStatus = "synced"; s.stopProtectionHealth = (s.orphanStopOrderIds || []).length ? "ORPHAN_ORDER" : "HEALTHY"; s.stopLastSyncAt = Date.now(); s.stopLastSyncedAt = s.stopLastSyncAt;
+      if (s.riskLockType !== "POST_FILL_RISK_LOCK") { s.riskLock = false; s.riskLockReason = ""; s.riskLockType = ""; }
+      save();
       if (oldOrderId && String(oldOrderId) !== String(s.stopOrderId) && !paper(acc)) {
         try {
-          if (acc.platform === "hyperliquid") await d.hyperCancel({ account: acc, symbol: acc.symbol, orderId: oldOrderId });
-          else { const meta = await d.binanceMeta(acc.symbol); await signed(acc, "/fapi/v1/algoOrder", { symbol: meta.symbol, algoId: String(oldOrderId) }, "DELETE"); }
-        } catch (error) { throw Error(`新保护单已创建，但旧保护单撤销失败：${error.message}`); }
+          await cancelStopOrderById(acc, oldOrderId);
+          s.orphanStopOrderIds = (s.orphanStopOrderIds || []).filter(id => String(id) !== String(oldOrderId));
+        } catch (error) {
+          s.orphanStopOrderIds = [...new Set([...(s.orphanStopOrderIds || []), String(oldOrderId)])];
+          s.lastOrphanCancelError = error.message || String(error); s.stopProtectionHealth = "ORPHAN_ORDER"; save();
+          log(acc, st, `存在未确认撤销保护单：${s.orphanStopOrderIds.length}`);
+        }
       }
       log(acc, st, `保护止损单已同步：${desired}`); return true;
     } catch (error) {
-      s.riskLock = true; s.riskLockReason = error.message || String(error); s.stopSyncStatus = "failed"; s.stopLastSyncAt = Date.now(); save();
+      s.riskLock = true; s.riskLockType = "STOP_PROTECTION"; s.riskLockReason = error.message || String(error); s.stopSyncStatus = "failed"; s.stopProtectionHealth = "FAILED"; s.stopLastSyncAt = Date.now(); save();
       log(acc, st, `risk_lock：保护止损单同步失败，${s.riskLockReason}`); return false;
     }
   }
@@ -299,8 +342,16 @@ function createTrendRuntime(d) {
         s.position = T.positionFromFill(o.plan, result.fill, o.createdAt, o.config);
         s.lastEntrySignalTime = o.plan.signal.signalTime;
         log(acc, st, `趋势开仓成功：${acc.symbol} ${s.position.side === "long" ? "做多" : "做空"}，${s.position.leverage}倍杠杆，入场价 ${s.position.entryPrice}，初始止损 ${s.position.initialStopLossPrice}`);
+        if (isV2(acc) && s.position.postFillRiskInvalid) {
+          s.riskLock = true; s.riskLockType = "POST_FILL_RISK_LOCK"; s.riskLockReason = "真实成交后无法建立合法保护止损，立即减仓退出";
+          setDecision(acc, "POST_FILL_RISK_LOCK", s.riskLockReason, { signalTime: o.plan.signal.signalTime, executionPermission: "allowed", executionBlocker: s.riskLockReason, orderFilled: true, finalAction: "成交后风险无效，立即平仓" });
+          s.pendingOrder = null; save(); log(acc, st, s.riskLockReason);
+          return await submit(acc, st, "close", null, "post_fill_risk_invalid");
+        }
+        if (isV2(acc)) applyPostFillRiskLock(acc);
         if (isV2(acc)) await syncProtectiveStop(acc, st, true);
-        if (s.riskLock) setDecision(acc, "RISK_LOCK", `开仓已成交，但保护止损同步失败：${s.riskLockReason}`, { signalTime: o.plan.signal.signalTime, executionPermission: "allowed", executionBlocker: s.riskLockReason, orderFilled: true, finalAction: "已成交，持仓进入风险锁定" });
+        if (s.riskLockType === "POST_FILL_RISK_LOCK") setDecision(acc, "POST_FILL_RISK_LOCK", s.riskLockReason, { signalTime: o.plan.signal.signalTime, executionPermission: "allowed", executionBlocker: s.riskLockReason, orderFilled: true, finalAction: "已成交，实际风险偏差超限" });
+        else if (s.riskLock) setDecision(acc, "RISK_LOCK", `开仓已成交，但保护止损同步失败：${s.riskLockReason}`, { signalTime: o.plan.signal.signalTime, executionPermission: "allowed", executionBlocker: s.riskLockReason, orderFilled: true, finalAction: "已成交，持仓进入风险锁定" });
         else setDecision(acc, "ORDER_FILLED", "开仓订单已成交", { signalTime: o.plan.signal.signalTime, executionPermission: "allowed", orderFilled: true, finalAction: "实际成交" });
       } else {
         if (isV2(acc)) {
@@ -312,8 +363,9 @@ function createTrendRuntime(d) {
           s.lastExitStructureLow = s.trendContext?.lastStructureLow ?? null;
         }
         if (isV2(acc)) await cancelProtectiveStop(acc, s, { ignoreFailure: true });
-        const v = T.recordClose(account(acc, st), result.fill, o.reason);
-        if (isV2(acc)) { s.riskLock = false; s.riskLockReason = ""; clearStopState(s); }
+        const closingPosition = { ...s.position }, v = T.recordClose(account(acc, st), result.fill, o.reason);
+        if (isV2(acc)) recordJournalExit(s, closingPosition, v);
+        if (isV2(acc)) { s.riskLock = false; s.riskLockType = ""; s.riskLockReason = ""; clearStopState(s); }
         if (paper(acc)) s.simBalance += v.pnl;
         log(acc, st, `趋势平仓成交：${o.reason}，数量 ${result.fill.qty}，净盈亏 ${v.pnl.toFixed(4)}`);
       }
@@ -323,6 +375,13 @@ function createTrendRuntime(d) {
     }
     s.pendingOrder = null;
     save(); flushJournal(acc); publish(acc, st);
+    return true;
+  }
+  function applyPostFillRiskLock(acc) {
+    const s = get(acc), p = s.position;
+    if (!isV2(acc) || !p?.postFillRiskExceeded) return false;
+    s.riskLock = true; s.riskLockType = "POST_FILL_RISK_LOCK";
+    s.riskLockReason = `成交后实际风险 ${Number(p.actualRiskAmount).toFixed(4)} 超过计划风险 ${Number(p.plannedRiskAmount).toFixed(4)} 的允许偏差`;
     return true;
   }
   async function submit(acc, st, kind, plan, reason = "") {
@@ -381,6 +440,7 @@ function createTrendRuntime(d) {
         if (!await settle(acc, st, s.pendingOrder, await lookup(acc, s.pendingOrder))) { log(acc, st, "未知订单状态：查询中，禁止重复下单"); return; }
       }
       const remote = await sync(acc, st);
+      if (isV2(acc)) await reconcileOrphanStops(acc, s, remote);
       s.exchangeOpenOrders = remote.openOrders.length > 0;
       s.conflictingAccount = !!d.conflictingAccount?.(acc);
       if (s.position && (Math.abs(remote.qty - s.position.positionSize) > 1e-8 || (!paper(acc) && remote.side !== s.position.side))) {
@@ -457,6 +517,19 @@ function createTrendRuntime(d) {
     if (paper(acc) || body.confirmLive !== true || !p || p.expires < Date.now() || body.signalTime !== p.signal.signalTime || body.configHash !== configHash(acc)) throw Error("Live 确认无效或信号已过期，请刷新后重新确认");
     approvals.set(acc.id, { signalTime: p.signal.signalTime, configHash: configHash(acc), expires: Date.now() + 60000 });
   }
-  return { get, save, tick, publish, confirm, syncProtection: (acc, st, force = true) => syncProtectiveStop(acc, st, force), clearApproval: id => approvals.delete(id), busy: acc => !!(get(acc).position || get(acc).pendingOrder) };
+  function signalJournal(acc, options = {}) {
+    const s = get(acc), from = Number(options.from || 0), to = Number(options.to || 0), decision = String(options.finalDecision || "");
+    const limit = Math.min(200, Math.max(1, Number(options.limit) || 50)), offset = Math.max(0, Number(options.offset) || 0);
+    const rows = (s.signalJournal || []).filter(item => (!from || Number(item.time) >= from) && (!to || Number(item.time) <= to) && (!decision || item.finalDecision === decision)).slice().reverse();
+    return { total: rows.length, limit, offset, items: rows.slice(offset, offset + limit) };
+  }
+  return {
+    get, save, tick, publish, confirm, signalJournal,
+    syncProtection: (acc, st, force = true) => syncProtectiveStop(acc, st, force),
+    reconcileProtection: (acc, remote = { openOrders: [] }) => reconcileOrphanStops(acc, get(acc), remote),
+    enforcePostFillRisk: acc => applyPostFillRiskLock(acc),
+    clearApproval: id => approvals.delete(id),
+    busy: acc => !!(get(acc).position || get(acc).pendingOrder)
+  };
 }
 module.exports = { createTrendRuntime };

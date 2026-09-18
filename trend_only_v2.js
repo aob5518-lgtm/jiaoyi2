@@ -30,7 +30,8 @@ const DEFAULTS = Object.freeze({
   trailStartAtR: 3,
   defensiveTrailingAtrMultiplier: 1.2,
   reversalConfirmBars: 2,
-  reentryCooldownBars: 6
+  reentryCooldownBars: 6,
+  maxPostFillRiskDeviation: 0.15
 });
 
 const STRICTNESS_PRESETS = Object.freeze({
@@ -49,12 +50,29 @@ function signalStats(items, hours, now = Date.now()) {
   const cutoff = now - Number(hours) * 3600000;
   const all = (Array.isArray(items) ? items : []).filter(item => Number(item.time) >= cutoff && Number(item.time) <= now);
   const blockers = item => [item.executionBlocker, ...(item.blockers || [])].filter(Boolean).join("；");
+  const modes = {};
+  for (const mode of ["breakout_entry", "pullback_entry", "continuation_entry"]) {
+    const rows = all.filter(item => item.entryMode === mode), exits = rows.filter(item => Number.isFinite(Number(item.realizedPnl)));
+    modes[mode] = {
+      signals: rows.length,
+      executed: rows.filter(item => item.executionPermission === "allowed").length,
+      filled: rows.filter(item => item.orderFilled || item.finalDecision === "ORDER_FILLED").length,
+      wins: exits.filter(item => Number(item.realizedPnl) > 0).length,
+      losses: exits.filter(item => Number(item.realizedPnl) < 0).length,
+      avgR: exits.length ? exits.reduce((sum, item) => sum + Number(item.realizedR || 0), 0) / exits.length : 0,
+      totalPnl: exits.reduce((sum, item) => sum + Number(item.realizedPnl || 0), 0)
+    };
+  }
+  const exits = all.filter(item => Number.isFinite(Number(item.realizedPnl)));
   return {
     total: all.length,
+    directionEstablished: all.filter(item => ["long", "short"].includes(item.directionRaw)).length,
     signalOpportunities: all.filter(item => item.signalPermission === "allowed" || item.entryPermission === "allowed").length,
     executable: all.filter(item => item.executionPermission === "allowed").length,
     submitted: all.filter(item => item.orderSubmitted || item.finalDecision === "ORDER_SUBMITTED").length,
     filled: all.filter(item => item.orderFilled || item.finalDecision === "ORDER_FILLED").length,
+    profitableExits: exits.filter(item => Number(item.realizedPnl) > 0).length,
+    losingExits: exits.filter(item => Number(item.realizedPnl) < 0).length,
     pullback: all.filter(item => item.signalPermission === "wait_pullback" || item.entryPermission === "wait_pullback").length,
     breakout: all.filter(item => item.signalPermission === "wait_breakout" || item.entryPermission === "wait_breakout").length,
     continuation: all.filter(item => item.signalPermission === "wait_continuation" || item.entryPermission === "wait_continuation").length,
@@ -62,7 +80,8 @@ function signalStats(items, hours, now = Date.now()) {
     adx: all.filter(item => /ADX|趋势强度/.test(blockers(item))).length,
     higher: all.filter(item => /高周期|4H|多周期/.test(blockers(item))).length,
     extended: all.filter(item => /远离 EMA20|不追单/.test(blockers(item))).length,
-    risk: all.filter(item => /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单状态|挂单/i.test(blockers(item))).length
+    risk: all.filter(item => /risk_lock|风控|日亏损|连续亏损|暂停|仓位|pendingOrder|订单状态|挂单/i.test(blockers(item))).length,
+    modes
   };
 }
 function normalizeConfig(input = {}) {
@@ -87,6 +106,7 @@ function normalizeConfig(input = {}) {
   if (!(c.adxTrendStart <= c.adxTrendValid && c.adxTrendValid <= c.adxStrong && c.adxStrong <= c.adxVeryStrong)) throw Error("ADX 分层参数无效");
   if (!new Set(["strict_align", "not_against", "off"]).has(c.higherTimeframeMode)) throw Error("多周期确认模式无效");
   if (!(c.minStopDistanceAtr > 0 && c.minStopDistanceAtr <= c.maxStopDistanceAtr)) throw Error("止损距离参数无效");
+  if (c.maxPostFillRiskDeviation < 0 || c.maxPostFillRiskDeviation > 1) throw Error("成交后风险偏差上限必须在 0 到 1 之间");
   if (!(c.softBreakEvenAtR <= c.realBreakEvenAtR && c.realBreakEvenAtR <= c.lockProfitAtR && c.lockProfitAtR <= c.trailStartAtR)) throw Error("R 倍数保护参数无效");
   for (const key of ["pullbackConfirmLookback", "continuationLookback", "microBreakLookback", "reversalConfirmBars", "reentryCooldownBars"]) {
     if (!Number.isInteger(c[key]) || c[key] < 2 || c[key] > 100) throw Error(`趋势周期 ${key} 无效`);
@@ -203,6 +223,7 @@ function detectMarketRegimeV2(candles, input) {
   };
   if (!required.every(Number.isFinite) || input.atr <= 0) { blockers.push("指标不足，禁止开仓"); return finish(base); }
   const directionRaw = input.directionRaw || (["long", "short"].includes(input.trendDirection) ? input.trendDirection : directionOf(input));
+  const entryDirection = input.entryDirection || directionOf(input);
   base.directionRaw = directionRaw;
   if (!new Set(["long", "short"]).has(directionRaw)) { blockers.push("EMA 与 DI 尚未形成明确趋势方向"); return finish({ ...base, regime: "unclear" }); }
   const adx = adxState(input, c), tfAllowed = timeframeAllowed(directionRaw, input, c);
@@ -220,6 +241,10 @@ function detectMarketRegimeV2(candles, input) {
   const extended = isEntryExtended(directionRaw, input.close, input.emaFast, input.atr, c) && !pullback;
   if (!extended) score += 10;
   let entryMode = null, regime = adx.strong && !adx.rising ? "trend_continuation" : "strong_trend";
+  if (["long", "short"].includes(entryDirection) && entryDirection !== directionRaw) {
+    blockers.push("1H 主趋势明确，但 15m 当前明确反向，等待入场周期重新确认。");
+    return finish({ ...base, directionRaw, direction: directionRaw, regime: "unclear", entryPermission: "wait_entry_alignment", blockers, reasons: blockers, score: Math.min(100, score), states: { breakout, pullback, continuation } });
+  }
   if (extended) {
     blockers.push("趋势有效，但价格已远离 EMA20，等待回踩，不追单");
     return finish({ ...base, directionRaw, direction: directionRaw, regime: "extended_no_chase", entryPermission: "wait_pullback", blockers, reasons: blockers, score: Math.min(100, score), distanceFromEmaAtr: Math.abs(input.close - input.emaFast) / input.atr, states: { breakout, pullback, continuation } });
@@ -242,7 +267,7 @@ function detectMarketRegimeV2(candles, input) {
 }
 
 function initialState() {
-  return { ...V1.initialState(), trendContext: null, signalJournal: [], lastJournalSignalTime: 0, executionState: "NO_SIGNAL", executionReason: "", conflictingAccount: false, exchangeOpenOrders: false, lastExitSignalTime: 0, lastExitEntryMode: "", lastExitReason: "", lastExitDirection: "", lastExitStructureHigh: null, lastExitStructureLow: null, reversalCount: 0, riskLock: false, riskLockReason: "", stopOrderId: "", stopOrderPrice: null, stopSyncStatus: "not_required", stopLastSyncAt: 0 };
+  return { ...V1.initialState(), trendContext: null, signalJournal: [], lastJournalSignalTime: 0, executionState: "NO_SIGNAL", executionReason: "", conflictingAccount: false, exchangeOpenOrders: false, lastExitSignalTime: 0, lastExitEntryMode: "", lastExitReason: "", lastExitDirection: "", lastExitStructureHigh: null, lastExitStructureLow: null, reversalCount: 0, riskLock: false, riskLockReason: "", stopOrderId: "", stopOrderPrice: null, stopSyncStatus: "not_required", stopProtectionHealth: "NOT_REQUIRED", orphanStopOrderIds: [], stopLastSyncAt: 0 };
 }
 function trendId(signal) { return `${signal.directionRaw}:${signal.regime}:${signal.signalTime || 0}`; }
 function updateTrendContext(state, signal, i, now = Date.now()) {
@@ -311,14 +336,41 @@ function tryOpenTrendOnlyPosition(account, signal, i) {
   const finalPositionValue = Math.min(positionValue, maxPositionValue, Math.max(0, Number(account.available ?? equity)) * c.leverage * 0.98);
   const step = Number(i.qtyStep || 0.000001), qty = Math.floor(finalPositionValue / entryPrice / step + 1e-9) * step;
   if (!(qty > 0) || qty * entryPrice < Number(i.minNotional || 10)) return { allowed: false, reason: "风险仓位小于交易所最小下单金额，禁止开仓" };
-  return { ...plan, qty, positionValue: qty * entryPrice, riskAmount, signal, stopDistance: distance, initialStopLossPrice: stop, riskMultiplier: multiplier, effectiveRisk, entryMode: signal.entryMode, trendId: s.trendContext?.trendId || trendId(signal) };
+  return { ...plan, qty, positionValue: qty * entryPrice, riskAmount, plannedRiskAmount: riskAmount, equity, costRate, atrAtEntry: i.atr, signal, stopDistance: distance, initialStopLossPrice: stop, riskMultiplier: multiplier, effectiveRisk, entryMode: signal.entryMode, trendId: s.trendContext?.trendId || trendId(signal) };
 }
 function positionFromFill(plan, fill, now, config) {
-  const p = V1.positionFromFill(plan, fill, now, normalizeConfig(config));
-  p.config = normalizeConfig(config);
+  const c = normalizeConfig(config), price = Number(fill.price), qty = Number(fill.qty), side = plan.side, sign = side === "long" ? 1 : -1;
+  const atr = Number(plan.atrAtEntry), emergencyDistance = Math.max(Number.isFinite(atr) && atr > 0 ? atr * c.minStopDistanceAtr : 0, price * 0.001);
+  const safePlan = { ...plan, stopDistance: Number(plan.stopDistance) > 0 ? Number(plan.stopDistance) : emergencyDistance };
+  const p = V1.positionFromFill(safePlan, fill, now, c);
+  const legal = stop => Number.isFinite(stop) && stop > 0 && sign * (price - stop) > 0;
+  let stop = Number(plan.initialStopLossPrice), repaired = false;
+  if (!legal(stop)) {
+    repaired = true;
+    const structureValue = side === "long" ? Number(plan.signal?.structureLow) : Number(plan.signal?.structureHigh);
+    const structureStop = Number.isFinite(structureValue) && Number.isFinite(atr) ? structureValue - sign * atr * c.pullbackInvalidationAtr : NaN;
+    const atrStop = Number.isFinite(atr) && atr > 0 ? price - sign * atr * c.stopLossAtrMultiplier : NaN;
+    stop = legal(structureStop) ? structureStop : atrStop;
+  }
+  if (legal(stop) && Number.isFinite(atr) && atr > 0) {
+    let distance = Math.abs(price - stop);
+    distance = Math.max(distance, atr * c.minStopDistanceAtr);
+    distance = Math.min(distance, atr * c.maxStopDistanceAtr);
+    stop = price - sign * distance;
+  }
+  const validStop = legal(stop), finalStop = validStop ? stop : price - sign * emergencyDistance;
+  p.config = c;
   p.strategyMode = "Trend Only V2"; p.entryMode = plan.entryMode; p.entryQuality = plan.signal.score; p.riskMultiplier = plan.riskMultiplier; p.effectiveRisk = plan.effectiveRisk; p.trendId = plan.trendId;
-  if (plan.initialStopLossPrice > 0) p.initialStopLossPrice = p.currentStopLossPrice = plan.initialStopLossPrice;
-  p.plannedR = Math.abs(p.entryPrice - p.initialStopLossPrice); p.defensiveMode = false; p.softBreakEvenActivated = false; p.reversalCount = 0;
+  p.initialStopLossPrice = p.currentStopLossPrice = finalStop;
+  p.plannedR = p.actualStopDistance = Math.abs(price - finalStop);
+  p.plannedRiskAmount = Number((plan.plannedRiskAmount ?? plan.riskAmount) || 0);
+  p.actualRiskAmount = qty * p.actualStopDistance + qty * price * Number(plan.costRate ?? 0.002);
+  p.actualRiskRatio = Number(plan.equity) > 0 ? p.actualRiskAmount / Number(plan.equity) : null;
+  p.riskDeviationRatio = p.plannedRiskAmount > 0 ? p.actualRiskAmount / p.plannedRiskAmount - 1 : Infinity;
+  p.stopRepairedAfterFill = repaired;
+  p.postFillRiskInvalid = !validStop;
+  p.postFillRiskExceeded = validStop && p.actualRiskAmount > p.plannedRiskAmount * (1 + c.maxPostFillRiskDeviation);
+  p.defensiveMode = false; p.softBreakEvenActivated = false; p.reversalCount = 0;
   return p;
 }
 function reverseConfirmed(p, i, c) {

@@ -434,15 +434,9 @@
 
     function trendLabel(payload) {
       const trend = payload.state?.trendOnly || {};
-      const signal = trend.signal || {};
-      const indicators = trend.indicators || {};
-      const pending = trend.pendingOrder;
-      const position = trend.position || {};
-      const market = trend.weekendBlocked ? "周末禁开" : ({ trend: "趋势", strong_trend: "强趋势", trend_continuation: "趋势延续", trend_pullback: "趋势回踩", trend_breakout: "趋势启动", extended_no_chase: "趋势已走远，等待回踩", chop: "震荡", unclear: "不明确", data_insufficient: "数据不足" })[signal.regime] || "数据不足";
-      const direction = ({ long: "做多趋势", short: "做空趋势", none: "无方向" })[position.side || signal.directionRaw || signal.direction] || "无方向";
-      const nextAction = pending?.status === "unknown_order_state" ? "订单结果未知，禁止重复下单" : (payload.state?.lastAction || "等待趋势");
-      const blockers = (signal.blockers?.length ? signal.blockers : signal.reasons || []).join("；");
-      return { trend, indicators, pending, position, market, direction, nextAction, blockers };
+      const market = ({ weekend_blocked: "周末禁开", trend: "趋势", strong_trend: "强趋势", trend_continuation: "趋势延续", trend_pullback: "趋势回踩", trend_breakout: "趋势启动", extended_no_chase: "趋势已走远，等待回踩", chop: "震荡", unclear: "不明确", data_insufficient: "数据不足" })[trend.marketStatus || trend.marketStage] || "数据不足";
+      const direction = ({ long: "做多趋势", short: "做空趋势", none: "无方向" })[trend.direction] || "无方向";
+      return { trend, market, direction, nextAction: trend.nextAction || "等待趋势", hasPosition: !!trend.hasPosition };
     }
 
     function renderOverview(payload) {
@@ -467,11 +461,11 @@
       const trend = trendOnly ? trendLabel(payload) : null;
       $("ovSide").textContent = trendOnly ? trend.direction : (cfg.side === "long" ? "做多" : "做空");
       $("ovPrice").textContent = fmt(st.currentPrice || 0, 4);
-      $("ovEntry").textContent = trendOnly ? `CHOP ${fmt(trend.indicators.chop, 2)} / ADX ${fmt(trend.indicators.adx, 2)} / ATR ${fmt(trend.indicators.atr, 2)}` : (st.entryPrice ? fmt(st.entryPrice, 4) : "-");
-      $("ovPositionSize").textContent = trendOnly ? `当前止损 ${trend.position.currentStopLossPrice ?? "-"}` : (st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-"));
-      $("ovMargin").textContent = trendOnly ? `R ${trend.position.rMultiple ?? "-"} / pending ${trend.pending?.status || "无"}` : fmt(st.marginUsedU || 0, 4);
+      $("ovEntry").textContent = trendOnly ? `市场状态 ${trend.market}` : (st.entryPrice ? fmt(st.entryPrice, 4) : "-");
+      $("ovPositionSize").textContent = trendOnly ? `是否有仓位 ${trend.hasPosition ? "是" : "否"}` : (st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-"));
+      $("ovMargin").textContent = trendOnly ? "内部指标与保护单详情仅管理后台可见" : fmt(st.marginUsedU || 0, 4);
 
-      const tipText = trendOnly ? `${trend.market} ｜ ${trend.nextAction}${trend.blockers ? ` ｜ ${trend.blockers}` : ""}` : (st.lastError || st.lastAction || "状态正常");
+      const tipText = trendOnly ? `${trend.market} ｜ ${trend.nextAction}` : (st.lastError || st.lastAction || "状态正常");
       $("ovErrorBox").textContent = tipText;
 
       $("ovPnl").className = "metric-value " + (Number(st.pnl || 0) >= 0 ? "green" : "red");
