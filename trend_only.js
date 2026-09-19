@@ -1,5 +1,7 @@
 "use strict";
 
+const { getEstimatedTradeCost } = require("./trade_cost");
+
 const DEFAULTS = Object.freeze({
   enabled: true, leverage: 10, allowWeekendOpen: false, weekendMode: "no_new_position",
   weekendExitHourUTC: 20, riskPerTrade: 0.01, maxPositionRatio: 0.1,
@@ -152,7 +154,8 @@ function tryOpenTrendOnlyPosition(account, signal, i) {
   const entryPrice = Number(i.price), equity = Number(account.equity), stopDistance = i.atr * c.stopLossAtrMultiplier;
   if (!(entryPrice > stopDistance && stopDistance > 0 && equity > 0)) return { allowed: false, reason: "ATR、价格或权益无效" };
   // Budget fees and adverse execution as well as the price stop. Gaps can still exceed the planned budget.
-  const costRate = Number(i.costRate ?? 0.002);
+  const cost = getEstimatedTradeCost(account, signal.entryMode);
+  const costRate = Number(i.costRate ?? cost.roundTripCostRate);
   const riskAmount = equity * c.riskPerTrade, stopLossRatio = stopDistance / entryPrice;
   const positionValue = riskAmount / (stopLossRatio + costRate);
   const maxPositionValue = equity * c.leverage * c.maxPositionRatio;
@@ -160,7 +163,7 @@ function tryOpenTrendOnlyPosition(account, signal, i) {
   const step = Number(i.qtyStep || 0.000001);
   const qty = Math.floor(finalPositionValue / entryPrice / step + 1e-9) * step;
   if (!(qty > 0) || qty * entryPrice < Number(i.minNotional || 10)) return { allowed: false, reason: "风险仓位小于交易所最小下单金额，禁止开仓" };
-  return { allowed: true, side: signal.direction, qty, positionValue: qty * entryPrice, riskAmount, stopDistance, entryPrice, leverage: c.leverage, signal, atrAtEntry: i.atr };
+  return { allowed: true, side: signal.direction, qty, positionValue: qty * entryPrice, riskAmount, stopDistance, entryPrice, leverage: c.leverage, signal, atrAtEntry: i.atr, costRate, estimatedTradeCost: cost };
 }
 function positionFromFill(plan, fill, now, config) {
   if (!(fill.qty > 0 && fill.price > 0) || fill.qty > plan.qty * 1.000001) throw Error("成交信息无效");
@@ -173,6 +176,9 @@ function positionFromFill(plan, fill, now, config) {
     signalReasons: plan.signal.reasons, signalTime: plan.signal.signalTime, breakoutLevel: plan.signal.breakoutLevel,
     clientOrderId: fill.clientOrderId, exchangeOrderId: fill.exchangeOrderId, filledQty: fill.qty,
     avgFillPrice: fill.price, highestPriceSinceEntry: fill.price, lowestPriceSinceEntry: fill.price,
+    maximumAdverseExcursion: 0, maximumFavorableExcursion: 0, MAE_R: 0, MFE_R: 0,
+    entryFeeActual: fill.fee !== null && fill.fee !== undefined && Number.isFinite(Number(fill.fee)) ? Number(fill.fee) : null,
+    estimatedTradeCost: plan.estimatedTradeCost || getEstimatedTradeCost({}, plan.entryMode),
     breakEvenActivated: false, locked1R: false, trailingActive: false, config: normalizeConfig(config), realizedPnl: 0 };
 }
 function manageTrendOnlyPosition(account, market, i = {}) {
@@ -207,15 +213,23 @@ function recordClose(account, fill, reason, now = Date.now()) {
   const s = account.trendOnlyState, p = s.position, c = normalizeConfig(p.config);
   if (!(fill.qty > 0 && fill.qty <= p.positionSize * 1.000001 && fill.price > 0)) throw Error("平仓成交数量或价格无效");
   const qty = Math.min(fill.qty, p.positionSize), gross = (fill.price - p.entryPrice) * qty * (p.side === "long" ? 1 : -1);
-  const fee = Number(fill.fee ?? (p.entryPrice + fill.price) * qty * 0.0005), pnl = gross - fee;
+  const cost = p.estimatedTradeCost || getEstimatedTradeCost(account, p.entryMode);
+  const hasEntryFee = p.entryFeeActual !== null && p.entryFeeActual !== undefined && Number.isFinite(Number(p.entryFeeActual));
+  const hasExitFee = fill.fee !== null && fill.fee !== undefined && Number.isFinite(Number(fill.fee));
+  const entryFee = hasEntryFee ? Number(p.entryFeeActual) * qty / Number(p.filledQty || p.positionSize || qty) : p.entryPrice * qty * cost.entryFeeRate;
+  const exitFee = hasExitFee ? Number(fill.fee) : fill.price * qty * cost.exitFeeRate;
+  const fee = entryFee + exitFee, pnl = gross - fee;
   rollDay(s, Number(account.equity), now);
-  s.dailyLoss += Math.max(0, -pnl); p.realizedPnl += pnl;
+  s.dailyLoss += Math.max(0, -pnl); p.realizedPnl = Number(p.realizedPnl || 0) + pnl;
   const voucher = { accountId: account.id, accountName: account.name, platform: account.platform, symbol: account.symbol, quoteAsset: account.quoteAsset,
     ...p, exitTime: now, exitPrice: fill.price, positionSize: qty, positionValue: qty * p.entryPrice, pnl,
     roi: pnl / (qty * p.entryPrice / p.leverage) * 100, rMultiple: pnl / (qty * p.plannedR), closeReason: reason,
     finalStopLossPrice: p.currentStopLossPrice, entryClientOrderId: p.clientOrderId, entryExchangeOrderId: p.exchangeOrderId,
     clientOrderId: fill.clientOrderId, exchangeOrderId: fill.exchangeOrderId, platformTradeId: fill.platformTradeId || fill.exchangeOrderId,
-    txHash: fill.txHash || "", explorerUrl: fill.explorerUrl || "", grossPnl: gross, tradingFee: fee, costSource: fill.fee === undefined ? "estimated" : "exchange",
+    txHash: fill.txHash || "", explorerUrl: fill.explorerUrl || "", grossPnl: gross, tradingFee: fee, netPnl: pnl,
+    entryFee, exitFee, estimatedRoundTripCostRate: cost.roundTripCostRate,
+    holdingDurationMs: Math.max(0, now - Number(p.entryTime || now)),
+    costSource: hasEntryFee && hasExitFee ? "exchange" : "estimated-fee",
     id: `${fill.clientOrderId}:${fill.exchangeOrderId}:${fill.qty}`, time: new Date(now).toISOString(), tradeMode: account.paper ? "simulation" : "live" };
   delete voucher.config;
   p.positionSize = Math.max(0, p.positionSize - qty);
@@ -227,4 +241,4 @@ function recordClose(account, fill, reason, now = Date.now()) {
   s.journal.push(voucher);
   return voucher;
 }
-module.exports = { DEFAULTS, INTERVALS, normalizeConfig, isWeekendBlocked, weekendProtection, indicatorsFor, directionOf, detectMarketRegime, initialState, tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose };
+module.exports = { DEFAULTS, INTERVALS, normalizeConfig, isWeekendBlocked, weekendProtection, indicatorsFor, directionOf, detectMarketRegime, initialState, tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose, getEstimatedTradeCost };

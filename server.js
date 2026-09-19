@@ -4507,7 +4507,23 @@ const server = http.createServer((req, res) => {
       entryPrice: item.entryPrice,
       exitPrice: item.exitPrice,
       pnl: item.pnl,
-      roi: item.roi
+      roi: item.roi,
+      entryMode: item.entryMode || "",
+      closeReason: item.closeReason || "",
+      holdingDurationMs: Number(item.holdingDurationMs || 0),
+      initialStopLossPrice: item.initialStopLossPrice ?? null,
+      finalStopLossPrice: item.finalStopLossPrice ?? null,
+      atrAtEntry: item.atrAtEntry ?? null,
+      plannedRiskAmount: item.plannedRiskAmount ?? item.riskAmount ?? null,
+      actualRiskAmount: item.actualRiskAmount ?? null,
+      rMultiple: item.rMultiple ?? null,
+      grossPnl: item.grossPnl ?? item.pnl,
+      tradingFee: item.tradingFee ?? 0,
+      netPnl: item.netPnl ?? item.pnl,
+      maximumAdverseExcursion: item.maximumAdverseExcursion ?? null,
+      maximumFavorableExcursion: item.maximumFavorableExcursion ?? null,
+      MAE_R: item.MAE_R ?? null,
+      MFE_R: item.MFE_R ?? null
     }));
 
     return jsonRes(res, 200, { ok: true, items });

@@ -3270,18 +3270,25 @@
                       <th>时间</th>
                       <th>币种</th>
                       <th>方向</th>
+                      <th>入场模式</th>
+                      <th>平仓原因</th>
+                      <th>持仓时长</th>
                       <th>开仓价</th>
                       <th>平仓价</th>
-                      <th>盈亏</th>
-                      <th>收益率</th>
-                      <th>补仓次数</th>
-                      <th>平台</th>
+                      <th>初始 / 最终止损</th>
+                      <th>入场 ATR</th>
+                      <th>计划 / 实际风险</th>
+                      <th>R 倍数</th>
+                      <th>MAE / MFE</th>
+                      <th>毛盈亏</th>
+                      <th>手续费</th>
+                      <th>净盈亏</th>
                       <th>溯源</th>
                     </tr>
                   </thead>
                   <tbody id="historyTableBody">
                     <tr>
-                      <td colspan="10" class="muted" style="padding:16px;">暂无历史记录</td>
+                      <td colspan="17" class="muted" style="padding:16px;">暂无历史记录</td>
                     </tr>
                   </tbody>
                 </table>
@@ -4185,23 +4192,33 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       if (!totalTrades) {
         $("historyTableBody").innerHTML = `
           <tr>
-            <td colspan="10" class="muted" style="padding:16px;">暂无历史记录</td>
+            <td colspan="17" class="muted" style="padding:16px;">暂无历史记录</td>
           </tr>
         `;
         return;
       }
 
+      const reasonLabel = reason => ({ hard_sl: "硬止损", trend_reversal: "趋势反转退出", trend_tp: "移动止盈/保护止盈", time_stop: "时间退出", weekend_exit: "周末退出", manual_close: "手动平仓", post_fill_risk_invalid: "成交后风险异常退出", exchange_sync_exit: "交易所外部退出" })[reason] || reason || "-";
+      const modeLabel = mode => ({ breakout_entry: "突破", pullback_entry: "回踩", continuation_entry: "延续" })[mode] || mode || "-";
+      const durationLabel = milliseconds => { if (milliseconds === null || milliseconds === undefined || !Number.isFinite(Number(milliseconds))) return "-"; const totalMinutes = Math.max(0, Math.round(Number(milliseconds) / 60000)); return totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)}小时${totalMinutes % 60}分` : `${totalMinutes}分钟`; };
       $("historyTableBody").innerHTML = latestHistoryItems.map((item, idx) => `
   <tr>
     <td>${safeText(item.time || "-")}</td>
     <td>${safeText(item.symbol || "-")}</td>
     <td>${safeText(item.side || "-")}</td>
+    <td>${safeText(modeLabel(item.entryMode))}</td>
+    <td>${safeText(reasonLabel(item.closeReason))}</td>
+    <td>${safeText(durationLabel(item.holdingDurationMs))}</td>
     <td>${fmt(item.entryPrice, 2)}</td>
     <td>${fmt(item.exitPrice, 2)}</td>
-    <td class="${signClass(item.pnl)}">${fmt(item.pnl, 2)}</td>
-    <td class="${signClass(item.roi)}">${fmt(item.roi, 2)}%</td>
-    <td>${Number(item.addCount || 0)}</td>
-    <td>${safeText(item.platform || "-")}</td>
+    <td>${fmt(item.initialStopLossPrice, 2)} / ${fmt(item.finalStopLossPrice, 2)}</td>
+    <td>${fmt(item.atrAtEntry, 3)}</td>
+    <td>${fmt(item.plannedRiskAmount ?? item.riskAmount, 2)} / ${fmt(item.actualRiskAmount, 2)} U</td>
+    <td>${fmt(item.rMultiple, 2)} R</td>
+    <td>${fmt(item.MAE_R, 2)} R / ${fmt(item.MFE_R, 2)} R</td>
+    <td class="${signClass(item.grossPnl)}">${fmt(item.grossPnl, 2)}</td>
+    <td>${fmt(item.tradingFee, 2)}</td>
+    <td class="${signClass(item.netPnl ?? item.pnl)}">${fmt(item.netPnl ?? item.pnl, 2)}</td>
     <td>
       <button class="ghost" style="min-height:36px;padding:8px 12px;font-size:12px;"
         onclick="openVoucherModal(${idx})">
@@ -4240,8 +4257,18 @@ function buildVoucherData(item) {
     "平台价": item.exitPrice != null ? fmt(item.exitPrice, 2) : "-",
     "盈利": item.pnl != null ? `${fmt(item.pnl, 4)} U` : "-",
     "收益率": item.roi != null ? `${fmt(item.roi, 2)}%` : "-",
-    "补仓次数": Number(item.addCount || 0),
-    "平台原因": item.closeReason || "-",
+    "入场模式": ({ breakout_entry: "突破", pullback_entry: "回踩", continuation_entry: "延续" })[item.entryMode] || item.entryMode || "-",
+    "平仓原因": ({ hard_sl: "硬止损", trend_reversal: "趋势反转退出", trend_tp: "移动止盈/保护止盈", time_stop: "时间退出", weekend_exit: "周末退出", manual_close: "手动平仓", post_fill_risk_invalid: "成交后风险异常退出", exchange_sync_exit: "交易所外部退出" })[item.closeReason] || item.closeReason || "-",
+    "原始 reason": item.closeReason || "-",
+    "持仓时长": `${Math.max(0, Math.round(Number(item.holdingDurationMs || 0) / 60000))} 分钟`,
+    "初始止损": item.initialStopLossPrice != null ? fmt(item.initialStopLossPrice, 4) : "-",
+    "最终止损": item.finalStopLossPrice != null ? fmt(item.finalStopLossPrice, 4) : "-",
+    "ATR at entry": item.atrAtEntry != null ? fmt(item.atrAtEntry, 4) : "-",
+    "计划风险": item.plannedRiskAmount != null ? `${fmt(item.plannedRiskAmount, 4)} U` : "-",
+    "实际风险": item.actualRiskAmount != null ? `${fmt(item.actualRiskAmount, 4)} U` : "-",
+    "R 倍数": item.rMultiple != null ? fmt(item.rMultiple, 3) : "-",
+    "MAE / MAE_R": `${fmt(item.maximumAdverseExcursion, 4)} / ${fmt(item.MAE_R, 3)} R`,
+    "MFE / MFE_R": `${fmt(item.maximumFavorableExcursion, 4)} / ${fmt(item.MFE_R, 3)} R`,
     "平台订单号": item.platformOrderId || "-",
     "平台成交号": item.platformTradeId || "-",
     "链上哈希": item.txHash || "-",

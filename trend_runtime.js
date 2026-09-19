@@ -324,6 +324,7 @@ function createTrendRuntime(d) {
       if (expected > 0 && Math.abs(qty - expected) > 1e-8) return { terminal: false };
       if (state === "filled" && !qty) return { terminal: false };
       return { terminal: true, fill: qty ? { qty, price: fills.reduce((a, f) => a + Number(f.sz) * Number(f.px), 0) / qty,
+        fee: fills.every(f => Number.isFinite(Number(f.fee))) ? fills.reduce((sum, f) => sum + Math.abs(Number(f.fee)), 0) : undefined,
         exchangeOrderId: String(order.oid), clientOrderId: o.clientOrderId, platformTradeId: fills.map(f => f.tid).join(","), txHash: fills[0].hash } : null };
     }
     const meta = await d.binanceMeta(acc.symbol);
@@ -331,7 +332,14 @@ function createTrendRuntime(d) {
     if (!["FILLED", "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH", "REJECTED"].includes(order.status)) return { terminal: false };
     const qty = Number(order.executedQty), price = Number(order.avgPrice);
     if (qty > 0 && !(price > 0)) return { terminal: false };
-    return { terminal: true, fill: qty ? { qty, price, exchangeOrderId: String(order.orderId), clientOrderId: o.clientOrderId } : null };
+    let fee;
+    if (qty > 0) {
+      try {
+        const trades = await signed(acc, "/fapi/v1/userTrades", { symbol: meta.symbol, orderId: String(order.orderId) });
+        if (Array.isArray(trades) && trades.length && trades.every(trade => Number.isFinite(Number(trade.commission)))) fee = trades.reduce((sum, trade) => sum + Math.abs(Number(trade.commission)), 0);
+      } catch (_) {}
+    }
+    return { terminal: true, fill: qty ? { qty, price, fee, exchangeOrderId: String(order.orderId), clientOrderId: o.clientOrderId } : null };
   }
   async function settle(acc, st, o, result) {
     const T = engine(acc);

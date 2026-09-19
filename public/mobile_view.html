@@ -500,6 +500,8 @@
         const pnlClass = pnlNum >= 0 ? "green" : "red";
         const roiClass = roiNum >= 0 ? "green" : "red";
 
+        const reason = ({ hard_sl: "硬止损", trend_reversal: "趋势反转退出", trend_tp: "移动止盈/保护止盈", time_stop: "时间退出", weekend_exit: "周末退出", manual_close: "手动平仓", post_fill_risk_invalid: "成交后风险异常退出", exchange_sync_exit: "交易所外部退出" })[item.closeReason] || item.closeReason || "-";
+        const mode = ({ breakout_entry: "突破", pullback_entry: "回踩", continuation_entry: "延续" })[item.entryMode] || item.entryMode || "-";
         return `
           <div class="account-item">
             <div class="account-name">${escapeHtml(item.symbol || "-")} ｜ ${escapeHtml(item.side || "-")}</div>
@@ -507,7 +509,10 @@
               时间：${escapeHtml(item.time || "-")}<br>
               开仓价：${item.entryPrice ?? "-"}<br>
               平仓价：${item.exitPrice ?? "-"}<br>
-              盈利：<span class="${pnlClass}">${item.pnl ?? "-"}</span> U<br>
+              入场模式：${escapeHtml(mode)} ｜ 平仓原因：${escapeHtml(reason)}<br>
+              R：${item.rMultiple ?? "-"} ｜ MAE/MFE：${item.MAE_R ?? "-"} / ${item.MFE_R ?? "-"}<br>
+              毛盈亏：${item.grossPnl ?? "-"} U ｜ 手续费：${item.tradingFee ?? "-"} U<br>
+              净盈亏：<span class="${pnlClass}">${item.netPnl ?? item.pnl ?? "-"}</span> U<br>
               收益率：<span class="${roiClass}">${item.roi ?? "-"}</span>%
             </div>
           </div>

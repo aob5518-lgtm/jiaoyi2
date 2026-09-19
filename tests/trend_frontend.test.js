@@ -156,3 +156,10 @@ test("账户搜索和状态筛选控件存在并接入渲染", () => {
   assert.match(html, /function tradingPair/);
   assert.match(html, /raw\.endsWith\(quote\).*raw\.slice\(0, -quote\.length\)/s);
 });
+
+test("历史盈利页展示 Trend Only 退出、风险、成本与 MAE/MFE 字段", () => {
+  const html = read("public/index.html");
+  assert.match(html, /入场模式.*平仓原因.*持仓时长.*初始 \/ 最终止损.*入场 ATR.*计划 \/ 实际风险.*R 倍数.*MAE \/ MFE.*毛盈亏.*手续费.*净盈亏/s);
+  assert.match(html, /硬止损.*趋势反转退出.*移动止盈\/保护止盈.*成交后风险异常退出/s);
+  assert.match(html, /原始 reason/);
+});

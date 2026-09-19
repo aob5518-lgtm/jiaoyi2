@@ -98,12 +98,13 @@ test("趋势衰减只进入 defensiveMode，不直接平仓", () => {
 test("defensiveMode 使用 structureLow 收紧止损", () => {
   const p = position(); p.defensiveMode = true; const a = account(p);
   const result = V2.manageTrendOnlyPosition(a, { price: 100.5 }, { signalTime: now, close: 100.2, atr: 1, chop: 54, adxHistory: [40, 38, 36], emaFast: 100.4, emaMid: 99, diPlus: 30, diMinus: 10, trendDirection: "long", higherDirection: "long", structureLow: 99.8 });
-  assert.equal(result.reason, ""); assert.equal(p.currentStopLossPrice, 99.8);
+  assert.equal(result.reason, ""); assert.equal(p.currentStopLossPrice, 99.55); assert.ok(100.5 - p.currentStopLossPrice >= 0.5);
 });
-test("结构位反向突破立即触发 trend_reversal", () => {
+test("结构位带缓冲并连续两根确认后才触发 trend_reversal", () => {
   const p = position(), a = account(p);
-  const result = V2.manageTrendOnlyPosition(a, { price: 99 }, { signalTime: now, close: 98.9, atr: 1, chop: 45, adxHistory: [35, 35, 35], emaFast: 100, emaMid: 99, diPlus: 30, diMinus: 10, trendDirection: "long", higherDirection: "long", structureLow: 99.2 });
-  assert.equal(result.reason, "trend_reversal");
+  const reversed = { close: 98.8, atr: 1, chop: 45, adxHistory: [35, 35, 35], emaFast: 100, emaMid: 99, diPlus: 30, diMinus: 10, trendDirection: "long", higherDirection: "long", structureLow: 99.2 };
+  assert.equal(V2.manageTrendOnlyPosition(a, { price: 99 }, { ...reversed, signalTime: now + 900000 }).reason, "");
+  assert.equal(p.defensiveMode, true);assert.equal(V2.manageTrendOnlyPosition(a, { price: 99 }, { ...reversed, signalTime: now + 1800000 }).reason, "trend_reversal");
 });
 test("结构字段缺失不报错并记录结构位不足", () => {
   const p = position(); p.defensiveMode = true; const a = account(p);
@@ -115,6 +116,38 @@ test("EMA/DI 反转需要等待 reversalConfirmBars", () => {
   const reversed = { close: 101, atr: 1, chop: 45, adxHistory: [35, 35, 35], emaFast: 99, emaMid: 100, diPlus: 10, diMinus: 30, trendDirection: "long", higherDirection: "none" };
   assert.equal(V2.manageTrendOnlyPosition(a, { price: 101 }, { ...reversed, signalTime: now }).reason, "");
   assert.equal(V2.manageTrendOnlyPosition(a, { price: 101 }, { ...reversed, signalTime: now + 900000 }).reason, "trend_reversal");
+});
+test("ETH 轻微跌破结构位只进入 defensiveMode，不提前退出", () => {
+  const p = { ...position(), entryPrice: 2503.23, initialStopLossPrice: 2490.23, currentStopLossPrice: 2490.23, atrAtEntry: 10, entryMode: "breakout_entry", signalTime: now - 900000, highestPriceSinceEntry: 2503.23, lowestPriceSinceEntry: 2503.23 }, a = account(p);
+  const i = { signalTime: now, close: 2501.8, atr: 10, chop: 48, adxHistory: [35, 34, 33], emaFast: 2503, emaMid: 2501, diPlus: 24, diMinus: 25, entryDirection: "short", trendDirection: "long", higherDirection: "long", structureLow: 2502 };
+  const result = V2.manageTrendOnlyPosition(a, { price: 2501.8 }, i);
+  assert.equal(result.reason, "");assert.equal(p.defensiveMode, true);assert.ok(p.currentStopLossPrice < 2501.8 - 5 + 1e-9);
+});
+test("单根超过结构位 0.5 ATR 属于 emergency reversal", () => {
+  const p = { ...position(), entryPrice: 2503.23, initialStopLossPrice: 2488, currentStopLossPrice: 2488, signalTime: now - 900000 }, a = account(p);
+  const result = V2.manageTrendOnlyPosition(a, { price: 2496.8 }, { signalTime: now, close: 2496.8, atr: 10, chop: 45, adxHistory: [35, 35, 35], emaFast: 2500, emaMid: 2499, diPlus: 30, diMinus: 10, trendDirection: "long", higherDirection: "long", structureLow: 2502 });
+  assert.equal(result.reason, "trend_reversal");
+});
+test("1H 与 4H 同时明确反向可立即退出", () => {
+  const p = position(), a = account(p);
+  const result = V2.manageTrendOnlyPosition(a, { price: 100.2 }, { signalTime: now, close: 100.2, atr: 1, chop: 45, adxHistory: [35, 35, 35], emaFast: 100.5, emaMid: 100, diPlus: 30, diMinus: 10, trendDirection: "short", higherDirection: "short" });
+  assert.equal(result.reason, "trend_reversal");
+});
+test("小于往返成本的 EMA/DI 弱反转只进入防守模式", () => {
+  const p = position();const a=account(p), weak={close:99.95,atr:1,chop:45,adxHistory:[35,34,33],emaFast:99,emaMid:100,diPlus:10,diMinus:30,trendDirection:"long",higherDirection:"none"};
+  assert.equal(V2.manageTrendOnlyPosition(a,{price:99.95},{...weak,signalTime:now+900000}).reason,"");
+  const second=V2.manageTrendOnlyPosition(a,{price:99.95},{...weak,signalTime:now+1800000});assert.equal(second.reason,"");assert.equal(p.defensiveMode,true);assert.match(second.logs.join(" "),/不足覆盖预估往返成本/);
+});
+test("不同入场模式止损距离生效且止损越远仓位越小", () => {
+  const makePlan=entryMode=>{const a=account(),signal={entryPermission:"allowed",tradeDirection:"long",directionRaw:"long",entryMode,signalTime:now,score:80,reasons:[],blockers:[],structureLow:99,breakoutLevel:101};return V2.tryOpenTrendOnlyPosition(a,signal,{...input(),price:100,close:100,atr:2,qtyStep:0.001,minNotional:10});};
+  const breakout=makePlan("breakout_entry"),pullback=makePlan("pullback_entry"),continuation=makePlan("continuation_entry");
+  assert.equal(breakout.stopDistance,2.6);assert.equal(pullback.stopDistance,2);assert.equal(continuation.stopDistance,2.4);
+  assert.ok(breakout.qty<pullback.qty);assert.ok(breakout.qty*(breakout.stopDistance+100*breakout.costRate)<=breakout.plannedRiskAmount+0.01);
+});
+test("MAE/MFE 与 R 倍数写入平仓凭证", () => {
+  const p={...position(),entryTime:now-900000},a=account(p);V2.manageTrendOnlyPosition(a,{price:104});V2.manageTrendOnlyPosition(a,{price:99});
+  const voucher=V2.recordClose(a,{qty:p.positionSize,price:99,clientOrderId:"x",exchangeOrderId:"x"},"manual_close",now+3600000);
+  assert.equal(voucher.maximumFavorableExcursion,4);assert.equal(voucher.maximumAdverseExcursion,1);assert.equal(voucher.MFE_R,2);assert.equal(voucher.MAE_R,0.5);assert.equal(voucher.holdingDurationMs,4500000);
 });
 for (const [name, price, expected] of [["1R 移动到 -0.2R", 102, { stop: 99.6, soft: true }], ["1.5R 移动到保本", 103, { stop: 100, breakEven: true }], ["2.5R 锁定 1R", 105, { stop: 102, locked: true }], ["3R 启动 ATR 移动止盈", 106, { trailing: true }]]) test(name, () => {
   const p = position(), a = account(p), result = V2.manageTrendOnlyPosition(a, { price }); assert.equal(result.reason, "");
@@ -227,4 +260,9 @@ test("成交后实际风险超过计划 15% 时标记 post-fill risk lock", () =
   const position = V2.positionFromFill(fillPlan("long", { plannedRiskAmount: 10, riskAmount: 10 }), { qty: 10, price: 105, clientOrderId: "r", exchangeOrderId: "3" }, now, {});
   assert.ok(position.actualRiskAmount > position.plannedRiskAmount * 1.15);
   assert.equal(position.postFillRiskExceeded, true);
+});
+test("Live 凭证优先采用开平仓真实手续费", () => {
+  const p=V2.positionFromFill(fillPlan("long"),{qty:1,price:100,fee:0.1,clientOrderId:"fee-entry",exchangeOrderId:"1"},now,{}),a=account(p);a.paper=false;
+  const voucher=V2.recordClose(a,{qty:1,price:101,fee:0.2,clientOrderId:"fee-exit",exchangeOrderId:"2"},"manual_close",now+60000);
+  assert.equal(voucher.grossPnl,1);assert.ok(Math.abs(voucher.tradingFee-0.3)<1e-12);assert.ok(Math.abs(voucher.netPnl-0.7)<1e-12);assert.equal(voucher.costSource,"exchange");
 });
