@@ -1251,6 +1251,15 @@ const oldExplorerUrl = item.explorerUrl || "";
 const needRebuildExplorerUrl =
   !oldExplorerUrl ||
   (platform === "hyperliquid" && oldExplorerUrl.includes("/explorer/order/"));
+  const captured = value => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+  const entryTimeMs = Number(item.entryTime) || Date.parse(item.entryTime || "");
+  const exitTimeMs = Number(item.exitTime) || Date.parse(item.exitTime || item.time || "");
+  const derivedHoldingDuration = captured(item.holdingDurationMs)
+    ? Number(item.holdingDurationMs)
+    : (Number.isFinite(entryTimeMs) && Number.isFinite(exitTimeMs) && exitTimeMs >= entryTimeMs ? exitTimeMs - entryTimeMs : null);
+  const legacyRecord = item.legacyRecord === true || !item.entryMode || !captured(item.atrAtEntry) ||
+    !captured(item.initialStopLossPrice) || !captured(item.actualRiskAmount) ||
+    !captured(item.maximumAdverseExcursion) || !captured(item.maximumFavorableExcursion);
   return {
     ...item,
     accountName: item.accountName || acc.name || "-",
@@ -1263,6 +1272,8 @@ const needRebuildExplorerUrl =
     netPnl: Number.isFinite(Number(item.netPnl)) ? Number(item.netPnl) : Number(item.pnl || 0),
     costSource: item.costSource || "legacy-unadjusted",
     fundingIncluded: item.fundingIncluded === true,
+    holdingDurationMs: derivedHoldingDuration,
+    legacyRecord,
     closeReason: /simulation/i.test(String(item.closeReason || ""))
       ? "策略止盈"
       : (item.closeReason || "策略止盈触发"),
@@ -1302,6 +1313,19 @@ function sanitizePublicVoucher(item) {
     fundingIncluded: item.fundingIncluded === true,
     addCount: item.addCount || 0,
     closeReason: item.closeReason || "",
+    entryMode: item.entryMode || "",
+    holdingDurationMs: item.holdingDurationMs ?? null,
+    legacyRecord: item.legacyRecord === true,
+    rMultiple: item.rMultiple ?? null,
+    maximumAdverseExcursion: item.maximumAdverseExcursion ?? null,
+    maximumFavorableExcursion: item.maximumFavorableExcursion ?? null,
+    MAE_R: item.MAE_R ?? null,
+    MFE_R: item.MFE_R ?? null,
+    stopTriggerPrice: item.stopTriggerPrice ?? null,
+    stopExecutionPrice: item.stopExecutionPrice ?? null,
+    stopSlippageBps: item.stopSlippageBps ?? null,
+    stopSlippageAmount: item.stopSlippageAmount ?? null,
+    stopExecutionMode: item.stopExecutionMode || "",
     simulation: !!item.simulation,
     platformOrderId: item.platformOrderId || "",
     platformTradeId: item.platformTradeId || "",
@@ -4500,31 +4524,7 @@ const server = http.createServer((req, res) => {
     const st = stateMap[accountId];
     if (!st) return jsonRes(res, 200, { ok: true, items: [] });
 
-    const items = (st.profitHistory || []).map(item => ({
-      time: item.time,
-      symbol: item.symbol,
-      side: normalizeSideText(item.side),
-      entryPrice: item.entryPrice,
-      exitPrice: item.exitPrice,
-      pnl: item.pnl,
-      roi: item.roi,
-      entryMode: item.entryMode || "",
-      closeReason: item.closeReason || "",
-      holdingDurationMs: Number(item.holdingDurationMs || 0),
-      initialStopLossPrice: item.initialStopLossPrice ?? null,
-      finalStopLossPrice: item.finalStopLossPrice ?? null,
-      atrAtEntry: item.atrAtEntry ?? null,
-      plannedRiskAmount: item.plannedRiskAmount ?? item.riskAmount ?? null,
-      actualRiskAmount: item.actualRiskAmount ?? null,
-      rMultiple: item.rMultiple ?? null,
-      grossPnl: item.grossPnl ?? item.pnl,
-      tradingFee: item.tradingFee ?? 0,
-      netPnl: item.netPnl ?? item.pnl,
-      maximumAdverseExcursion: item.maximumAdverseExcursion ?? null,
-      maximumFavorableExcursion: item.maximumFavorableExcursion ?? null,
-      MAE_R: item.MAE_R ?? null,
-      MFE_R: item.MFE_R ?? null
-    }));
+    const items = (st.profitHistory || []).map(item => sanitizePublicVoucher(normalizeProfitVoucher(item, accountId)));
 
     return jsonRes(res, 200, { ok: true, items });
   }

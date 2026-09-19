@@ -10,6 +10,7 @@ const DEFAULTS = Object.freeze({
   minAdxToTrade: 25, maxChopToTrade: 45, stopLossAtrMultiplier: 1.5,
   trailingAtrMultiplier: 2, breakEvenAtR: 1, trailStartAtR: 3,
   timeStopBars: 8, minProfitForTimeStopR: 0.5, breakoutLookback: 20,
+  paperStopSlippageBps: 5,
   requireMultiTimeframeConfirm: true, entryTimeframe: "15m", trendTimeframe: "1h",
   higherTimeframe: "4h"
 });
@@ -218,7 +219,7 @@ function recordClose(account, fill, reason, now = Date.now()) {
   const hasExitFee = fill.fee !== null && fill.fee !== undefined && Number.isFinite(Number(fill.fee));
   const entryFee = hasEntryFee ? Number(p.entryFeeActual) * qty / Number(p.filledQty || p.positionSize || qty) : p.entryPrice * qty * cost.entryFeeRate;
   const exitFee = hasExitFee ? Number(fill.fee) : fill.price * qty * cost.exitFeeRate;
-  const fee = entryFee + exitFee, pnl = gross - fee;
+  const fee = entryFee + exitFee, fundingPnl = Number.isFinite(Number(fill.fundingPnl)) ? Number(fill.fundingPnl) : 0, pnl = gross - fee + fundingPnl;
   rollDay(s, Number(account.equity), now);
   s.dailyLoss += Math.max(0, -pnl); p.realizedPnl = Number(p.realizedPnl || 0) + pnl;
   const voucher = { accountId: account.id, accountName: account.name, platform: account.platform, symbol: account.symbol, quoteAsset: account.quoteAsset,
@@ -226,7 +227,10 @@ function recordClose(account, fill, reason, now = Date.now()) {
     roi: pnl / (qty * p.entryPrice / p.leverage) * 100, rMultiple: pnl / (qty * p.plannedR), closeReason: reason,
     finalStopLossPrice: p.currentStopLossPrice, entryClientOrderId: p.clientOrderId, entryExchangeOrderId: p.exchangeOrderId,
     clientOrderId: fill.clientOrderId, exchangeOrderId: fill.exchangeOrderId, platformTradeId: fill.platformTradeId || fill.exchangeOrderId,
-    txHash: fill.txHash || "", explorerUrl: fill.explorerUrl || "", grossPnl: gross, tradingFee: fee, netPnl: pnl,
+    txHash: fill.txHash || "", explorerUrl: fill.explorerUrl || "", grossPnl: gross, tradingFee: fee, fundingPnl, netPnl: pnl,
+    stopTriggerPrice: fill.stopTriggerPrice ?? null, stopExecutionPrice: fill.stopExecutionPrice ?? null,
+    stopSlippageBps: fill.stopSlippageBps ?? null, stopSlippageAmount: fill.stopSlippageAmount ?? null,
+    stopExecutionMode: fill.stopExecutionMode || "",
     entryFee, exitFee, estimatedRoundTripCostRate: cost.roundTripCostRate,
     holdingDurationMs: Math.max(0, now - Number(p.entryTime || now)),
     costSource: hasEntryFee && hasExitFee ? "exchange" : "estimated-fee",

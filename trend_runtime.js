@@ -1,6 +1,24 @@
 "use strict";
 const fs = require("fs"), path = require("path"), crypto = require("crypto"), V1 = require("./trend_only"), V2 = require("./trend_only_v2");
 
+function paperStopFill({ side, stopPrice, currentPrice, previousPrice, slippageBps = 5 }) {
+  const stop = Number(stopPrice), current = Number(currentPrice), previous = Number(previousPrice);
+  const bps = Math.max(0, Math.min(Number(slippageBps) || 0, 1000));
+  if (!(stop > 0) || !(current > 0) || !["long", "short"].includes(side)) throw Error("Paper 止损成交参数无效");
+  const crossed = Number.isFinite(previous) && previous > 0 && (side === "long" ? previous > stop && current < stop : previous < stop && current > stop);
+  const beyondStopBps = Math.abs(current - stop) / stop * 10000;
+  const gapThrough = crossed && beyondStopBps >= Math.max(25, bps * 5);
+  const reference = gapThrough ? current : stop;
+  const execution = reference * (side === "long" ? 1 - bps / 10000 : 1 + bps / 10000);
+  return {
+    stopTriggerPrice: stop,
+    stopExecutionPrice: Number(execution.toFixed(8)),
+    stopSlippageBps: bps,
+    stopSlippageAmount: Number(Math.abs(execution - stop).toFixed(8)),
+    stopExecutionMode: gapThrough ? "gap_through" : "normal_trigger"
+  };
+}
+
 function createTrendRuntime(d) {
   const file = path.join(d.directory, "trend_only_runtime.json");
   let states = {};
@@ -415,7 +433,12 @@ function createTrendRuntime(d) {
     if (kind === "open") setDecision(acc, "ORDER_SUBMITTED", "开仓订单已提交", { signalTime: plan.signal.signalTime, executionPermission: "allowed", orderSubmitted: true, finalAction: "提交订单" });
     if (paper(acc)) {
       const sign = (side === "long" ? 1 : -1) * (kind === "open" ? 1 : -1);
-      o.paperFill = { qty, price: Number(st.currentPrice) * (1 + sign * Number(acc.simulationSlippageBps || 0) / 10000), clientOrderId: id, exchangeOrderId: `paper-${id}` };
+      let paperPrice = Number(st.currentPrice) * (1 + sign * Number(acc.simulationSlippageBps || 0) / 10000), stopMeta = {};
+      if (kind === "close" && ["hard_sl", "trend_tp"].includes(reason) && Number(p?.currentStopLossPrice) > 0) {
+        stopMeta = paperStopFill({ side: p.side, stopPrice: p.currentStopLossPrice, currentPrice: st.currentPrice, previousPrice: s.previousMarketPrice, slippageBps: c.paperStopSlippageBps });
+        paperPrice = stopMeta.stopExecutionPrice;
+      }
+      o.paperFill = { qty, price: paperPrice, ...stopMeta, clientOrderId: id, exchangeOrderId: `paper-${id}` };
     }
     save(); // Durable intent MUST precede the first external request.
     try {
@@ -442,7 +465,11 @@ function createTrendRuntime(d) {
   async function tick(acc, st, action) {
     const T = engine(acc), s = get(acc), c = T.normalizeConfig(acc.trendOnlyConfig);
     try {
-      st.currentPrice = await d.price(acc); publish(acc, st); flushJournal(acc);
+      const previousMarketPrice = Number(s.lastMarketPrice);
+      st.currentPrice = await d.price(acc);
+      s.previousMarketPrice = Number.isFinite(previousMarketPrice) && previousMarketPrice > 0 ? previousMarketPrice : null;
+      s.lastMarketPrice = Number(st.currentPrice);
+      publish(acc, st); flushJournal(acc);
       st.updatedAt = new Date().toLocaleString("zh-CN");
       if (s.pendingOrder) {
         if (!await settle(acc, st, s.pendingOrder, await lookup(acc, s.pendingOrder))) { log(acc, st, "未知订单状态：查询中，禁止重复下单"); return; }
@@ -540,4 +567,4 @@ function createTrendRuntime(d) {
     busy: acc => !!(get(acc).position || get(acc).pendingOrder)
   };
 }
-module.exports = { createTrendRuntime };
+module.exports = { createTrendRuntime, paperStopFill };

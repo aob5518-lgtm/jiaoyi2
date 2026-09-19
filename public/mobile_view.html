@@ -373,7 +373,7 @@
 
     <div id="page-history" class="tab-page">
       <div class="card">
-        <div class="card-title">历史盈利记录</div>
+        <div class="card-title">历史交易</div>
         <div id="historyList" class="account-list"></div>
       </div>
     </div>
@@ -490,30 +490,31 @@
     function renderHistory(items) {
       const el = $("historyList");
       if (!items || items.length === 0) {
-        el.innerHTML = `<div class="muted">暂无历史盈利记录</div>`;
+        el.innerHTML = `<div class="muted">暂无历史交易</div>`;
         return;
       }
 
       el.innerHTML = items.map(item => {
-        const pnlNum = Number(item.pnl || 0);
-        const roiNum = Number(item.roi || 0);
+        const pnlNum = Number(item.netPnl ?? item.pnl ?? 0);
         const pnlClass = pnlNum >= 0 ? "green" : "red";
-        const roiClass = roiNum >= 0 ? "green" : "red";
 
         const reason = ({ hard_sl: "硬止损", trend_reversal: "趋势反转退出", trend_tp: "移动止盈/保护止盈", time_stop: "时间退出", weekend_exit: "周末退出", manual_close: "手动平仓", post_fill_risk_invalid: "成交后风险异常退出", exchange_sync_exit: "交易所外部退出" })[item.closeReason] || item.closeReason || "-";
         const mode = ({ breakout_entry: "突破", pullback_entry: "回踩", continuation_entry: "延续" })[item.entryMode] || item.entryMode || "-";
         return `
           <div class="account-item">
-            <div class="account-name">${escapeHtml(item.symbol || "-")} ｜ ${escapeHtml(item.side || "-")}</div>
+            <div class="account-name">${escapeHtml(item.symbol || "-")} · ${String(item.side || "").toLowerCase() === "short" ? "SHORT" : "LONG"} · ${escapeHtml(mode)}</div>
             <div class="account-meta">
-              时间：${escapeHtml(item.time || "-")}<br>
-              开仓价：${item.entryPrice ?? "-"}<br>
-              平仓价：${item.exitPrice ?? "-"}<br>
-              入场模式：${escapeHtml(mode)} ｜ 平仓原因：${escapeHtml(reason)}<br>
-              R：${item.rMultiple ?? "-"} ｜ MAE/MFE：${item.MAE_R ?? "-"} / ${item.MFE_R ?? "-"}<br>
-              毛盈亏：${item.grossPnl ?? "-"} U ｜ 手续费：${item.tradingFee ?? "-"} U<br>
-              净盈亏：<span class="${pnlClass}">${item.netPnl ?? item.pnl ?? "-"}</span> U<br>
-              收益率：<span class="${roiClass}">${item.roi ?? "-"}</span>%
+              ${escapeHtml(item.time || "-")}<br>
+              ${item.entryPrice ?? "-"} → ${item.exitPrice ?? "-"}<br>
+              净盈亏 <span class="${pnlClass}">${item.netPnl ?? item.pnl ?? "-"} U</span><br>
+              R ${item.rMultiple ?? "数据不足"} · ${escapeHtml(reason)}
+              ${item.legacyRecord ? `<br><span title="该交易产生于复盘字段上线之前，部分指标当时未采集。">旧记录</span>` : ""}
+              <details style="margin-top:10px;"><summary style="cursor:pointer;color:#68d8ff;font-weight:800;">查看复盘</summary><div style="padding-top:8px;line-height:1.8;">
+                毛盈亏：${item.grossPnl ?? "数据不足"} U<br>手续费：${item.tradingFee ?? "数据不足"} U<br>资金费：${item.fundingPnl ?? "数据不足"} U<br>
+                MAE / MFE：${item.MAE_R ?? "未采集"} R / ${item.MFE_R ?? "未采集"} R<br>
+                止损触发 / 成交：${item.stopTriggerPrice ?? "未采集"} / ${item.stopExecutionPrice ?? "未采集"}<br>
+                止损模式：${item.stopExecutionMode === "gap_through" ? "跳空穿越" : item.stopExecutionMode === "normal_trigger" ? "正常触发" : "未采集"}
+              </div></details>
             </div>
           </div>
         `;

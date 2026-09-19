@@ -61,6 +61,7 @@
         "breakEvenAtR": 1,
         "trailStartAtR": 3,
         "timeStopBars": 8,
+        "paperStopSlippageBps": 5,
         "minProfitForTimeStopR": 0.5,
         "breakoutLookback": 20,
         "requireMultiTimeframeConfirm": true,

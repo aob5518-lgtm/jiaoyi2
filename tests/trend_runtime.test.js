@@ -1,5 +1,5 @@
 const {test}=require('node:test'), assert=require('node:assert/strict'),fs=require('fs'),os=require('os'),path=require('path');
-const T=require('../trend_only'),V2=require('../trend_only_v2'),{createTrendRuntime}=require('../trend_runtime');
+const T=require('../trend_only'),V2=require('../trend_only_v2'),{createTrendRuntime,paperStopFill}=require('../trend_runtime');
 function fixture(t,live=false){
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'trend-v1-test-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
   const acc={id:'a',name:'paper',platform:'hyperliquid',symbol:'ETH',address:'0xTEST',simulationBalance:10000,trendOnlyConfig:T.normalizeConfig({allowWeekendOpen:true})};
@@ -22,6 +22,21 @@ test('Paper 完整开仓、止损和历史写入，重启不重复凭证',async 
   const f=fixture(t);await f.r.tick(f.acc,f.st);assert.ok(f.r.get(f.acc).position, f.st.lastAction);
   f.d.price=async()=>50;f.r=createTrendRuntime(f.d);await f.r.tick(f.acc,f.st);assert.equal(f.r.get(f.acc).position,null);assert.equal(f.history.length,1);assert.equal(f.history[0].closeReason,'hard_sl');
   f.st.running=false;f.r=createTrendRuntime(f.d);await f.r.tick(f.acc,f.st);assert.equal(f.history.length,1);
+});
+test('Paper stop 正常触发按止损价和 5bps 成交，不使用滞后 currentPrice',()=>{
+  const fill=paperStopFill({side:'long',stopPrice:2506,currentPrice:2501,previousPrice:2507,slippageBps:5});
+  assert.equal(fill.stopExecutionMode,'normal_trigger');assert.equal(fill.stopTriggerPrice,2506);assert.equal(fill.stopExecutionPrice,2504.747);assert.equal(fill.stopSlippageBps,5);assert.equal(fill.stopSlippageAmount,1.253);
+});
+test('Paper stop 明显 gap through 保留跳空价格滑点',()=>{
+  const longFill=paperStopFill({side:'long',stopPrice:100,currentPrice:95,previousPrice:101,slippageBps:5});
+  assert.equal(longFill.stopExecutionMode,'gap_through');assert.equal(longFill.stopExecutionPrice,94.9525);
+  const shortFill=paperStopFill({side:'short',stopPrice:100,currentPrice:105,previousPrice:99,slippageBps:5});
+  assert.equal(shortFill.stopExecutionMode,'gap_through');assert.equal(shortFill.stopExecutionPrice,105.0525);
+});
+test('Paper 保护止损成交凭证记录触发价、成交价和执行模式',async t=>{
+  const f=fixture(t);const s=f.r.get(f.acc);s.position=v2Position();s.position.currentStopLossPrice=98;s.lastMarketPrice=100;f.acc.strategyType='trend_only_v2';f.acc.trendOnlyConfig=V2.normalizeConfig({allowWeekendOpen:true,paperStopSlippageBps:5});f.d.price=async()=>97.9;
+  await f.r.tick(f.acc,f.st);assert.equal(f.history.length,1);const voucher=f.history[0];
+  assert.equal(voucher.stopTriggerPrice,98);assert.equal(voucher.stopExecutionPrice,97.951);assert.equal(voucher.stopSlippageBps,5);assert.equal(voucher.stopSlippageAmount,0.049);assert.equal(voucher.stopExecutionMode,'normal_trigger');
 });
 test('Live 不确认不下单；过期或错误信号确认拒绝',async t=>{
   const f=fixture(t,true);await f.r.tick(f.acc,f.st);assert.equal(f.orders(),0);assert.match(f.st.lastAction,/二次确认/);assert.throws(()=>f.r.confirm(f.acc,{confirmLive:true,signalTime:0}),/无效/);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>历史盈利记录</title>
+  <title>历史交易</title>
   <style>
     body {
       margin: 0;
@@ -57,7 +57,7 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>历史盈利记录</h1>
+    <h1>交易复盘记录</h1>
     <div class="sub">当前页面仅显示所选账户的历史记录。</div>
 
     <table>
@@ -90,7 +90,7 @@
       const tbody = document.getElementById("tbody");
 
       if (!data.items || data.items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="muted">暂无历史盈利记录</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="muted">暂无历史交易</td></tr>';
         return;
       }
 

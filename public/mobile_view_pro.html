@@ -450,7 +450,7 @@
       <div class="chart-card">
         <div class="chart-header">
           <div class="chart-title">总资产曲线</div>
-          <div class="chart-sub">基于历史盈利记录生成</div>
+          <div class="chart-sub">基于历史交易记录生成</div>
         </div>
         <div class="chart-wrap">
           <canvas id="equityChart"></canvas>
@@ -545,7 +545,7 @@
 
     <div id="page-history" class="tab-page">
       <div class="card">
-        <div class="card-title">历史盈利记录</div>
+        <div class="card-title">历史交易</div>
         <div id="historyList" class="account-list"></div>
       </div>
     </div>
@@ -642,7 +642,7 @@
     function renderHistory(items) {
       const el = $("historyList");
       if (!items || items.length === 0) {
-        el.innerHTML = `<div class="muted">暂无历史盈利记录</div>`;
+        el.innerHTML = `<div class="muted">暂无历史交易</div>`;
         return;
       }
 

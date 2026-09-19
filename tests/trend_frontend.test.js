@@ -157,9 +157,41 @@ test("账户搜索和状态筛选控件存在并接入渲染", () => {
   assert.match(html, /raw\.endsWith\(quote\).*raw\.slice\(0, -quote\.length\)/s);
 });
 
-test("历史盈利页展示 Trend Only 退出、风险、成本与 MAE/MFE 字段", () => {
+test("历史交易主表保持 9 列，详细复盘字段进入四区 Modal", () => {
   const html = read("public/index.html");
-  assert.match(html, /入场模式.*平仓原因.*持仓时长.*初始 \/ 最终止损.*入场 ATR.*计划 \/ 实际风险.*R 倍数.*MAE \/ MFE.*毛盈亏.*手续费.*净盈亏/s);
-  assert.match(html, /硬止损.*趋势反转退出.*移动止盈\/保护止盈.*成交后风险异常退出/s);
-  assert.match(html, /原始 reason/);
+  const head = html.match(/<table class="history-table">[\s\S]*?<thead>([\s\S]*?)<\/thead>/)[1];
+  assert.equal((head.match(/<th>/g) || []).length, 9);
+  assert.match(head, /时间.*方向 \/ 入场模式.*开仓 → 平仓.*平仓原因.*持仓时长.*R 倍数.*净盈亏.*手续费.*详情/s);
+  for (const field of ["币种","方向","入场模式","开仓价","平仓价","持仓时长","R 倍数","毛盈亏","手续费","净盈亏","入场 ATR","初始止损","最终止损","计划风险","实际风险","MAE","MFE","原始 closeReason"]) assert.match(html, new RegExp(field));
+  assert.match(html, /A\. 交易结果.*B\. 风控.*C\. 行情表现.*D\. 审计信息/s);
+  assert.match(html, /查看复盘/);
+});
+
+test("历史 Tab 默认收起状态栏并支持专注模式", () => {
+  const html = read("public/index.html");
+  assert.match(html, /body\.history-active \.right-panel/);
+  assert.match(html, /if \(tab === "history"\) document\.body\.classList\.remove\("history-status-open"\)/);
+  assert.match(html, /historyStatusBtn.*history-status-open/s);
+  assert.match(html, /historyFocusBtn.*history-focus/s);
+});
+
+test("历史复盘兼容旧记录，并按 netPnl 统计盈亏和胜率", () => {
+  const html = read("public/index.html");
+  assert.match(html, /legacyRecord/); assert.match(html, /该交易产生于复盘字段上线之前，部分指标当时未采集/);
+  assert.match(html, /const netPnlOf = item => Number\.isFinite\(Number\(item\.netPnl\)\)/);
+  assert.match(html, /wins = rows\.filter\(item => netPnlOf\(item\) > 0\)/);
+  assert.match(html, /总净盈亏/);
+});
+
+test("历史方向、入场和平仓 Badge 样式完整", () => {
+  const html = read("public/index.html");
+  assert.match(html, /\.history-badge\.long/); assert.match(html, /\.history-badge\.short/); assert.match(html, /LONG \/ 多.*SHORT \/ 空/s);
+  assert.match(html, /breakout_entry: "突破".*pullback_entry: "回踩".*continuation_entry: "延续"/s);
+  assert.match(html, /hard_sl: "硬止损".*trend_reversal: "趋势反转退出".*trend_tp: "移动止盈\/保护止盈"/s);
+});
+
+test("移动端历史使用交易卡片和查看复盘，不渲染宽表", () => {
+  const html = read("public/mobile_view.html");
+  assert.match(html, /历史交易/); assert.match(html, /查看复盘/); assert.match(html, /净盈亏/);
+  assert.doesNotMatch(html, /<table|初始 \/ 最终止损|17列/);
 });
