@@ -517,7 +517,10 @@ function createTrendRuntime(d) {
           setDecision(acc, decisionFromSignal(s.signal), (s.signal.blockers || []).join("；"), { executionPermission: s.signal.entryPermission === "allowed" ? "pending" : "blocked" });
         }
         s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, entryDirection: i.entryDirection, trendDirection: i.trendDirection, higherDirection: i.higherDirection };
-      } catch (e) { log(acc, st, `趋势行情暂不可用：${e.message}；已有价格止损继续执行`); return; }
+      } catch (e) {
+        log(acc, st, `趋势行情暂不可用：${e.message}；已有价格止损继续执行`);
+        throw e;
+      }
       if (s.position) {
         const beforeStop = Number(s.position.currentStopLossPrice);
         const result = T.manageTrendOnlyPosition(account(acc, st), { price: st.currentPrice }, i);

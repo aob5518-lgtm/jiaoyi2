@@ -3703,8 +3703,8 @@
       return "";
     }
 
-    function marketStatusClass(signal = {}, trend = {}, lastError = "") {
-      if (lastError || trend.riskLock || trend.pendingOrder?.status === "unknown_order_state") return "red";
+    function marketStatusClass(signal = {}, trend = {}, activeError = "") {
+      if (activeError || trend.riskLock || trend.pendingOrder?.status === "unknown_order_state") return "red";
       if (["strong_trend", "trend_breakout", "trend_pullback", "trend_continuation", "trend"].includes(signal.regime) || signal.entryPermission === "allowed") return "green";
       if (signal.regime === "extended_no_chase" || ["wait_pullback", "wait_continuation", "wait_breakout"].includes(signal.entryPermission)) return "orange";
       return "muted";
@@ -3861,7 +3861,7 @@
       if (q && !haystack.includes(q)) return false;
       if (filter === "running") return !!acc.running;
       if (filter === "stopped") return !acc.running;
-      if (filter === "error") return !!acc.lastError;
+      if (filter === "error") return ["error", "risk_locked"].includes(acc.health?.status) || !!acc.activeError;
       if (filter === "position") return !!acc.hasPosition;
       if (filter === "pending") return !!acc.hasPendingOrder;
       return true;
@@ -4059,6 +4059,14 @@
     function renderOverview(cfg, st) {
       const smartMode = cfg.strategyType === "smart_regime_v1";
       const trendOnlyMode = isTrendOnlyType(cfg.strategyType);
+      const health = st.health || {
+        status: st.trendOnly?.riskLock ? "risk_locked" : st.activeError ? "error" : st.trendOnly?.pendingOrder ? "warning" : "healthy",
+        activeError: st.activeError || "",
+        lastError: st.lastError || "",
+        lastErrorAt: st.lastErrorAt || 0,
+        riskLock: !!st.trendOnly?.riskLock,
+        riskLockReason: st.trendOnly?.riskLockReason || ""
+      };
       const trendView = trendOnlyMode ? getTrendView(cfg, st) : null;
       const strategyViewMissing = trendOnlyMode && (window.__strategyViewLoadFailed || !window.StrategyView?.buildTrendView);
       const effectiveSide = trendOnlyMode ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.directionRaw || st.trendOnly?.signal?.direction || "auto") : smartMode ? (st.smartSide || "auto") : cfg.side;
@@ -4073,21 +4081,21 @@
       $("metricRoiLabel").textContent = trendOnlyMode ? "市场状态" : "收益率";
       $("metricRoi").textContent = trendOnlyMode ? trendView.market : `${fmt(st.roi, 2)} %`;
       const signal = st.trendOnly?.signal || {};
-      const trendStateClass = marketStatusClass(signal, st.trendOnly, st.lastError);
+      const trendStateClass = marketStatusClass(signal, st.trendOnly, health.activeError);
       $("metricRoi").className = `hero-v ${trendOnlyMode ? trendStateClass : signClass(st.roi)}`;
 
       $("metricPriceLabel").textContent = trendOnlyMode ? "下一步动作" : "当前价格";
       $("metricPrice").textContent = trendOnlyMode ? trendView.nextAction : (st.currentPrice ? fmt(st.currentPrice, 2) : "-");
       const protection = st.trendOnly || {};
       const executionState = protection.executionState;
-      const actionStateClass = st.lastError || protection.riskLock || protection.pendingOrder?.status === "unknown_order_state" || ["RISK_LOCK", "POST_FILL_RISK_LOCK", "ACCOUNT_CONFLICT", "PLATFORM_UNSUPPORTED"].includes(executionState) ? "red"
+      const actionStateClass = ["error", "risk_locked"].includes(health.status) || protection.pendingOrder?.status === "unknown_order_state" || ["RISK_LOCK", "POST_FILL_RISK_LOCK", "ACCOUNT_CONFLICT", "PLATFORM_UNSUPPORTED"].includes(executionState) ? "red"
         : protection.position && protection.position.defensiveMode ? "orange"
         : ["READY_TO_OPEN", "ORDER_FILLED", "POSITION_MANAGED"].includes(executionState) ? "green"
         : ["MONITOR_STOPPED", "OPEN_ORDER_BLOCK", "REENTRY_COOLDOWN", "WAIT_LIVE_CONFIRM", "WAIT_ENTRY_ALIGNMENT", "ORDER_SUBMITTED", "WAIT_PULLBACK", "WAIT_BREAKOUT", "WAIT_CONTINUATION"].includes(executionState) ? "orange" : "muted";
       $("metricPrice").className = `hero-v ${trendOnlyMode ? actionStateClass : ""}`;
       $("metricBalanceLabel").textContent = trendOnlyMode ? "账户风险" : "账户资金";
-      $("metricBalance").textContent = trendOnlyMode ? (st.lastError || protection.riskLock ? "异常" : protection.pendingOrder ? "待确认" : "正常") : `${st.balance ?? "-"}`;
-      $("metricBalance").className = `hero-v ${trendOnlyMode ? (st.lastError || protection.riskLock ? "red" : protection.pendingOrder ? "orange" : "green") : ""}`;
+      $("metricBalance").textContent = trendOnlyMode ? (health.status === "risk_locked" ? "风控锁定" : health.status === "error" ? "异常" : health.status === "warning" ? "待确认" : "正常") : `${st.balance ?? "-"}`;
+      $("metricBalance").className = `hero-v ${trendOnlyMode ? (["error", "risk_locked"].includes(health.status) ? "red" : health.status === "warning" ? "orange" : "green") : ""}`;
 
       $("chipRunStatus").textContent = `状态 ${st.running ? "运行中" : "未运行"}`;
       $("chipPlatform").textContent = `平台 ${cfg.platform || "-"}`;
@@ -4162,14 +4170,14 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       replayPanel.hidden = cfg.strategyType !== "trend_only_v2";
       if (cfg.strategyType === "trend_only_v2") renderSignalReplay(st.trendOnly?.signalJournal || [], st.trendOnly?.signalStats24h, st.trendOnly?.signalStats72h);
 
-      const rightType = st.lastError ? "danger" : st.running ? "normal" : "warning";
-      const rightText = st.lastError ? "异常" : st.running ? "运行中" : "未运行";
+      const rightType = ["error", "risk_locked"].includes(health.status) ? "danger" : st.running ? "normal" : "warning";
+      const rightText = health.status === "risk_locked" ? "风控锁定" : health.status === "error" ? "异常" : st.running ? "运行中" : "未运行";
       $("rightRunTag").outerHTML = inlineStatus(rightType, rightText).replace("<span ", '<span id="rightRunTag" ');
 
       const pendingStatus = st.trendOnly?.pendingOrder?.status || "无";
       const rightStatusRows = trendOnlyMode ? [
         quick("当前状态", st.running ? "运行中" : "未运行", st.running ? "green" : "orange"),
-        quick("是否异常", st.lastError ? "异常" : "正常", st.lastError ? "red" : "green"),
+        quick("是否异常", ["error", "risk_locked"].includes(health.status) ? "异常" : "正常", ["error", "risk_locked"].includes(health.status) ? "red" : "green"),
         quick("pendingOrder", pendingStatus, pendingStatus === "unknown_order_state" ? "red" : ""),
         quick("最后动作", st.lastAction || trendView.nextAction || "-")
       ] : [
@@ -4199,7 +4207,10 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
         quick("日亏损限制", `${fmt(Number(cfg.trendOnlyConfig?.maxDailyLossRatio || 0) * 100, 2)}%`),
         quick("当前止损价", st.trendOnly?.position?.currentStopLossPrice ?? "-"),
         quick("当前 R", st.trendOnly?.position?.rMultiple ?? "-"),
-        quick("错误信息", st.lastError || "-", st.lastError ? "red" : "muted")
+        quick("当前异常", health.activeError || "-", health.activeError ? "red" : "muted"),
+        quick("最近一次错误", health.lastError || "-", health.lastError && !health.activeError ? "orange" : health.lastError ? "red" : "muted"),
+        quick("最近错误时间", health.lastErrorAt ? new Date(health.lastErrorAt).toLocaleString("zh-CN") : "-", "muted"),
+        ...(health.lastError && !health.activeError && !health.riskLock ? [quick("历史异常", "曾发生异常，当前已恢复", "orange")] : [])
       ] : [
         quick("账户余额", st.balance ?? "-"),
         quick("可用余额", st.available ?? "-"),
@@ -4217,7 +4228,11 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       } else {
         rightRiskRows.push(quick("止盈目标盈利", `${st.nextTakeProfitTargetU || 0} U`));
       }
-      if (!trendOnlyMode) rightRiskRows.push(quick("错误信息", st.lastError || "-", st.lastError ? "red" : "muted"));
+      if (!trendOnlyMode) rightRiskRows.push(
+        quick("当前异常", health.activeError || "-", health.activeError ? "red" : "muted"),
+        quick("最近一次错误", health.lastError || "-", health.lastError && !health.activeError ? "orange" : health.lastError ? "red" : "muted"),
+        quick("最近错误时间", health.lastErrorAt ? new Date(health.lastErrorAt).toLocaleString("zh-CN") : "-", "muted")
+      );
       $("rightRiskList").innerHTML = rightRiskRows.join("");
 
       const logs = Array.isArray(st.logs) ? st.logs : [];

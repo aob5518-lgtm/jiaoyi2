@@ -157,6 +157,17 @@ test("账户搜索和状态筛选控件存在并接入渲染", () => {
   assert.match(html, /raw\.endsWith\(quote\).*raw\.slice\(0, -quote\.length\)/s);
 });
 
+test("前端健康状态不再把历史 lastError 当作当前异常", () => {
+  const html = read("public/index.html"), view = read("public/strategy-view.js");
+  assert.match(html, /health\.status === "risk_locked" \? "风控锁定"/);
+  assert.match(html, /health\.activeError \|\| "-"/);
+  assert.match(html, /曾发生异常，当前已恢复/);
+  assert.match(html, /最近错误时间/);
+  assert.doesNotMatch(html, /st\.lastError \|\| protection\.riskLock/);
+  assert.doesNotMatch(html, /quick\("是否异常", st\.lastError/);
+  assert.match(view, /当前异常.*activeError/s);
+});
+
 test("历史交易主表保持 9 列，详细复盘字段进入四区 Modal", () => {
   const html = read("public/index.html");
   const head = html.match(/<table class="history-table">[\s\S]*?<thead>([\s\S]*?)<\/thead>/)[1];

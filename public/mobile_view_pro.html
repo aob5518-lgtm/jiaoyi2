@@ -617,7 +617,7 @@
       $("ovPositionSize").textContent = st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-");
       $("ovMargin").textContent = fmt(st.marginUsedU || 0, 4);
 
-      const tipText = st.lastError || st.lastAction || "状态正常";
+      const tipText = st.health?.activeError || st.activeError || st.lastAction || "状态正常";
       $("ovErrorBox").textContent = tipText;
 
       $("ovPnl").className = "metric-value " + (Number(st.pnl || 0) >= 0 ? "green" : "red");

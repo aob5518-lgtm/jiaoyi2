@@ -203,7 +203,9 @@
       ["日亏损限制", `${value(Number(c.maxDailyLossRatio) * 100, 2)}%`], ["连续亏损次数", trend.consecutiveLosses || 0],
       ["暂停至", pauseUntil], ["当前止损价", position ? value(position.currentStopLossPrice) : "-"],
       ["保护止损", trend.stopProtectionHealth || trend.stopSyncStatus || "NOT_REQUIRED", trend.riskLock ? "red" : ""], ["残留保护单", trend.orphanStopOrderCount ? `存在未确认撤销保护单：${trend.orphanStopOrderCount}` : "无", trend.orphanStopOrderCount ? "orange" : "green"], ["risk_lock", trend.riskLock ? trend.riskLockReason || "已锁定" : "未锁定", trend.riskLock ? "red" : "green"],
-      ["pendingOrder", orderState, orderClass], ["错误信息", st.lastError || "-", st.lastError ? "red" : "muted"]
+      ["pendingOrder", orderState, orderClass],
+      ["当前异常", st.health?.activeError || st.activeError || "-", (st.health?.activeError || st.activeError) ? "red" : "muted"],
+      ["最近一次错误", st.health?.lastError || st.lastError || "-", (st.health?.lastError || st.lastError) && !(st.health?.activeError || st.activeError) ? "orange" : "muted"]
     ];
     return { market, direction, weekend, opportunityStatus: opportunityStatus(trend), diagnosticRows: diagnosticRows(trend), diagnosticSummary: diagnosticSummary(trend), nextAction: nextAction(trend, st.lastAction), positionRows, strategyRows, rightStatusRows, rightRiskRows };
   }

@@ -762,7 +762,9 @@ function createAccountState(account) {
     cycleCount: 0,
     lastAction: "未启动",
     lastActionPrice: 0,
+    activeError: "",
     lastError: "",
+    lastErrorAt: 0,
     updatedAt: "",
     logs: [],
     profitHistory: Array.isArray(historyMap?.[account.id]) ? historyMap[account.id] : [],
@@ -822,6 +824,29 @@ function createAccountState(account) {
     running: !!account.running,
     symbol: account.symbol,
     tickRunning: false
+  };
+}
+
+function setAccountError(st, error) {
+  const message = error?.message || String(error || "未知错误");
+  st.activeError = message;
+  st.lastError = message;
+  st.lastErrorAt = Date.now();
+  return message;
+}
+
+function buildAccountHealth(acc, st = {}) {
+  const trend = st.trendOnly || {};
+  const riskLock = !!trend.riskLock;
+  const pendingOrder = !!trend.pendingOrder;
+  const activeError = st.activeError || "";
+  return {
+    status: riskLock ? "risk_locked" : activeError ? "error" : pendingOrder ? "warning" : "healthy",
+    activeError,
+    lastError: st.lastError || "",
+    lastErrorAt: Number(st.lastErrorAt || 0),
+    riskLock,
+    riskLockReason: trend.riskLockReason || ""
   };
 }
 
@@ -3276,12 +3301,14 @@ async function tickAccount(acc) {
   let accountSyncOk = true;
 
   try {
+    // 每轮只清除“当前异常”；lastError 保留最近一次错误供排查。
+    st.activeError = "";
     if (["trend_only_v1", "trend_only_v2"].includes(activeStrategyType)) { await trendRuntime.tick(acc, st); return; }
     st.symbol = acc.symbol;
     st.currentPrice = await getMarketPrice(acc);
     st.updatedAt = new Date().toLocaleString("zh-CN");
     // 当前轮基础请求恢复正常后，清除上一轮遗留的瞬时错误状态
-    st.lastError = "";
+    st.activeError = "";
 
     if (isSimulationAccount(acc)) {
       syncSimulationAccountView(st, acc);
@@ -3318,8 +3345,8 @@ async function tickAccount(acc) {
             st.running = false;
             persistAccountRunning(acc.id, false);
             st.lastAction = "检测到真实持仓方向与账户方向不一致，已自动停机";
-            st.lastError = `真实持仓方向冲突：rawSize=${rawSize}, 当前账户方向=${acc.side}`;
-            addLog(acc.id, st.lastError);
+            const conflictError = setAccountError(st, `真实持仓方向冲突：rawSize=${rawSize}, 当前账户方向=${acc.side}`);
+            addLog(acc.id, conflictError);
             updateDerivedTargets(st, acc);
             return;
           }
@@ -3350,7 +3377,7 @@ async function tickAccount(acc) {
         st.realEntryPrice = "-";
         st.realUnrealizedPnl = "-";
         st.realPositionSize = "-";
-        st.lastError = "Hyper账户读取失败: " + e.message;
+        setAccountError(st, "Hyper账户读取失败: " + e.message);
         addLog(acc.id, "Hyper账户读取失败: " + e.message);
         accountSyncOk = false;
       }
@@ -3405,7 +3432,7 @@ async function tickAccount(acc) {
         st.realEntryPrice = "-";
         st.realUnrealizedPnl = "-";
         st.realPositionSize = "-";
-        st.lastError = "Binance账户读取失败: " + e.message;
+        setAccountError(st, "Binance账户读取失败: " + e.message);
         addLog(acc.id, "Binance账户读取失败: " + e.message);
         accountSyncOk = false;
       }
@@ -3451,7 +3478,7 @@ async function tickAccount(acc) {
         st.realEntryPrice = "-";
         st.realUnrealizedPnl = "-";
         st.realPositionSize = "-";
-        st.lastError = "Extended账户读取失败: " + e.message;
+        setAccountError(st, "Extended账户读取失败: " + e.message);
         addLog(acc.id, "Extended账户读取失败: " + e.message);
         accountSyncOk = false;
       }
@@ -3506,7 +3533,7 @@ async function tickAccount(acc) {
         st.addCount = 0;
         st.lastAction = "simulation open";
         st.lastActionPrice = Number(order.price);
-        st.lastError = "";
+        st.activeError = "";
 
         syncSimulationAccountView(st, acc);
         updateDerivedTargets(st, acc);
@@ -3530,7 +3557,7 @@ async function tickAccount(acc) {
         st.addCount = 0;
         st.lastAction = "真实开仓";
         st.lastActionPrice = Number(order.price);
-        st.lastError = "";
+        st.activeError = "";
 
         updateDerivedTargets(st, acc);
         addLog(acc.id, `Hyper真实开仓，价格 ${order.price}，数量 ${order.size}，名义仓位 ${st.positionValueU}U`);
@@ -3551,7 +3578,7 @@ async function tickAccount(acc) {
         st.addCount = 0;
         st.lastAction = "真实开仓";
         st.lastActionPrice = Number(st.entryPrice);
-        st.lastError = "";
+        st.activeError = "";
 
         updateDerivedTargets(st, acc);
         addLog(acc.id, `Binance真实开仓，价格 ${st.entryPrice}，数量 ${st.positionQty}，名义仓位 ${st.positionValueU}U`);
@@ -3609,7 +3636,7 @@ async function tickAccount(acc) {
           st.addCount = 0;
           st.lastAction = "真实开仓";
           st.lastActionPrice = refPrice;
-          st.lastError = "";
+          st.activeError = "";
 
           updateDerivedTargets(st, acc);
           addLog(acc.id, `Extended真实开仓，参考价 ${refPrice}，数量 ${st.positionQty}，名义仓位 ${st.positionValueU}U`);
@@ -4052,7 +4079,7 @@ async function tickAccount(acc) {
       st.lastAction = "运行中";
     }
   } catch (err) {
-    st.lastError = err.message;
+    setAccountError(st, err);
     st.lastAction = "错误";
     if (isSmartStrategy(acc)) {
       const policy = classifyTradingError(err);
@@ -4412,6 +4439,7 @@ function buildDashboardPayload(acc, st) {
   const strategyType = getStrategyType(acc);
   if (isTrendOnly(acc)) trendRuntime.publish(acc, st);
   const { profitHistory: _profitHistory, ...state } = st;
+  const health = buildAccountHealth(acc, st);
   return {
     config: sanitizeAccountForDashboard(acc, st),
     state: {
@@ -4422,6 +4450,7 @@ function buildDashboardPayload(acc, st) {
       isTrendOnlyV2: isTrendOnlyV2(acc),
       isSmartStrategy: strategyType === "smart_regime_v1",
       isClassicStrategy: strategyType === "classic",
+      health,
       ...(isTrendOnly(acc) ? { trendOnly: state.trendOnly } : {})
     }
   };
@@ -4858,13 +4887,16 @@ const server = http.createServer((req, res) => {
         nextAddPrice: st.nextAddPrice || 0,
         takeProfitReachedNow,
         lastAction: st.lastAction || "",
+        activeError: st.activeError || "",
         lastError: st.lastError || "",
+        lastErrorAt: st.lastErrorAt || 0,
+        health: buildAccountHealth(acc, st),
         updatedAt: st.updatedAt || "",
         recentLogs: Array.isArray(st.logs) ? st.logs.slice(0, 5) : []
       };
     });
 
-    const errorItems = items.filter(item => !!item.lastError);
+    const errorItems = items.filter(item => ["error", "risk_locked"].includes(item.health.status));
 
     return jsonRes(res, 200, {
       ok: true,
@@ -4887,7 +4919,10 @@ const server = http.createServer((req, res) => {
         pnl: st.pnl,
         roi: st.roi,
         lastAction: st.lastAction,
+        activeError: st.activeError || "",
         lastError: st.lastError,
+        lastErrorAt: st.lastErrorAt || 0,
+        health: buildAccountHealth(acc, st),
         hasPosition: Number(st.positionQty || st.realPositionSize || st.trendOnly?.position?.positionSize || 0) > 0,
         hasPendingOrder: !!st.trendOnly?.pendingOrder,
         balance: st.balance,
@@ -4927,7 +4962,10 @@ const server = http.createServer((req, res) => {
         balance: st.balance,
         available: st.available,
         lastAction: st.lastAction,
+        activeError: st.activeError || "",
         lastError: st.lastError,
+        lastErrorAt: st.lastErrorAt || 0,
+        health: buildAccountHealth(acc, st),
         hasPosition: Number(st.positionQty || st.realPositionSize || st.trendOnly?.position?.positionSize || 0) > 0,
         hasPendingOrder: !!st.trendOnly?.pendingOrder,
         marginRatio: st.marginRatio || 0
@@ -5295,7 +5333,9 @@ const server = http.createServer((req, res) => {
     st.cycleCount = 0;
     st.lastAction = "已重置";
     st.lastActionPrice = 0;
+    st.activeError = "";
     st.lastError = "";
+    st.lastErrorAt = 0;
     st.logs = [];
     st.realEntryPrice = "-";
     st.realUnrealizedPnl = "-";
