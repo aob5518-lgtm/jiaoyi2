@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const TrendOnly = require("./trend_only");
 const TrendOnlyV2 = require("./trend_only_v2");
 const TrendOnlyV3 = require("./trend_only_v3");
+const { buildStrategyAnalytics } = require("./strategy/trend_v3/analytics");
 const { createTrendRuntime } = require("./trend_runtime");
 const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2", "trend_only_v3"]);
 function getStrategyType(acc = {}) {
@@ -4772,6 +4773,19 @@ const server = http.createServer((req, res) => {
   if (pathname.startsWith("/api/trend-only")) {
     if (!isAuthenticated(req)) return jsonRes(res, 401, { ok: false, error: "请先登录" });
     const acc = getCurrentAccount(), st = stateMap[acc.id];
+    if (req.method === "GET" && pathname === "/api/trend-only/analytics") {
+      const target = getAccountById(parsed.query.id || acc.id);
+      if (!target) return jsonRes(res, 404, { ok: false, error: "账户不存在" });
+      const targetState = stateMap[target.id], normalized = (targetState?.profitHistory || []).map(item => normalizeProfitVoucher(item, target.id));
+      const normalizedConfig = TrendOnlyV3.normalizeConfig(target.trendOnlyConfig || {});
+      const currentHash = crypto.createHash("sha256").update(JSON.stringify(normalizedConfig)).digest("hex");
+      const analytics = buildStrategyAnalytics(normalized, {
+        strategyVersion: String(parsed.query.strategyVersion || "trend_only_v3"),
+        experimentId: String(parsed.query.experimentId || normalizedConfig.experimentId),
+        configHash: String(parsed.query.configHash || currentHash)
+      });
+      return jsonRes(res, 200, { ok: true, accountId: target.id, ...analytics });
+    }
     if (req.method === "GET" && pathname === "/api/trend-only/signal-journal") {
       const target = getAccountById(parsed.query.id || acc.id);
       if (!target) return jsonRes(res, 404, { ok: false, error: "账户不存在" });
@@ -5461,7 +5475,11 @@ const server = http.createServer((req, res) => {
 
     if (!st) return jsonRes(res, 200, { ok: true, items: [] });
 
-    const items = (st.profitHistory || []).map(item => normalizeProfitVoucher(item, accountId));
+    const account = getAccountById(accountId);
+    let items = (st.profitHistory || []).map(item => normalizeProfitVoucher(item, accountId));
+    if (parsed.query.strategyVersion !== "all" && getStrategyType(account) === "trend_only_v3") items = items.filter(item => item.strategyVersion === "trend_only_v3");
+    if (parsed.query.experimentId) items = items.filter(item => item.experimentId === parsed.query.experimentId);
+    if (parsed.query.configHash) items = items.filter(item => item.configHash === parsed.query.configHash);
 
     return jsonRes(res, 200, { ok: true, items });
   }

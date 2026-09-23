@@ -11,6 +11,10 @@ const { calculatePositionSize } = require("./strategy/trend_v3/position_sizing")
 const { buildTradeCostModel } = require("./strategy/trend_v3/costs");
 const { evaluateExit } = require("./strategy/trend_v3/exits");
 const { buildDecisionFunnel } = require("./strategy/trend_v3/diagnostics");
+const { evaluateReentry, recordExitState } = require("./strategy/trend_v3/reentry");
+const { compareV2Shadow } = require("./strategy/trend_v3/shadow");
+const { registerMissedCandidate, updateMissedOpportunities } = require("./strategy/trend_v3/posthoc");
+const { buildCandidateSetup } = require("./strategy/trend_v3/candidate");
 
 function initialState(equity, now) {
   return { ...V2.initialState(equity, now), strategyVersion: "trend_only_v3", reentryState: {}, trendEntryCounts: {}, shadowComparisons: [], missedOpportunityJournal: [] };
@@ -21,9 +25,9 @@ function tryOpenTrendOnlyPosition(account, signal, input) {
   if (signal.entryPermission !== "allowed" || !signal.tradeDirection) return { allowed: false, reason: (signal.blockers || []).join("；") || "当前没有可执行的 V3 setup" };
   if (!account.paper) return { allowed: false, reason: "Trend Only V3 当前仅开放 Paper；Live 须完成 Forward Test 后另行启用。" };
   if (state.riskLock) return { allowed: false, reason: `risk_lock：${state.riskLockReason || "安全锁定"}` };
-  const trendId = state.trendContext?.trendId || `${signal.tradeDirection}:${signal.signalTime}`;
-  if (Number(state.trendEntryCounts?.[trendId] || 0) >= config.maxEntriesPerTrend) return { allowed: false, reason: `同一趋势最多允许 ${config.maxEntriesPerTrend} 次入场` };
-  if (Number(state.lastEntrySignalTime) === Number(signal.signalTime)) return { allowed: false, reason: "同一根 K 线禁止重复开仓" };
+  const reentry = evaluateReentry(state, signal, { ...config, entryIntervalMs: V1.INTERVALS[config.entryTimeframe] });
+  if (!reentry.allowed) return { allowed: false, reason: reentry.reason, setupState: reentry.state };
+  const trendId = reentry.trendId;
   const entryPrice = Number(input.price || input.close), atr = Number(input.atr);
   const stop = calculateInitialStop({ side: signal.tradeDirection, entryMode: signal.entryMode, entryPrice, atr, signal, input, config });
   if (!stop.allowed) return stop;
@@ -88,6 +92,7 @@ function recordClose(account, fill, reason, now = Date.now()) {
   voucher.potentialR = position?.potentialR;
   voucher.whyEntered = position?.whyEntered || "";
   voucher.whyExited = reason;
+  recordExitState(account.trendOnlyState, position, voucher);
   return voucher;
 }
 
@@ -109,5 +114,6 @@ module.exports = {
   indicatorsFor, directionOf, detectSwings, detectMarketRegime, initialState,
   tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose,
   updateTrendContext, appendShadowSignal, journalRetentionBars: V2.journalRetentionBars,
-  signalStats: V2.signalStats, buildDecisionFunnel, buildTradeCostModel
+  signalStats: V2.signalStats, buildDecisionFunnel, buildTradeCostModel,
+  compareV2Shadow, registerMissedCandidate, updateMissedOpportunities, buildCandidateSetup
 };

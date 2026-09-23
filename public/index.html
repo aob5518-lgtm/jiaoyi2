@@ -761,6 +761,41 @@
       gap:12px;
     }
 
+    .v3-cockpit-grid,
+    .analytics-summary,
+    .analytics-mode-grid{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:12px;
+    }
+
+    .v3-funnel{
+      display:grid;
+      grid-template-columns:repeat(5,minmax(0,1fr));
+      gap:8px;
+    }
+
+    .v3-funnel-step,
+    .analytics-card{
+      border:1px solid rgba(63,217,255,.18);
+      background:rgba(4,20,31,.72);
+      border-radius:10px;
+      padding:12px;
+      min-width:0;
+    }
+
+    .v3-funnel-step strong,
+    .analytics-card strong{display:block;color:var(--cyan);font-size:18px;margin-top:5px;font-variant-numeric:tabular-nums;}
+    .v3-funnel-step span,
+    .analytics-card span{color:var(--muted);font-size:11px;}
+    .analytics-mode-grid{margin-top:12px;}
+    .analytics-empty{color:var(--muted);padding:18px;text-align:center;}
+
+    @media (max-width: 900px){
+      .v3-cockpit-grid,.analytics-summary,.analytics-mode-grid{grid-template-columns:1fr;}
+      .v3-funnel{grid-template-columns:1fr 1fr;}
+    }
+
     .history-stat{
       border-radius:18px;
       padding:16px;
@@ -2863,6 +2898,7 @@
             <button class="tab-btn active" data-tab="overview">总览</button>
             <button class="tab-btn" data-tab="config">参数配置</button>
             <button class="tab-btn" data-tab="history">历史交易</button>
+            <button class="tab-btn" data-tab="analytics">策略分析</button>
           </div>
         </div>
       </div>
@@ -2935,6 +2971,26 @@
               <div class="block-head"><div class="block-title">为什么不开仓？</div><span class="tag">DIAGNOSIS</span></div>
               <div id="trendDiagnosticsRows" class="data-list"></div>
               <div id="trendDiagnosticsSummary" class="left-note" style="margin-top:12px;"></div>
+            </div>
+            <div id="v3DecisionCockpit" hidden style="margin-top:16px;">
+              <div class="block">
+                <div class="block-head"><div class="block-title">Trend Only V3 决策漏斗</div><span class="tag">DECISION</span></div>
+                <div id="v3DecisionFunnel" class="v3-funnel"></div>
+              </div>
+              <div class="v3-cockpit-grid" style="margin-top:12px;">
+                <div class="block" id="v3CandidatePanel">
+                  <div class="block-head"><div class="block-title">候选机会</div><span class="tag">CANDIDATE</span></div>
+                  <div id="v3CandidateRows" class="data-list"></div>
+                </div>
+                <div class="block" id="v3PositionCockpit">
+                  <div class="block-head"><div class="block-title">持仓驾驶舱</div><span class="tag">POSITION</span></div>
+                  <div id="v3PositionRows" class="data-list"></div>
+                </div>
+                <div class="block">
+                  <div class="block-head"><div class="block-title">系统健康</div><span class="tag">HEALTH</span></div>
+                  <div id="v3HealthRows" class="data-list"></div>
+                </div>
+              </div>
             </div>
             <details class="block" id="signalReplayPanel" hidden style="margin-top:16px;">
               <summary class="block-title" style="cursor:pointer;">信号回放 / 错过行情分析</summary>
@@ -3344,6 +3400,21 @@
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+
+          <div id="tab-analytics" class="tab-panel" style="display:none;">
+            <div class="block">
+              <div class="block-head">
+                <div><div class="block-title">Trend Only V3 策略分析</div><div class="config-section-note" id="analyticsScope">按当前实验与配置隔离统计</div></div>
+                <button class="ghost" id="refreshAnalyticsBtn">刷新分析</button>
+              </div>
+              <div id="analyticsSummary" class="analytics-summary"></div>
+              <div id="analyticsModes" class="analytics-mode-grid"></div>
+            </div>
+            <div class="overview-grid" style="margin-top:12px;">
+              <div class="block"><div class="block-head"><div class="block-title">V2 Shadow 对照</div><span class="tag">NO ORDER</span></div><div id="analyticsShadow" class="data-list"></div></div>
+              <div class="block"><div class="block-head"><div class="block-title">错过机会事后分析</div><span class="tag">POST-HOC</span></div><div id="analyticsMissed" class="data-list"></div></div>
             </div>
           </div>
         </div>
@@ -3806,6 +3877,42 @@
       else document.body.classList.remove("history-focus", "history-status-open");
     }
 
+    const v3ModeLabel = value => ({ breakout_entry: "突破", pullback_entry: "回踩", continuation_entry: "延续" })[value] || value || "等待形态";
+    const percentage = value => Number.isFinite(Number(value)) ? `${fmt(Number(value) * 100, 1)}%` : "数据不足";
+
+    function renderV3Cockpit(st) {
+      const trend = st.trendOnly || {}, signal = trend.signal || {}, candidate = trend.candidateSetup, position = trend.position;
+      $("v3DecisionFunnel").innerHTML = (trend.decisionFunnel || []).map(step => `<div class="v3-funnel-step"><span>${safeText(step.label)}</span><strong class="${step.status === "BLOCK" ? "red" : step.status === "PASS" ? "green" : "orange"}">${safeText(step.status)}</strong></div>`).join("") || `<div class="analytics-empty">等待首根已收盘 K 线</div>`;
+      $("v3CandidatePanel").hidden = !!position;
+      $("v3PositionCockpit").hidden = !position;
+      if (candidate) $("v3CandidateRows").innerHTML = [
+        row("方向 / Setup", `${candidate.direction === "long" ? "做多" : "做空"} · ${v3ModeLabel(candidate.setupType)}`),
+        row("趋势分 / 入场分", `${fmt(candidate.trendScore, 1)} / ${fmt(candidate.entryScore, 1)}`),
+        row("等级 / 风险倍率", `${candidate.grade || "-"} / ${fmt(signal.riskMultiplier ?? 0, 2)}x`),
+        row("触发区间", Array.isArray(candidate.triggerZone) ? `${fmt(candidate.triggerZone[0], 2)} - ${fmt(candidate.triggerZone[1], 2)}` : "-"),
+        row("计划止损", candidate.plannedStop == null ? "-" : fmt(candidate.plannedStop, 2)),
+        row("计划风险", `${fmt(candidate.plannedRiskU, 2)} U · ${percentage(candidate.riskPercent)}`),
+        row("成本 / 潜在收益", `${candidate.costR == null ? "-" : fmt(candidate.costR, 2) + "R"} / ${candidate.potentialR == null ? "-" : fmt(candidate.potentialR, 2) + "R"}`),
+        row("等待原因", candidate.waitingReason || "等待确认")
+      ].join("");
+      else $("v3CandidateRows").innerHTML = row("当前候选", "暂无具备方向的候选机会");
+      if (position) $("v3PositionRows").innerHTML = [
+        row("方向 / 入场", `${position.side === "long" ? "做多" : "做空"} · ${v3ModeLabel(position.entryMode)}`),
+        row("入场价 / 当前价", `${fmt(position.entryPrice, 2)} / ${fmt(st.currentPrice, 2)}`),
+        row("当前止损", fmt(position.currentStopLossPrice, 2)),
+        row("grossR / netR", `${fmt(position.grossR ?? position.rMultiple, 2)} / ${fmt(position.netR ?? position.rMultiple, 2)}`),
+        row("MFE_R / MAE_R", `${fmt(position.MFE_R, 2)} / ${fmt(position.MAE_R, 2)}`),
+        row("防守模式", position.defensiveMode ? "已开启" : "未开启", position.defensiveMode ? "orange" : "green")
+      ].join("");
+      $("v3HealthRows").innerHTML = [
+        row("策略状态", trend.strategyState || signal.setupState || "SCANNING"),
+        row("风险状态", trend.riskState || "NORMAL", trend.riskState === "RISK_LOCKED" ? "red" : "green"),
+        row("系统健康", trend.systemHealth || "HEALTHY", trend.systemHealth === "ERROR" ? "red" : "green"),
+        row("执行状态", trend.executionState || "NO_SIGNAL"),
+        row("保护止损", trend.stopProtectionHealth || "NOT_REQUIRED")
+      ].join("");
+    }
+
     function fillConfig(cfg) {
       $("name").value = cfg.name || "";
       $("platform").value = cfg.platform || "hyperliquid";
@@ -4075,7 +4182,7 @@
       const directionText = effectiveSide === "long" ? "做多" : effectiveSide === "short" ? "做空" : "自动多空";
       $("topbarAccountName").textContent = `当前账户：${cfg.name || "-"}`;
       $("topbarAccountMeta").textContent =
-        `${cfg.name || "-"} ｜ ${cfg.platform || "-"} ｜ ${tradingPair(cfg.symbol, cfg.quoteAsset)} ｜ ${cfg.strategyLabel || (trendOnlyMode ? (cfg.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1") : smartMode ? "智能趋势策略 V1" : "经典补仓策略")} ｜ ${cfg.tradeMode === "simulation" || cfg.simulationEnabled ? "模拟" : "实盘"} ｜ ${st.running ? "运行中" : "未运行"}`;
+        `${cfg.name || "-"} ｜ ${cfg.platform || "-"} ｜ ${tradingPair(cfg.symbol, cfg.quoteAsset)} ｜ ${cfg.strategyLabel || (trendOnlyMode ? (cfg.strategyType === "trend_only_v3" ? "Trend Only V3" : cfg.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1") : smartMode ? "智能趋势策略 V1" : "经典补仓策略")} ｜ ${cfg.tradeMode === "simulation" || cfg.simulationEnabled ? "模拟" : "实盘"} ｜ ${st.running ? "运行中" : "未运行"}`;
 
       $("metricPnl").textContent = `${fmt(st.pnl, 2)} U`;
       $("metricPnl").className = `hero-v ${signClass(st.pnl)}`;
@@ -4168,9 +4275,11 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
         $("trendDiagnosticsRows").innerHTML = (trendView.diagnosticRows || []).map(([key, value, cls]) => row(key, value, cls)).join("");
         $("trendDiagnosticsSummary").textContent = trendView.diagnosticSummary || "等待趋势诊断数据";
       }
+      $("v3DecisionCockpit").hidden = cfg.strategyType !== "trend_only_v3";
+      if (cfg.strategyType === "trend_only_v3") renderV3Cockpit(st);
       const replayPanel = $("signalReplayPanel");
-      replayPanel.hidden = cfg.strategyType !== "trend_only_v2";
-      if (cfg.strategyType === "trend_only_v2") renderSignalReplay(st.trendOnly?.signalJournal || [], st.trendOnly?.signalStats24h, st.trendOnly?.signalStats72h);
+      replayPanel.hidden = !["trend_only_v2", "trend_only_v3"].includes(cfg.strategyType);
+      if (["trend_only_v2", "trend_only_v3"].includes(cfg.strategyType)) renderSignalReplay(st.trendOnly?.signalJournal || [], st.trendOnly?.signalStats24h, st.trendOnly?.signalStats72h);
 
       const rightType = ["error", "risk_locked"].includes(health.status) ? "danger" : st.running ? "normal" : "warning";
       const rightText = health.status === "risk_locked" ? "风控锁定" : health.status === "error" ? "异常" : st.running ? "运行中" : "未运行";
@@ -4254,6 +4363,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
     const durationLabel = milliseconds => { if (!Number.isFinite(Number(milliseconds))) return "数据不足"; const totalMinutes = Math.max(0, Math.round(Number(milliseconds) / 60000)); return totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)}小时${totalMinutes % 60}分` : `${totalMinutes}分钟`; };
     const legacyOf = item => item.legacyRecord === true || !item.entryMode || item.atrAtEntry == null || item.initialStopLossPrice == null || item.actualRiskAmount == null || item.maximumAdverseExcursion == null || item.maximumFavorableExcursion == null;
     const exitTimeOf = item => Number(item.exitTime) || Date.parse(item.exitTime || item.time || "") || 0;
+    const rOf = item => latestStatusData?.config?.strategyType === "trend_only_v3" ? Number(item.netR ?? item.rMultiple) : Number(item.rMultiple);
     function filteredHistory() {
       const now = Date.now(), date = $("historyDateFilter").value, side = $("historySideFilter").value, entry = $("historyEntryFilter").value, exit = $("historyExitFilter").value, result = $("historyResultFilter").value;
       const cutoff = date === "24h" ? now - 86400000 : date === "7d" ? now - 7 * 86400000 : date === "30d" ? now - 30 * 86400000 : 0;
@@ -4261,28 +4371,28 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       const rows = latestHistoryItems.filter(item => (!cutoff || exitTimeOf(item) >= cutoff) && (side === "all" || String(item.side).toLowerCase() === side) && (entry === "all" || item.entryMode === entry) && exitMatch(item) && (result === "all" || (result === "win" ? netPnlOf(item) > 0 : netPnlOf(item) < 0)));
       const sort = $("historySort").value;
       const sortable = value => value !== null && value !== undefined && Number.isFinite(Number(value)) ? Number(value) : -Infinity;
-      rows.sort((a, b) => sort === "netPnl" ? netPnlOf(b) - netPnlOf(a) : sort === "r" ? sortable(b.rMultiple) - sortable(a.rMultiple) : sort === "duration" ? sortable(durationOf(b)) - sortable(durationOf(a)) : exitTimeOf(b) - exitTimeOf(a));
+      rows.sort((a, b) => sort === "netPnl" ? netPnlOf(b) - netPnlOf(a) : sort === "r" ? sortable(rOf(b)) - sortable(rOf(a)) : sort === "duration" ? sortable(durationOf(b)) - sortable(durationOf(a)) : exitTimeOf(b) - exitTimeOf(a));
       return rows;
     }
     function renderHistoryStats(rows) {
       const total = rows.length, net = rows.reduce((sum, item) => sum + netPnlOf(item), 0), wins = rows.filter(item => netPnlOf(item) > 0).length;
-      const rRows = rows.filter(item => item.rMultiple !== null && item.rMultiple !== undefined && Number.isFinite(Number(item.rMultiple)));
+      const rRows = rows.filter(item => Number.isFinite(rOf(item)));
       const feeRows = rows.filter(item => item.tradingFee !== null && item.tradingFee !== undefined && Number.isFinite(Number(item.tradingFee)) && !String(item.costSource || "").startsWith("legacy"));
       const durations = rows.map(durationOf).filter(Number.isFinite), positive = rows.reduce((sum, item) => sum + Math.max(0, netPnlOf(item)), 0), negative = rows.reduce((sum, item) => sum + Math.max(0, -netPnlOf(item)), 0);
       let streak = 0, maxStreak = 0; rows.slice().sort((a, b) => exitTimeOf(a) - exitTimeOf(b)).forEach(item => { streak = netPnlOf(item) < 0 ? streak + 1 : 0; maxStreak = Math.max(maxStreak, streak); });
       $("historyTotalTrades").textContent = total;
       $("historyTotalPnl").textContent = total ? `${fmt(net, 2)} U` : "数据不足"; $("historyTotalPnl").className = `history-stat-v ${total ? signClass(net) : ""}`;
       $("historyWinRate").textContent = total ? `${fmt(wins / total * 100, 2)}%` : "数据不足";
-      $("historyAvgR").textContent = rRows.length ? `${fmt(rRows.reduce((sum, item) => sum + Number(item.rMultiple), 0) / rRows.length, 2)} R` : "数据不足";
+      $("historyAvgR").textContent = rRows.length ? `${fmt(rRows.reduce((sum, item) => sum + rOf(item), 0) / rRows.length, 2)} R` : "数据不足";
       $("historyProfitFactor").textContent = positive > 0 && negative > 0 ? fmt(positive / negative, 2) : "数据不足";
       $("historyTotalFee").textContent = rows.length && feeRows.length === rows.length ? `${fmt(feeRows.reduce((sum, item) => sum + Number(item.tradingFee), 0), 2)} U` : "数据不足";
       $("historyAvgDuration").textContent = durations.length ? durationLabel(durations.reduce((a, b) => a + b, 0) / durations.length) : "数据不足";
       $("historyMaxLossStreak").textContent = total ? `${maxStreak} 笔` : "数据不足";
     }
     function renderStrategyGroups(rows) {
-      const box = $("historyStrategyGroups"), enabled = latestStatusData?.config?.strategyType === "trend_only_v2"; box.hidden = !enabled;
+      const box = $("historyStrategyGroups"), enabled = ["trend_only_v2", "trend_only_v3"].includes(latestStatusData?.config?.strategyType); box.hidden = !enabled;
       if (!enabled) return;
-      box.innerHTML = ["breakout_entry", "pullback_entry", "continuation_entry"].map(mode => { const subset = rows.filter(item => item.entryMode === mode), r = subset.filter(item => Number.isFinite(Number(item.rMultiple))), wins = subset.filter(item => netPnlOf(item) > 0).length, net = subset.reduce((sum, item) => sum + netPnlOf(item), 0); return `<div class="history-group"><strong>${safeText(modeLabel(mode))}入场</strong>交易数 ${subset.length} · 胜率 ${subset.length ? fmt(wins / subset.length * 100, 1) + "%" : "数据不足"}<br>avgR ${r.length ? fmt(r.reduce((sum,item)=>sum+Number(item.rMultiple),0)/r.length,2) : "数据不足"} · 净盈亏 <span class="${signClass(net)}">${subset.length ? fmt(net,2)+" U" : "数据不足"}</span></div>`; }).join("");
+      box.innerHTML = ["breakout_entry", "pullback_entry", "continuation_entry"].map(mode => { const subset = rows.filter(item => item.entryMode === mode), r = subset.filter(item => Number.isFinite(rOf(item))), wins = subset.filter(item => netPnlOf(item) > 0).length, net = subset.reduce((sum, item) => sum + netPnlOf(item), 0); return `<div class="history-group"><strong>${safeText(modeLabel(mode))}入场</strong>交易数 ${subset.length} · 胜率 ${subset.length ? fmt(wins / subset.length * 100, 1) + "%" : "数据不足"}<br>avgR ${r.length ? fmt(r.reduce((sum,item)=>sum+rOf(item),0)/r.length,2) : "数据不足"} · 净盈亏 <span class="${signClass(net)}">${subset.length ? fmt(net,2)+" U" : "数据不足"}</span></div>`; }).join("");
     }
     function renderHistoryView() {
       filteredHistoryItems = filteredHistory(); renderHistoryStats(filteredHistoryItems); renderStrategyGroups(filteredHistoryItems);
@@ -4294,7 +4404,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
           <td>${fmt(item.entryPrice,2)}<span class="history-price-arrow">→</span>${fmt(item.exitPrice,2)}</td>
           <td><span class="history-badge ${reasonClass}">${safeText(reason)}</span></td>
           <td>${safeText(durationLabel(durationOf(item)))}</td>
-          <td>${item.rMultiple == null ? "数据不足" : `${fmt(item.rMultiple,2)} R`}</td>
+          <td>${Number.isFinite(rOf(item)) ? `${fmt(rOf(item),2)} R` : "数据不足"}</td>
           <td class="history-net ${signClass(net)}">${fmt(net,2)} U</td>
           <td class="history-fee">${item.tradingFee == null ? "数据不足" : `${fmt(item.tradingFee,2)} U`}</td>
           <td><button class="ghost" style="min-height:34px;padding:7px 10px;font-size:11px;" onclick="openVoucherModal(${idx})">查看复盘</button></td>
@@ -4371,6 +4481,38 @@ window.closeVoucherModal = function() {
   $("voucherModalMask").classList.remove("show");
 };
 
+    function renderAnalytics(data) {
+      const summary = data?.summary || {}, cfg = latestStatusData?.config || {}, trend = latestStatusData?.state?.trendOnly || {};
+      $("analyticsScope").textContent = `版本 ${data?.strategyVersion || "trend_only_v3"} · 实验 ${data?.experimentId || cfg.trendOnlyConfig?.experimentId || "-"} · 配置 ${(data?.configHash || "-").slice(0, 12)}`;
+      const cards = [
+        ["样本数", summary.trades ?? 0], ["净盈亏", summary.trades ? `${fmt(summary.netPnl, 2)} U` : "数据不足"],
+        ["胜率", percentage(summary.winRate)], ["平均 netR", summary.avgNetR == null ? "数据不足" : `${fmt(summary.avgNetR, 2)} R`],
+        ["期望值", summary.expectancyR == null ? "数据不足" : `${fmt(summary.expectancyR, 2)} R`], ["Profit Factor", summary.profitFactor == null ? "数据不足" : fmt(summary.profitFactor, 2)],
+        ["手续费拖累", percentage(summary.feeDrag)], ["最大回撤", summary.trades ? `${fmt(summary.maxDrawdown, 2)} U` : "数据不足"],
+        ["最大连续亏损", summary.trades ? `${summary.maxConsecutiveLoss || 0} 笔` : "数据不足"]
+      ];
+      $("analyticsSummary").innerHTML = cards.map(([key, value]) => `<div class="analytics-card"><span>${safeText(key)}</span><strong>${safeText(value)}</strong></div>`).join("");
+      $("analyticsModes").innerHTML = ["breakout_entry", "pullback_entry", "continuation_entry"].map(mode => {
+        const value = data?.modes?.[mode] || {};
+        return `<div class="analytics-card"><span>${safeText(v3ModeLabel(mode))}入场</span><strong>${value.trades || 0} 笔</strong><div class="config-section-note">胜率 ${percentage(value.winRate)} · avg netR ${value.avgNetR == null ? "数据不足" : fmt(value.avgNetR, 2) + "R"}<br>期望 ${value.expectancyR == null ? "数据不足" : fmt(value.expectancyR, 2) + "R"} · 净盈亏 ${value.trades ? fmt(value.netPnl, 2) + " U" : "数据不足"}</div></div>`;
+      }).join("");
+      const shadow = trend.shadowStats || {}, comparison = trend.shadowComparison || {};
+      $("analyticsShadow").innerHTML = [row("样本", shadow.total || 0), row("V2 独有机会", shadow.v2Only || 0), row("V3 独有机会", shadow.v3Only || 0), row("共同机会", shadow.both || 0), row("最近 V2 / V3", `${comparison.v2Decision || "-"} / ${comparison.v3Decision || "-"}`), row("下单权限", "Shadow 永久禁用", "green")].join("");
+      const missed = trend.missedOpportunityStats || {};
+      $("analyticsMissed").innerHTML = [row("候选样本", missed.candidates || 0), row("事后错过趋势", missed.missedTrends || 0), row("正确阻断", missed.goodBlocks || 0), row("用途", "仅用于事后分析，不参与实时决策")].join("");
+    }
+
+    async function loadAnalytics() {
+      if (!currentAccountId) return;
+      if (latestStatusData?.config?.strategyType !== "trend_only_v3") {
+        renderAnalytics({ strategyVersion: latestStatusData?.config?.strategyType, summary: {}, modes: {} });
+        return;
+      }
+      const res = await api(`/api/trend-only/analytics?id=${encodeURIComponent(currentAccountId)}`);
+      if (res.ok) renderAnalytics(res);
+      else showToast(res.error || "策略分析读取失败", "error");
+    }
+
     async function loadHistory() {
       if (!currentAccountId) return;
       const res = await api(`/api/profit-history?id=${encodeURIComponent(currentAccountId)}`);
@@ -4394,6 +4536,7 @@ window.closeVoucherModal = function() {
       renderTime();
       renderAccountList(data.accounts || [], data.currentAccountId, data.state || {});
       renderOverview(data.config || {}, data.state || {});
+      if (currentTab === "analytics") loadAnalytics();
 
       if (forceFill || !hasInitializedForm) {
         fillConfig(data.config || {});
@@ -4660,7 +4803,7 @@ window.closeVoucherModal = function() {
     }
 
     document.querySelectorAll(".tab-btn").forEach(btn => {
-      btn.addEventListener("click", () => { setTab(btn.dataset.tab); if (btn.dataset.tab === "history") loadHistory(); });
+      btn.addEventListener("click", () => { setTab(btn.dataset.tab); if (btn.dataset.tab === "history") loadHistory(); if (btn.dataset.tab === "analytics") loadAnalytics(); });
     });
 
     $("openCreateModalBtn").addEventListener("click", () => openModal("createModalMask"));
@@ -4715,6 +4858,7 @@ window.closeVoucherModal = function() {
       await loadHistory();
       showToast("历史记录已刷新", "info");
     });
+    $("refreshAnalyticsBtn").addEventListener("click", async () => { await loadAnalytics(); showToast("策略分析已刷新", "info"); });
     ["historyDateFilter","historySideFilter","historyEntryFilter","historyExitFilter","historyResultFilter","historySort"].forEach(id => $(id).addEventListener("change", renderHistoryView));
     $("exportHistoryCsvBtn").addEventListener("click", exportHistoryCsv);
     $("historyStatusBtn").addEventListener("click", () => document.body.classList.toggle("history-status-open"));

@@ -26,6 +26,7 @@ function createTrendRuntime(d) {
   const approvals = new Map();
   // V2+ share the hardened execution layer; strategy math remains version-specific.
   function isV2(acc) { return ["trend_only_v2", "trend_only_v3"].includes(acc?.strategyType); }
+  function isV3(acc) { return acc?.strategyType === "trend_only_v3"; }
   function engine(acc) { return acc?.strategyType === "trend_only_v3" ? V3 : acc?.strategyType === "trend_only_v2" ? V2 : V1; }
   function get(acc) {
     const initial = engine(acc).initialState();
@@ -152,6 +153,10 @@ function createTrendRuntime(d) {
       riskState: s.riskLock ? "RISK_LOCKED" : "NORMAL",
       systemHealth: st.activeError ? "ERROR" : "HEALTHY",
       decisionFunnel: typeof T.buildDecisionFunnel === "function" ? T.buildDecisionFunnel(signal, { riskBlocked: !!s.riskLock, executionBlocked: !paper(acc) && acc.strategyType === "trend_only_v3" }) : null,
+      candidateSetup: s.candidateSetup || null,
+      shadowComparison: isV3(acc) ? (s.shadowComparisons || []).at(-1) || null : null,
+      shadowStats: isV3(acc) ? s.shadowStats || null : null,
+      missedOpportunityStats: isV3(acc) ? s.missedOpportunityStats || null : null,
       riskLock: !!s.riskLock,
       riskLockReason: s.riskLockReason || "",
       stopOrderId: s.stopOrderId || "",
@@ -374,6 +379,10 @@ function createTrendRuntime(d) {
       if (o.kind === "open") {
         s.position = T.positionFromFill(o.plan, result.fill, o.createdAt, o.config);
         s.lastEntrySignalTime = o.plan.signal.signalTime;
+        if (isV3(acc)) {
+          s.trendEntryCounts ||= {};
+          s.trendEntryCounts[o.plan.trendId] = Number(s.trendEntryCounts[o.plan.trendId] || 0) + 1;
+        }
         log(acc, st, `趋势开仓成功：${acc.symbol} ${s.position.side === "long" ? "做多" : "做空"}，${s.position.leverage}倍杠杆，入场价 ${s.position.entryPrice}，初始止损 ${s.position.initialStopLossPrice}`);
         if (isV2(acc) && s.position.postFillRiskInvalid) {
           s.riskLock = true; s.riskLockType = "POST_FILL_RISK_LOCK"; s.riskLockReason = "真实成交后无法建立合法保护止损，立即减仓退出";
@@ -521,6 +530,26 @@ function createTrendRuntime(d) {
           });
           T.updateTrendContext(s, s.signal, i);
           T.appendShadowSignal(s, acc.id, s.signal, i, (s.signal.blockers || []).join("；"));
+          if (isV3(acc)) {
+            T.updateMissedOpportunities(s, values[0].candles);
+            T.registerMissedCandidate(s, s.signal, i);
+            s.candidateSetup = T.buildCandidateSetup(account(acc, st), s.signal, i, c);
+            if (c.shadowComparison) {
+              const comparison = T.compareV2Shadow(acc.id, i, s.signal);
+              s.shadowComparisons ||= [];
+              if (!s.shadowComparisons.some(item => item.time === comparison.time)) s.shadowComparisons.push(comparison);
+              if (s.shadowComparisons.length > T.journalRetentionBars(c.entryTimeframe)) s.shadowComparisons.splice(0, s.shadowComparisons.length - T.journalRetentionBars(c.entryTimeframe));
+              const rows = s.shadowComparisons;
+              s.shadowStats = {
+                total: rows.length,
+                v2Only: rows.filter(item => item.v2Decision === "allowed" && item.v3Decision !== "allowed").length,
+                v3Only: rows.filter(item => item.v3Decision === "allowed" && item.v2Decision !== "allowed").length,
+                both: rows.filter(item => item.v3Decision === "allowed" && item.v2Decision === "allowed").length
+              };
+            }
+            const missed = s.missedOpportunityJournal || [], classified = missed.flatMap(item => Object.values(item.outcomes || {}));
+            s.missedOpportunityStats = { candidates: missed.length, missedTrends: classified.filter(item => item.classification === "MISSED_TREND").length, goodBlocks: classified.filter(item => item.classification === "GOOD_BLOCK").length };
+          }
           setDecision(acc, decisionFromSignal(s.signal), (s.signal.blockers || []).join("；"), { executionPermission: s.signal.entryPermission === "allowed" ? "pending" : "blocked" });
         }
         s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, entryDirection: i.entryDirection, trendDirection: i.trendDirection, higherDirection: i.higherDirection };

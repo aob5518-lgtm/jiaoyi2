@@ -111,3 +111,15 @@ test('生产环境登录 Cookie 强制 Secure、HttpOnly 与 SameSite=Lax',async
  const f=setup(t,{NODE_ENV:'production',TRUST_PROXY:'true'}),r=await f.call('/api/login',{username:'test',password:'test'},false);assert.equal(r.code,200);
  assert.match(r.headers['Set-Cookie'],/HttpOnly; SameSite=Lax; Secure/);
 });
+test('V3 策略分析接口按版本、实验与配置隔离并使用净值统计',async t=>{
+ const f=setup(t);const enabled=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{experimentId:'A'}});assert.equal(enabled.code,200,JSON.stringify(enabled.data));
+ vm.runInContext(`stateMap.legacy.profitHistory=[
+  {strategyVersion:'trend_only_v3',experimentId:'A',configHash:'h1',entryMode:'pullback_entry',exitTime:1,netPnl:10,netR:1,tradingFee:1},
+  {strategyVersion:'trend_only_v3',experimentId:'A',configHash:'h1',entryMode:'pullback_entry',exitTime:2,netPnl:-5,netR:-.5,tradingFee:1},
+  {strategyVersion:'trend_only_v3',experimentId:'B',configHash:'h2',entryMode:'breakout_entry',exitTime:3,netPnl:99,netR:9},
+  {strategyVersion:'trend_only_v2',experimentId:'A',configHash:'h1',entryMode:'pullback_entry',exitTime:4,netPnl:99,rMultiple:9}
+ ]`,f.ctx);
+ const r=await f.call('/api/trend-only/analytics?id=legacy&experimentId=A&configHash=h1');assert.equal(r.code,200,JSON.stringify(r.data));
+ assert.equal(r.data.summary.trades,2);assert.equal(r.data.summary.netPnl,5);assert.equal(r.data.summary.avgNetR,.25);assert.equal(r.data.modes.pullback_entry.trades,2);assert.equal(r.data.modes.breakout_entry.trades,0);
+ assert.equal((await f.call('/api/trend-only/analytics?id=legacy',undefined,false)).code,401);
+});

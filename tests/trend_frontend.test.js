@@ -206,3 +206,16 @@ test("移动端历史使用交易卡片和查看复盘，不渲染宽表", () =>
   assert.match(html, /历史交易/); assert.match(html, /查看复盘/); assert.match(html, /净盈亏/);
   assert.doesNotMatch(html, /<table|初始 \/ 最终止损|17列/);
 });
+
+test("Trend Only V3 提供决策漏斗、候选机会、持仓驾驶舱与策略分析 Tab", () => {
+  const html = read("public/index.html");
+  assert.match(html, /data-tab="analytics">策略分析/);
+  assert.match(html, /id="v3DecisionFunnel"/);
+  assert.match(html, /id="v3CandidatePanel"/);
+  assert.match(html, /id="v3PositionCockpit"/);
+  assert.match(html, /id="analyticsSummary"/);
+  assert.match(html, /V2 Shadow 对照/);
+  assert.match(html, /错过机会事后分析/);
+  assert.match(html, /Shadow 永久禁用/);
+  assert.match(html, /item\.netR \?\? item\.rMultiple/);
+});
