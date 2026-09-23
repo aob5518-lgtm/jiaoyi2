@@ -123,3 +123,7 @@ test('V3 策略分析接口按版本、实验与配置隔离并使用净值统�
  assert.equal(r.data.summary.trades,2);assert.equal(r.data.summary.netPnl,5);assert.equal(r.data.summary.avgNetR,.25);assert.equal(r.data.modes.pullback_entry.trades,2);assert.equal(r.data.modes.breakout_entry.trades,0);
  assert.equal((await f.call('/api/trend-only/analytics?id=legacy',undefined,false)).code,401);
 });
+test('V3 Post Exit 更新按凭证键合并，不会制造重复历史',async t=>{
+ const f=setup(t);vm.runInContext(`addProfitHistory('legacy',{dedupeKey:'v3-1',strategyVersion:'trend_only_v3',exitTime:1000,netPnl:1});addProfitHistory('legacy',{dedupeKey:'v3-1',strategyVersion:'trend_only_v3',exitTime:1000,netPnl:1,PostExitMFE_8:2,postExitAnalyticsPostHocOnly:true})`,f.ctx);
+ const r=await f.call('/api/profit-history?id=legacy');assert.equal(r.code,200);assert.equal(r.data.items.length,1);assert.equal(r.data.items[0].PostExitMFE_8,2);assert.equal(r.data.items[0].postExitAnalyticsPostHocOnly,true);
+});

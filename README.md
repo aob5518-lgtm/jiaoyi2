@@ -1,8 +1,8 @@
 # jiaoyi2
 
-多账户交易策略服务，包含经典策略、智能趋势策略、兼容版 **Trend Only V1** 和推荐版 **Trend Only V2**。
+多账户交易策略服务，包含经典策略、智能趋势策略、兼容版 **Trend Only V1**、稳定对照版 **Trend Only V2** 和 Paper 实验版 **Trend Only V3**。
 
-Trend Only V2 保持单仓、风险仓位和无 DCA 约束，同时支持突破、EMA 回踩确认和 swing 结构延续入场。V1 保留供旧账户兼容，不会被自动删除。
+Trend Only V3 将趋势识别、入场质量、成本、风险和执行状态解耦，通过评分、分层状态机与统一净收益口径减少错误过滤。V3 默认且强制使用 Paper；V2 保持稳定对照，V1 保留供旧账户兼容，三个版本都不会被自动删除。
 
 ## 安装
 
@@ -21,7 +21,7 @@ npm start
 ## 安全说明
 
 - 示例配置默认使用 Paper 模式。
-- 首次将账户切换为 Trend Only 时，服务会强制切到 Paper；新账户推荐使用 V2。
+- 首次将账户切换为 Trend Only 时，服务会强制切到 Paper；V3 在完成 Forward Test 前不允许 Live。
 - Live 新开仓必须针对当前信号二次确认，确认不会持久化，且 60 秒后失效。
 - 所有订单都使用 `clientOrderId`；超时后保留未知订单状态，并先向交易所查询，禁止直接重复提交。
 - `config.json`、`auth.json`、运行态、成交历史和私钥文件已加入 `.gitignore`，不要提交这些文件。
@@ -31,6 +31,22 @@ npm start
 - `auth.json` 的旧明文密码仅用于兼容迁移；首次成功登录后会自动改存为 scrypt `passwordHash`，登录失败会被限流。
 - 生产环境必须由 HTTPS 反向代理提供服务，并设置 `TRUST_PROXY=true`（或 `HTTPS_PROXY_ENABLED=true`）；生产 Cookie 强制 `HttpOnly`、`Secure`、`SameSite=Lax`。
 - Extended Live 趋势下单暂未开放，请使用 Paper 或切换 Hyperliquid/Binance。
+
+## Trend Only V3 Paper 实验
+
+V3 不是“降低阈值的 V2”。它保留数据异常、系统风险、周末、CHOP ≥ 61.8、强高周期冲突和非法止损等硬阻断，其余市场条件进入可解释评分：主趋势结构、趋势强度、多周期关系、市场环境、入场质量与成本效率共同构成 100 分。
+
+- Grade A 默认 82 分，使用 1.0 倍风险；Grade B 默认 74 分，使用 0.5 倍风险。标准单笔风险为权益的 1%，不会通过提高杠杆放大风险。
+- Pullback、Breakout、Continuation 是三个独立入场引擎；追单、成本超过 0.15R 或前方结构空间低于 1.8R 时等待或放弃 setup。
+- 初始止损采用结构失效位与 ATR 缓冲；止损越远，仓位越小，Effective Risk 同时包含价格止损与预估往返成本。
+- 1R 仅记录里程碑，1.5R 才允许移动到包含交易成本的净保本，2.5R 锁定利润，3R 后按已收盘 K 线、确认 swing 与 ATR 追踪。
+- ADX 下降、DI 交叉、EMA20 穿越、15m 反向等单一弱信号只进入 Defensive，不会立即平仓。
+- 首页 Trading Decision Cockpit 显示当前决策、趋势评分、Setup、风险、Decision Funnel、候选机会或持仓驾驶舱；技术指标默认收在高级诊断中。
+- V2 Shadow 仅计算对照，永远没有下单权限；Missed Opportunity 与 Post Exit Analytics 都带有 post-hoc 标识，绝不参与实时决策。
+- 历史记录保存 `strategyVersion`、`experimentId` 与 `configHash`，默认不跨版本、实验或配置混算；统计统一使用 `netPnl` 与 `netR`。
+- “策略分析”按 Breakout、Pullback、Continuation 展示样本、胜率、Avg Net R、Net Expectancy、Profit Factor、净盈亏与 Fee Drag，不自动评价哪种模式最好。
+
+V3 至少运行 7 天，建议 14 天或累计 50 个有效候选 setup 后，再结合 Paper Forward Test、V2 Shadow 和事后错过机会审计评估参数。短期没有开仓不是调低阈值的依据。
 
 ## Trend Only V2 推荐规则
 
@@ -68,4 +84,4 @@ npm start
 npm test
 ```
 
-测试覆盖多空信号、周末限制、震荡过滤、风险仓位、全部退出原因、历史凭证、部分成交、未知订单恢复、Live 二次确认以及旧策略回归。
+测试覆盖 V1/V2/V3 隔离、多空信号、评分与硬阻断、三种入场引擎、结构止损、Effective Risk、净 R/成本口径、再入场、Shadow、无前视事后分析、周末限制、历史凭证、未知订单恢复、Live 安全以及旧策略回归。

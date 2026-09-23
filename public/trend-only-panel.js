@@ -25,6 +25,20 @@
     standard: { chopIdealMax: 45, chopTransitionMax: 55, chopHardBlock: 61.8, adxTrendStart: 22, adxTrendValid: 28, adxStrong: 32, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.5, minStopDistanceAtr: 1.2, riskPerTrade: 0.01 },
     sensitive: { chopIdealMax: 48, chopTransitionMax: 58, chopHardBlock: 65, adxTrendStart: 20, adxTrendValid: 25, adxStrong: 30, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.8, riskPerTrade: 0.005 }
   };
+  const V3_DEFAULTS = {
+    experimentId: "V3_STD_20260922_A", gradeAThreshold: 82, gradeBThreshold: 74,
+    gradeARiskMultiplier: 1, gradeBRiskMultiplier: 0.5, htfStrongAdx: 30, htfMildPenalty: 5,
+    highQualityPullbackScore: 15, breakoutCompressionBars: 6, continuationCompressionBars: 5,
+    pullbackStopBuffer: 0.5, minimumEffectiveStopAtr: 1, minimumEffectiveStopBps: 20,
+    netBreakEvenAtR: 1.5, lockProfitR: 0.8, minTrailingDistanceAtr: 0.8,
+    maxAllowedCostR: 0.15, minimumPotentialR: 1.8, maxEntriesPerTrend: 2,
+    reentryMinBars: 3, reentryMaxBars: 6, shadowComparison: true
+  };
+  const V3_PRESETS = {
+    conservative: { gradeAThreshold: 86, gradeBThreshold: 78, gradeBRiskMultiplier: 0.4, htfMildPenalty: 8, highQualityPullbackScore: 17, minimumPotentialR: 2, maxAllowedCostR: 0.12, riskPerTrade: 0.01 },
+    standard: { gradeAThreshold: 82, gradeBThreshold: 74, gradeBRiskMultiplier: 0.5, htfMildPenalty: 5, highQualityPullbackScore: 15, minimumPotentialR: 1.8, maxAllowedCostR: 0.15, riskPerTrade: 0.01 },
+    sensitive: { gradeAThreshold: 78, gradeBThreshold: 70, gradeBRiskMultiplier: 0.4, htfMildPenalty: 3, highQualityPullbackScore: 13, minimumPotentialR: 1.5, maxAllowedCostR: 0.12, riskPerTrade: 0.005 }
+  };
   const labels = {
     enabled: "启用趋势策略", leverage: "杠杆（最高 10）", allowWeekendOpen: "允许周末开新仓", weekendMode: "周末保护模式",
     weekendExitHourUTC: "周五保护开始（UTC 小时）", riskPerTrade: "单笔风险比例（0.01=1%）", maxPositionRatio: "最大保证金比例",
@@ -42,7 +56,11 @@
     breakoutMinStopAtr: "突破入场最小止损 ATR", pullbackMinStopAtr: "回踩入场最小止损 ATR", continuationMinStopAtr: "延续入场最小止损 ATR",
     structureBreakBufferAtr: "结构反转缓冲 ATR", structureReversalConfirmBars: "结构反转确认 K 线", softExitMinBars: "软退出最短观察 K 线",
     defensiveStructureBufferAtr: "防守结构止损缓冲 ATR", minDefensiveStopDistanceAtr: "防守止损最小距离 ATR",
-    softBreakEvenAtR: "软保本启动 R", realBreakEvenAtR: "真实保本启动 R", lockProfitAtR: "锁定 1R 启动", defensiveTrailingAtrMultiplier: "防守移动止盈 ATR", reversalConfirmBars: "反转确认 K 线", reentryCooldownBars: "再入场冷却 K 线"
+    softBreakEvenAtR: "软保本启动 R", realBreakEvenAtR: "真实保本启动 R", lockProfitAtR: "锁定盈利启动 R", defensiveTrailingAtrMultiplier: "防守移动止盈 ATR", reversalConfirmBars: "反转确认 K 线", reentryCooldownBars: "再入场冷却 K 线",
+    experimentId: "实验 ID", gradeAThreshold: "Grade A 分数", gradeBThreshold: "Grade B 分数", gradeARiskMultiplier: "A 级风险倍率", gradeBRiskMultiplier: "B 级风险倍率",
+    htfStrongAdx: "4H 强趋势 ADX", htfMildPenalty: "4H 轻微反向扣分", highQualityPullbackScore: "高质量回踩分", breakoutCompressionBars: "突破压缩 K 线", continuationCompressionBars: "延续压缩 K 线",
+    pullbackStopBuffer: "回踩止损缓冲 ATR", minimumEffectiveStopAtr: "最小有效止损 ATR", minimumEffectiveStopBps: "最小有效止损 bps", netBreakEvenAtR: "净保本启动 R", lockProfitR: "锁定利润 R", minTrailingDistanceAtr: "Trailing 最小距离 ATR",
+    maxAllowedCostR: "最大允许 Cost R", minimumPotentialR: "最小 Potential R", maxEntriesPerTrend: "单趋势最多入场", reentryMinBars: "再入场最少等待 K 线", reentryMaxBars: "再入场观察上限 K 线", shadowComparison: "启用 V2 Shadow 对照"
   };
   mount.innerHTML = `
     <div class="block-head">
@@ -69,19 +87,25 @@
   const fieldRoot = document.getElementById("trendOnlyFields");
   const inputs = {};
   function setConfig(config = {}) {
-    const merged = { ...DEFAULTS, ...config };
-    fieldRoot.replaceChildren();
-    const simpleKeys = new Set(["version", "leverage", "riskPerTrade", "allowWeekendOpen", "entryModes"]);
-    const v2Only = new Set(["version", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread", "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr", "maxStopDistanceAtr", "minStopDistanceAtr", "breakoutMinStopAtr", "pullbackMinStopAtr", "continuationMinStopAtr", "structureBreakBufferAtr", "structureReversalConfirmBars", "softExitMinBars", "defensiveStructureBufferAtr", "minDefensiveStopDistanceAtr", "softBreakEvenAtR", "realBreakEvenAtR", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars", "reentryCooldownBars"]);
     const selectedType = document.getElementById("strategyType")?.value;
     const selectedV2 = selectedType === "trend_only_v2", selectedV3 = selectedType === "trend_only_v3";
+    const activeDefaults = selectedV3 ? { ...DEFAULTS, ...V3_DEFAULTS, version: "v3" } : DEFAULTS;
+    const merged = { ...activeDefaults, ...config };
+    fieldRoot.replaceChildren();
+    for (const key of Object.keys(inputs)) delete inputs[key];
+    const simpleKeys = new Set(selectedV3
+      ? ["version", "leverage", "riskPerTrade", "allowWeekendOpen", "shadowComparison"]
+      : ["version", "leverage", "riskPerTrade", "allowWeekendOpen", "entryModes"]);
+    const v2Only = new Set(["version", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread", "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr", "maxStopDistanceAtr", "minStopDistanceAtr", "breakoutMinStopAtr", "pullbackMinStopAtr", "continuationMinStopAtr", "structureBreakBufferAtr", "structureReversalConfirmBars", "softExitMinBars", "defensiveStructureBufferAtr", "minDefensiveStopDistanceAtr", "softBreakEvenAtR", "realBreakEvenAtR", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars", "reentryCooldownBars"]);
+    const v3Only = new Set(Object.keys(V3_DEFAULTS));
     document.getElementById("trendOnlyPanelTitle").textContent = selectedV3 ? "Trend Only V3 参数（Paper）" : selectedV2 ? "Trend Only V2 参数" : "Trend Only V1 参数";
     document.getElementById("trendV1Warning").hidden = selectedV2 || selectedV3;
     document.getElementById("trendStrictnessWrap").hidden = !(selectedV2 || selectedV3);
-    for (const [key, fallback] of Object.entries(DEFAULTS)) {
+    for (const [key, fallback] of Object.entries(activeDefaults)) {
       const label = document.createElement("label"); label.textContent = labels[key] || key;
       if (!simpleKeys.has(key)) label.classList.add("trend-advanced-field");
       if (v2Only.has(key) && !(selectedV2 || selectedV3)) label.hidden = true;
+      if (v3Only.has(key) && !selectedV3) label.hidden = true;
       let input;
       if (key === "entryModes") {
         input = document.createElement("select");
@@ -95,6 +119,8 @@
         input.value = merged[key];
       } else if (key === "version") {
         input = document.createElement("input"); input.type = "text"; input.value = selectedV3 ? "Trend Only V3" : selectedV2 ? "Trend Only V2" : "Trend Only V1"; input.disabled = true;
+      } else if (typeof fallback === "string" && key !== "weekendMode" && !key.endsWith("Timeframe")) {
+        input = document.createElement("input"); input.type = "text"; input.value = merged[key];
       } else if (key === "weekendMode" || key.endsWith("Timeframe")) {
         input = document.createElement("select");
         const options = key === "weekendMode" ? ["no_new_position", "force_flat_before_weekend"] : ["1m", "5m", "15m", "1h", "4h", "1d"];
@@ -111,7 +137,8 @@
       }
       input.id = `trendOnly_${key}`; inputs[key] = input; label.append(input); fieldRoot.append(label);
     }
-    const presetName = Object.entries(STRICTNESS_PRESETS).find(([, preset]) => Object.entries(preset).every(([key, value]) => merged[key] === value))?.[0] || "custom";
+    const presets = selectedV3 ? V3_PRESETS : STRICTNESS_PRESETS;
+    const presetName = Object.entries(presets).find(([, preset]) => Object.entries(preset).every(([key, value]) => merged[key] === value))?.[0] || "custom";
     document.getElementById("trendStrictness").value = presetName;
   }
   function getConfig() {
@@ -161,9 +188,9 @@
     return data;
   }
   function report(error) { document.getElementById("trendOnlyStatusMessage").textContent = error.message || String(error); }
-  document.getElementById("trendRestoreDefaults").onclick = () => setConfig(DEFAULTS);
+  document.getElementById("trendRestoreDefaults").onclick = () => setConfig(document.getElementById("strategyType")?.value === "trend_only_v3" ? { ...DEFAULTS, ...V3_DEFAULTS, version: "v3" } : DEFAULTS);
   document.getElementById("trendStrictness").onchange = event => {
-    const name = event.target.value, preset = STRICTNESS_PRESETS[name];
+    const name = event.target.value, preset = (document.getElementById("strategyType")?.value === "trend_only_v3" ? V3_PRESETS : STRICTNESS_PRESETS)[name];
     if (!preset) return;
     if (name === "sensitive" && document.getElementById("tradeMode")?.value === "live" && !window.confirm("灵敏模式会放宽过滤。Live 使用前需要再次确认，是否继续？")) {
       event.target.value = "custom"; return;

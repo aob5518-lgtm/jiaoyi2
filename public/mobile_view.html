@@ -461,8 +461,8 @@
       const trend = trendOnly ? trendLabel(payload) : null;
       $("ovSide").textContent = trendOnly ? trend.direction : (cfg.side === "long" ? "做多" : "做空");
       $("ovPrice").textContent = fmt(st.currentPrice || 0, 4);
-      $("ovEntry").textContent = trendOnly ? `市场状态 ${trend.market}` : (st.entryPrice ? fmt(st.entryPrice, 4) : "-");
-      $("ovPositionSize").textContent = trendOnly ? `是否有仓位 ${trend.hasPosition ? "是" : "否"}` : (st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-"));
+      $("ovEntry").textContent = trendOnly ? `${cfg.strategyType === "trend_only_v3" ? "当前决策" : "市场状态"} ${cfg.strategyType === "trend_only_v3" ? trend.nextAction : trend.market}` : (st.entryPrice ? fmt(st.entryPrice, 4) : "-");
+      $("ovPositionSize").textContent = trendOnly ? `${trend.direction} · ${trend.hasPosition ? "持仓管理" : "等待机会"}` : (st.realPositionSize || (st.positionQty ? fmt(st.positionQty, 6) : "-"));
       $("ovMargin").textContent = trendOnly ? "内部指标与保护单详情仅管理后台可见" : fmt(st.marginUsedU || 0, 4);
 
       const tipText = trendOnly ? `${trend.market} ｜ ${trend.nextAction}` : (st.lastError || st.lastAction || "状态正常");
@@ -507,11 +507,13 @@
               ${escapeHtml(item.time || "-")}<br>
               ${item.entryPrice ?? "-"} → ${item.exitPrice ?? "-"}<br>
               净盈亏 <span class="${pnlClass}">${item.netPnl ?? item.pnl ?? "-"} U</span><br>
-              R ${item.rMultiple ?? "数据不足"} · ${escapeHtml(reason)}
+              Net R ${item.netR ?? item.rMultiple ?? "数据不足"} · ${escapeHtml(reason)}
               ${item.legacyRecord ? `<br><span title="该交易产生于复盘字段上线之前，部分指标当时未采集。">旧记录</span>` : ""}
               <details style="margin-top:10px;"><summary style="cursor:pointer;color:#68d8ff;font-weight:800;">查看复盘</summary><div style="padding-top:8px;line-height:1.8;">
                 毛盈亏：${item.grossPnl ?? "数据不足"} U<br>手续费：${item.tradingFee ?? "数据不足"} U<br>资金费：${item.fundingPnl ?? "数据不足"} U<br>
                 MAE / MFE：${item.MAE_R ?? "未采集"} R / ${item.MFE_R ?? "未采集"} R<br>
+                Trend / Entry：${item.trendScore ?? "未采集"} / ${item.entryScore ?? "未采集"} · Grade ${escapeHtml(item.grade || "-")}<br>
+                Cost / Potential：${item.costR ?? "未采集"} R / ${item.potentialR ?? "未采集"} R<br>
                 止损触发 / 成交：${item.stopTriggerPrice ?? "未采集"} / ${item.stopExecutionPrice ?? "未采集"}<br>
                 止损模式：${item.stopExecutionMode === "gap_through" ? "跳空穿越" : item.stopExecutionMode === "normal_trigger" ? "正常触发" : "未采集"}
               </div></details>

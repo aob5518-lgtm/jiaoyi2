@@ -126,10 +126,10 @@ test("V2 运行时回填结构字段且 Extended Live 有明确提示", () => {
   assert.doesNotMatch(panel, /maxChopToTrade/);
 });
 
-test("README 与示例配置推荐 Trend Only V2", () => {
+test("README 与示例配置启用 Trend Only V3 Paper 并保留 V2 稳定对照", () => {
   const readme = read("README.md"), config = JSON.parse(read("config.example.json"));
-  assert.match(readme, /Trend Only V2 推荐规则/); assert.match(readme, /Extended Live 趋势下单暂未开放/);
-  assert.equal(config.accounts[0].strategyType, "trend_only_v2"); assert.equal(config.accounts[0].trendOnlyConfig.version, "v2");
+  assert.match(readme, /Trend Only V3 Paper 实验/); assert.match(readme, /V2 保持稳定对照/); assert.match(readme, /Extended Live 趋势下单暂未开放/);
+  assert.equal(config.accounts[0].strategyType, "trend_only_v3"); assert.equal(config.accounts[0].trendOnlyConfig.version, "v3"); assert.equal(config.accounts[0].tradeMode, "simulation"); assert.equal(config.accounts[0].trendOnlyConfig.allowLive, false);
 });
 
 test("mobile_view.html 是公开只读页，不加载趋势管理面板", () => {
@@ -218,4 +218,16 @@ test("Trend Only V3 提供决策漏斗、候选机会、持仓驾驶舱与策略
   assert.match(html, /错过机会事后分析/);
   assert.match(html, /Shadow 永久禁用/);
   assert.match(html, /item\.netR \?\? item\.rMultiple/);
+  assert.match(html, /当前决策.*趋势.*Setup.*账户风险/s);
+  assert.match(html, /systemHealth.*strategyState.*riskState.*executionState/s);
+  assert.match(html, /font-size:clamp\(22px,2vw,34px\).*overflow-wrap:anywhere/);
+});
+
+test("V3 P2 支持高级筛选、质量 CSV、Fee Drag 与 Post Exit 复盘", () => {
+  const html = read("public/index.html"), panel = read("public/trend-only-panel.js"), mobile = read("public/mobile_view.html");
+  assert.match(html, /historyVersionFilter.*historyExperimentFilter.*historyConfigFilter/s);
+  assert.match(html, /grossR.*netR.*trendScore.*entryScore.*potentialR.*costR.*PostExitMFE_32/s);
+  assert.match(html, /False Entry Rate/); assert.match(html, /Missed Trend Rate/); assert.match(html, /成本侵蚀/);
+  assert.match(panel, /gradeAThreshold.*gradeBThreshold.*maxAllowedCostR.*minimumPotentialR.*shadowComparison/s);
+  assert.match(mobile, /Net R/); assert.match(mobile, /Trend \/ Entry/);
 });

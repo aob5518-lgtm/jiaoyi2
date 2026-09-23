@@ -15,6 +15,7 @@ const { evaluateReentry, recordExitState } = require("./strategy/trend_v3/reentr
 const { compareV2Shadow } = require("./strategy/trend_v3/shadow");
 const { registerMissedCandidate, updateMissedOpportunities } = require("./strategy/trend_v3/posthoc");
 const { buildCandidateSetup } = require("./strategy/trend_v3/candidate");
+const { updatePostExitAnalytics } = require("./strategy/trend_v3/post_exit");
 
 function initialState(equity, now) {
   return { ...V2.initialState(equity, now), strategyVersion: "trend_only_v3", reentryState: {}, trendEntryCounts: {}, shadowComparisons: [], missedOpportunityJournal: [] };
@@ -92,6 +93,7 @@ function recordClose(account, fill, reason, now = Date.now()) {
   voucher.potentialR = position?.potentialR;
   voucher.whyEntered = position?.whyEntered || "";
   voucher.whyExited = reason;
+  voucher.postExitAnalyticsPostHocOnly = true;
   recordExitState(account.trendOnlyState, position, voucher);
   return voucher;
 }
@@ -115,5 +117,5 @@ module.exports = {
   tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose,
   updateTrendContext, appendShadowSignal, journalRetentionBars: V2.journalRetentionBars,
   signalStats: V2.signalStats, buildDecisionFunnel, buildTradeCostModel,
-  compareV2Shadow, registerMissedCandidate, updateMissedOpportunities, buildCandidateSetup
+  compareV2Shadow, registerMissedCandidate, updateMissedOpportunities, buildCandidateSetup, updatePostExitAnalytics
 };

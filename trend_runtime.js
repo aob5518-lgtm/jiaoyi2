@@ -532,6 +532,7 @@ function createTrendRuntime(d) {
           T.appendShadowSignal(s, acc.id, s.signal, i, (s.signal.blockers || []).join("；"));
           if (isV3(acc)) {
             T.updateMissedOpportunities(s, values[0].candles);
+            if (T.updatePostExitAnalytics(s.journal, values[0].candles)) flushJournal(acc);
             T.registerMissedCandidate(s, s.signal, i);
             s.candidateSetup = T.buildCandidateSetup(account(acc, st), s.signal, i, c);
             if (c.shadowComparison) {
@@ -547,8 +548,9 @@ function createTrendRuntime(d) {
                 both: rows.filter(item => item.v3Decision === "allowed" && item.v2Decision === "allowed").length
               };
             }
-            const missed = s.missedOpportunityJournal || [], classified = missed.flatMap(item => Object.values(item.outcomes || {}));
-            s.missedOpportunityStats = { candidates: missed.length, missedTrends: classified.filter(item => item.classification === "MISSED_TREND").length, goodBlocks: classified.filter(item => item.classification === "GOOD_BLOCK").length };
+            const missed = s.missedOpportunityJournal || [], classifications = missed.map(item => Object.values(item.outcomes || {}).map(outcome => outcome.classification));
+            const missedTrends = classifications.filter(items => items.includes("MISSED_TREND")).length, goodBlocks = classifications.filter(items => items.length && items.every(value => value === "GOOD_BLOCK")).length;
+            s.missedOpportunityStats = { candidates: missed.length, missedTrends, goodBlocks, missedTrendRate: missed.length ? missedTrends / missed.length : null };
           }
           setDecision(acc, decisionFromSignal(s.signal), (s.signal.blockers || []).join("；"), { executionPermission: s.signal.entryPermission === "allowed" ? "pending" : "blocked" });
         }

@@ -11,6 +11,7 @@ function summarizeRows(rows) {
   let equity = 0, peak = 0, maxDrawdown = 0, lossStreak = 0, maxConsecutiveLoss = 0;
   for (const item of [...items].sort((a, b) => Number(a.exitTime || 0) - Number(b.exitTime || 0))) { equity += netPnl(item); peak = Math.max(peak, equity); maxDrawdown = Math.max(maxDrawdown, peak - equity); lossStreak = netPnl(item) < 0 ? lossStreak + 1 : 0; maxConsecutiveLoss = Math.max(maxConsecutiveLoss, lossStreak); }
   const totalTradingFee = items.reduce((sum, item) => sum + Number(item.tradingFee || 0), 0), totalGrossProfit = items.filter(item => Number(item.grossPnl) > 0).reduce((sum, item) => sum + Number(item.grossPnl), 0);
+  const falseEntries = items.filter(item => netPnl(item) < 0 && (Number(item.MAE_R) >= 0.75 || ["hard_sl", "structure_sl", "post_fill_risk_invalid"].includes(item.closeReason)));
   return {
     trades: items.length,
     netPnl: items.reduce((sum, item) => sum + netPnl(item), 0),
@@ -20,6 +21,8 @@ function summarizeRows(rows) {
     profitFactor: grossLoss > 0 ? grossProfit / grossLoss : null,
     totalTradingFee,
     feeDrag: totalGrossProfit > 0 ? totalTradingFee / Math.abs(totalGrossProfit) : null,
+    falseEntryCount: falseEntries.length,
+    falseEntryRate: items.length ? falseEntries.length / items.length : null,
     maxDrawdown,
     maxConsecutiveLoss
   };

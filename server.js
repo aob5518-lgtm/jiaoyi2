@@ -1132,7 +1132,12 @@ function addProfitHistory(accountId, item) {
   const latest = Array.isArray(historyMap[accountId]) ? historyMap[accountId] : [];
   const alreadyExists = item.dedupeKey && latest.some(existing => existing?.dedupeKey === item.dedupeKey);
   if (alreadyExists) {
+    const index = latest.findIndex(existing => existing?.dedupeKey === item.dedupeKey);
+    if (index >= 0) latest[index] = normalizeProfitVoucher({ ...latest[index], ...item }, accountId);
     st.profitHistory = dedupeVouchers(latest, 200);
+    historyMap[accountId] = st.profitHistory;
+    historyRevision += 1;
+    historyWriter.schedule();
     return false;
   }
 

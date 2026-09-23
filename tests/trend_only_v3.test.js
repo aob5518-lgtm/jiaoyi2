@@ -10,6 +10,7 @@ const { evaluateReentry } = require("../strategy/trend_v3/reentry");
 const { compareV2Shadow } = require("../strategy/trend_v3/shadow");
 const { registerMissedCandidate, updateMissedOpportunities } = require("../strategy/trend_v3/posthoc");
 const { buildStrategyAnalytics } = require("../strategy/trend_v3/analytics");
+const { updatePostExitAnalytics } = require("../strategy/trend_v3/post_exit");
 
 function config(extra = {}) { return V3.normalizeConfig({ allowWeekendOpen: true, ...extra }); }
 function input(extra = {}) {
@@ -142,11 +143,22 @@ test("错过机会分析仅使用信号之后的 K 线且不修改实时信号",
 test("V3 分析按版本、实验、配置隔离并统一使用 netPnl/netR", () => {
   const rows = [
     { strategyVersion: "trend_only_v3", experimentId: "A", configHash: "h1", entryMode: "pullback_entry", exitTime: 1, grossPnl: 20, netPnl: 10, rMultiple: 2, netR: 1, tradingFee: 10 },
-    { strategyVersion: "trend_only_v3", experimentId: "A", configHash: "h1", entryMode: "pullback_entry", exitTime: 2, grossPnl: -5, netPnl: -10, rMultiple: -.5, netR: -1, tradingFee: 5 },
+    { strategyVersion: "trend_only_v3", experimentId: "A", configHash: "h1", entryMode: "pullback_entry", exitTime: 2, grossPnl: -5, netPnl: -10, rMultiple: -.5, netR: -1, tradingFee: 5, closeReason: "hard_sl" },
     { strategyVersion: "trend_only_v3", experimentId: "B", configHash: "h2", entryMode: "breakout_entry", exitTime: 3, netPnl: 100, netR: 4 },
     { strategyVersion: "trend_only_v2", experimentId: "A", configHash: "h1", entryMode: "pullback_entry", exitTime: 4, netPnl: 100, netR: 4 }
   ];
   const result = buildStrategyAnalytics(rows, { strategyVersion: "trend_only_v3", experimentId: "A", configHash: "h1" });
   assert.equal(result.summary.trades, 2); assert.equal(result.summary.netPnl, 0); assert.equal(result.summary.avgNetR, 0); assert.equal(result.summary.winRate, .5);
   assert.equal(result.modes.pullback_entry.trades, 2); assert.equal(result.modes.breakout_entry.trades, 0);
+  assert.equal(result.summary.falseEntryRate, .5);
+});
+
+test("Post Exit Analytics 仅使用退出后的 K 线并标记为事后数据", () => {
+  const voucher = { strategyVersion: "trend_only_v3", exitTime: 1000, exitPrice: 100, side: "long", plannedRiskAmount: 10, positionSize: 10 };
+  const candles = [{ time: 999, high: 999, low: 1 }, ...Array.from({ length: 32 }, (_, index) => ({ time: 1001 + index, high: 100 + index * .1, low: 99.5 }))];
+  assert.equal(updatePostExitAnalytics([voucher], candles), true);
+  assert.equal(voucher.postExitAnalyticsPostHocOnly, true);
+  assert.ok(voucher.PostExitMFE_8 < 1);
+  assert.ok(Number.isFinite(voucher.PostExitMFE_R_32));
+  assert.equal(updatePostExitAnalytics([voucher], candles), false);
 });
