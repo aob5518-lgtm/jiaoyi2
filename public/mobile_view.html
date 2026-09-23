@@ -457,7 +457,7 @@
       runningEl.className = "v " + (st.running ? "green" : "red");
 
       $("ovSymbol").textContent = `${cfg.symbol || "-"} / ${cfg.quoteAsset || "-"}`;
-      const trendOnly = cfg.strategyType === "trend_only_v1" || cfg.strategyType === "trend_only_v2";
+      const trendOnly = ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(cfg.strategyType);
       const trend = trendOnly ? trendLabel(payload) : null;
       $("ovSide").textContent = trendOnly ? trend.direction : (cfg.side === "long" ? "做多" : "做空");
       $("ovPrice").textContent = fmt(st.currentPrice || 0, 4);

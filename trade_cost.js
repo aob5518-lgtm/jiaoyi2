@@ -11,7 +11,7 @@ function finiteNonNegative(value, fallback) {
   return Number.isFinite(number) && number >= 0 ? number : fallback;
 }
 
-function getEstimatedTradeCost(account = {}, entryMode = "") {
+function getEstimatedTradeCost(account = {}, entryMode = "", context = {}) {
   const defaults = PLATFORM_DEFAULTS[String(account.platform || "").toLowerCase()] || PLATFORM_DEFAULTS.hyperliquid;
   const config = account.tradeCostConfig && typeof account.tradeCostConfig === "object" ? account.tradeCostConfig : {};
   const entryFeeRate = finiteNonNegative(config.entryFeeRate ?? account.entryFeeRate, defaults.entryFeeRate);
@@ -22,11 +22,20 @@ function getEstimatedTradeCost(account = {}, entryMode = "") {
   const slippageBpsPerSide = finiteNonNegative(configuredBps, defaults.slippageBpsPerSide);
   const modeMultiplier = finiteNonNegative(config.entryModeSlippageMultiplier?.[entryMode], 1);
   const expectedSlippageRate = slippageBpsPerSide * 2 / 10000 * modeMultiplier;
+  const fundingEstimate = finiteNonNegative(context.fundingEstimate, 0);
+  const roundTripCostRate = entryFeeRate + exitFeeRate + expectedSlippageRate;
+  const roundTripCostU = finiteNonNegative(context.notional, 0) * roundTripCostRate + fundingEstimate;
   return {
     entryFeeRate,
     exitFeeRate,
+    estimatedEntrySlippage: expectedSlippageRate / 2,
+    estimatedExitSlippage: expectedSlippageRate / 2,
     expectedSlippageRate,
-    roundTripCostRate: entryFeeRate + exitFeeRate + expectedSlippageRate
+    fundingEstimate,
+    roundTripCostRate,
+    roundTripCostPct: roundTripCostRate,
+    roundTripCostU,
+    roundTripCostR: finiteNonNegative(context.plannedRiskAmount, 0) > 0 ? roundTripCostU / Number(context.plannedRiskAmount) : 0
   };
 }
 

@@ -4,7 +4,7 @@
   "description": "第四版整包：同高三栏 + 多账户只读接入",
   "main": "server.js",
   "scripts": {
-    "test": "node --check server.js && node --check smart_strategy.js && node --check trend_only.js && node --check trend_only_v2.js && node --check trend_runtime.js && node --check trade_cost.js && node --check trade_accounting.js && node --check trading_safety.js && node --check instrument_catalog.js && node tests/smart_strategy.test.js && node --test tests/trend_only.test.js tests/trend_only_v2.test.js tests/trend_runtime.test.js tests/trend_server.test.js tests/trend_frontend.test.js tests/trade_cost.test.js && node tests/trade_accounting.test.js && node tests/trading_safety.test.js && node tests/instrument_catalog.test.js",
+    "test": "node --check server.js && node --check smart_strategy.js && node --check trend_only.js && node --check trend_only_v2.js && node --check trend_only_v3.js && node --check trend_runtime.js && node --check trade_cost.js && node --check trade_accounting.js && node --check trading_safety.js && node --check instrument_catalog.js && node tests/smart_strategy.test.js && node --test tests/trend_only.test.js tests/trend_only_v2.test.js tests/trend_only_v3.test.js tests/trend_runtime.test.js tests/trend_server.test.js tests/trend_frontend.test.js tests/trade_cost.test.js && node tests/trade_accounting.test.js && node tests/trading_safety.test.js && node tests/instrument_catalog.test.js",
     "repair-history": "node repair_profit_history.js",
     "start": "node server.js"
   },

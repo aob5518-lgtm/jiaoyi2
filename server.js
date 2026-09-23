@@ -5,14 +5,16 @@ const url = require("url");
 const crypto = require("crypto");
 const TrendOnly = require("./trend_only");
 const TrendOnlyV2 = require("./trend_only_v2");
+const TrendOnlyV3 = require("./trend_only_v3");
 const { createTrendRuntime } = require("./trend_runtime");
-const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2"]);
+const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2", "trend_only_v3"]);
 function getStrategyType(acc = {}) {
   const explicit = String(acc?.strategyType || "").trim();
   if (explicit) return STRATEGY_TYPES.has(explicit) ? explicit : "classic";
   const legacyMode = String(acc?.strategyMode || "").trim();
   if (legacyMode === "Trend Only V1") return "trend_only_v1";
   if (legacyMode === "Trend Only V2") return "trend_only_v2";
+  if (legacyMode === "Trend Only V3") return "trend_only_v3";
   if (legacyMode === "智能V1" || legacyMode === "趋势模式") return "smart_regime_v1";
   return "classic";
 }
@@ -20,16 +22,18 @@ function getStrategyLabel(acc = {}) {
   const type = getStrategyType(acc);
   if (type === "trend_only_v1") return "Trend Only V1";
   if (type === "trend_only_v2") return "Trend Only V2（趋势过滤 + 回踩入场 + 延续入场）";
+  if (type === "trend_only_v3") return "Trend Only V3（评分 + 入场质量 + 成本风控）";
   if (type === "smart_regime_v1") return "智能趋势策略 V1";
   return "经典补仓策略";
 }
 function getStrategyMode(acc = {}) {
   const type = getStrategyType(acc);
-  return type === "trend_only_v2" ? "Trend Only V2" : type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
+  return type === "trend_only_v3" ? "Trend Only V3" : type === "trend_only_v2" ? "Trend Only V2" : type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
 }
-function isTrendOnly(acc) { return ["trend_only_v1", "trend_only_v2"].includes(getStrategyType(acc)); }
+function isTrendOnly(acc) { return ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(getStrategyType(acc)); }
 function isTrendOnlyV2(acc) { return getStrategyType(acc) === "trend_only_v2"; }
-function trendEngine(accOrType) { return (typeof accOrType === "string" ? accOrType : getStrategyType(accOrType)) === "trend_only_v2" ? TrendOnlyV2 : TrendOnly; }
+function isTrendOnlyV3(acc) { return getStrategyType(acc) === "trend_only_v3"; }
+function trendEngine(accOrType) { const type = typeof accOrType === "string" ? accOrType : getStrategyType(accOrType); return type === "trend_only_v3" ? TrendOnlyV3 : type === "trend_only_v2" ? TrendOnlyV2 : TrendOnly; }
 const zlib = require("zlib");
 const { spawn } = require("child_process");
 const {
@@ -1689,15 +1693,15 @@ function assertFiniteNumber(value, name, { min = null, max = null, allowZero = f
 }
 
 function validateAccountConfigPayload(next) {
-  const modes = { "DCA基础模式": "classic", "智能V1": "smart_regime_v1", "趋势模式": "smart_regime_v1", "Trend Only V1": "trend_only_v1", "Trend Only V2": "trend_only_v2" };
+  const modes = { "DCA基础模式": "classic", "智能V1": "smart_regime_v1", "趋势模式": "smart_regime_v1", "Trend Only V1": "trend_only_v1", "Trend Only V2": "trend_only_v2", "Trend Only V3": "trend_only_v3" };
   if (next.strategyMode !== undefined) {
     if (!modes[next.strategyMode]) throw new Error("策略模式无效");
     if (next.strategyType && modes[next.strategyMode] !== next.strategyType) throw new Error("策略模式字段冲突");
     next.strategyType = modes[next.strategyMode];
   }
   if (next.trendOnlyConfig !== undefined) next.trendOnlyConfig = trendEngine(next.strategyType || next.strategyMode).normalizeConfig(next.trendOnlyConfig);
-  if (["trend_only_v1", "trend_only_v2"].includes(next.strategyType)) {
-    next.strategyMode = next.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
+  if (["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(next.strategyType)) {
+    next.strategyMode = next.strategyType === "trend_only_v3" ? "Trend Only V3" : next.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
     if (next.trendOnlyConfig) next.leverage = next.trendOnlyConfig.leverage;
     next.maxAdds = 0;
   }
@@ -3303,7 +3307,7 @@ async function tickAccount(acc) {
   try {
     // 每轮只清除“当前异常”；lastError 保留最近一次错误供排查。
     st.activeError = "";
-    if (["trend_only_v1", "trend_only_v2"].includes(activeStrategyType)) { await trendRuntime.tick(acc, st); return; }
+    if (["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(activeStrategyType)) { await trendRuntime.tick(acc, st); return; }
     st.symbol = acc.symbol;
     st.currentPrice = await getMarketPrice(acc);
     st.updatedAt = new Date().toLocaleString("zh-CN");
@@ -4398,6 +4402,7 @@ function getPublicStatePayload(acc, st) {
       activeStrategyLabel: getStrategyLabel(acc),
       isTrendOnly: true,
       isTrendOnlyV2: isTrendOnlyV2(acc),
+      isTrendOnlyV3: isTrendOnlyV3(acc),
       running: !!st.running,
       pnl: Number(st.pnl || 0),
       roi: Number(st.roi || 0),
@@ -4408,6 +4413,7 @@ function getPublicStatePayload(acc, st) {
       activeStrategyLabel: getStrategyLabel(acc),
       isTrendOnly: isTrendOnly(acc),
       isTrendOnlyV2: isTrendOnlyV2(acc),
+      isTrendOnlyV3: isTrendOnlyV3(acc),
       isSmartStrategy: strategyType === "smart_regime_v1",
       isClassicStrategy: strategyType === "classic",
       running: st.running,
@@ -4448,6 +4454,7 @@ function buildDashboardPayload(acc, st) {
       activeStrategyLabel: getStrategyLabel(acc),
       isTrendOnly: isTrendOnly(acc),
       isTrendOnlyV2: isTrendOnlyV2(acc),
+      isTrendOnlyV3: isTrendOnlyV3(acc),
       isSmartStrategy: strategyType === "smart_regime_v1",
       isClassicStrategy: strategyType === "classic",
       health,
@@ -4792,13 +4799,13 @@ const server = http.createServer((req, res) => {
         if (pathname === "/api/trend-only/config") {
           if (st.running || Number(st.positionQty) > 0 || trendRuntime.busy(acc)) throw new Error("请先停止开仓，并平仓或核对未确认订单后修改配置");
           const cfg = loadConfig(), target = cfg.accounts.find(a => a.id === acc.id);
-          const requestedType = ["trend_only_v1", "trend_only_v2"].includes(data.strategyType) ? data.strategyType : (isTrendOnly(acc) ? getStrategyType(acc) : "trend_only_v2");
+          const requestedType = ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(data.strategyType) ? data.strategyType : (isTrendOnly(acc) ? getStrategyType(acc) : "trend_only_v2");
           target.trendOnlyConfig = trendEngine(requestedType).normalizeConfig(data.config);
-          target.strategyType = requestedType; target.strategyMode = requestedType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
+          target.strategyType = requestedType; target.strategyMode = requestedType === "trend_only_v3" ? "Trend Only V3" : requestedType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
           target.leverage = target.trendOnlyConfig.leverage;
           target.maxAdds = 0;
           // Initial activation is Paper. Live remains an explicit separate account setting.
-          if (!isTrendOnly(acc)) { target.tradeMode = "simulation"; target.simulationEnabled = true; }
+          if (!isTrendOnly(acc) || requestedType === "trend_only_v3") { target.tradeMode = "simulation"; target.simulationEnabled = true; }
           saveConfig(cfg); config = cfg; trendRuntime.clearApproval(acc.id);
         } else {
           if (!isTrendOnly(acc)) throw new Error("当前账户未选择 Trend Only 策略");
@@ -5241,6 +5248,10 @@ const server = http.createServer((req, res) => {
       try {
         const current = getCurrentAccount();
         if (isTrendOnly(current)) {
+          if (isTrendOnlyV3(current) && !isSimulationAccount(current)) {
+            const message = "Trend Only V3 当前仅开放 Paper；请切换为模拟交易。";
+            return jsonRes(res, 400, { ok: false, error: message, message });
+          }
           if (isTrendOnlyV2(current) && current.platform === "extended" && !isSimulationAccount(current)) {
             const message = "Extended Live 趋势下单暂未开放；请使用 Paper 测试或切换 Hyperliquid/Binance。";
             return jsonRes(res, 400, { ok: false, error: message, message });

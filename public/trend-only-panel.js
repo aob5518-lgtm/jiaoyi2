@@ -73,14 +73,15 @@
     fieldRoot.replaceChildren();
     const simpleKeys = new Set(["version", "leverage", "riskPerTrade", "allowWeekendOpen", "entryModes"]);
     const v2Only = new Set(["version", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread", "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr", "maxStopDistanceAtr", "minStopDistanceAtr", "breakoutMinStopAtr", "pullbackMinStopAtr", "continuationMinStopAtr", "structureBreakBufferAtr", "structureReversalConfirmBars", "softExitMinBars", "defensiveStructureBufferAtr", "minDefensiveStopDistanceAtr", "softBreakEvenAtR", "realBreakEvenAtR", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars", "reentryCooldownBars"]);
-    const selectedV2 = document.getElementById("strategyType")?.value === "trend_only_v2";
-    document.getElementById("trendOnlyPanelTitle").textContent = selectedV2 ? "Trend Only V2 参数" : "Trend Only V1 参数";
-    document.getElementById("trendV1Warning").hidden = selectedV2;
-    document.getElementById("trendStrictnessWrap").hidden = !selectedV2;
+    const selectedType = document.getElementById("strategyType")?.value;
+    const selectedV2 = selectedType === "trend_only_v2", selectedV3 = selectedType === "trend_only_v3";
+    document.getElementById("trendOnlyPanelTitle").textContent = selectedV3 ? "Trend Only V3 参数（Paper）" : selectedV2 ? "Trend Only V2 参数" : "Trend Only V1 参数";
+    document.getElementById("trendV1Warning").hidden = selectedV2 || selectedV3;
+    document.getElementById("trendStrictnessWrap").hidden = !(selectedV2 || selectedV3);
     for (const [key, fallback] of Object.entries(DEFAULTS)) {
       const label = document.createElement("label"); label.textContent = labels[key] || key;
       if (!simpleKeys.has(key)) label.classList.add("trend-advanced-field");
-      if (v2Only.has(key) && !selectedV2) label.hidden = true;
+      if (v2Only.has(key) && !(selectedV2 || selectedV3)) label.hidden = true;
       let input;
       if (key === "entryModes") {
         input = document.createElement("select");
@@ -93,7 +94,7 @@
         for (const [value, text] of [["not_against", "高周期不反向（推荐）"], ["strict_align", "三周期严格同向"], ["off", "关闭（仅 Paper）"]]) { const option = document.createElement("option"); option.value = value; option.textContent = text; input.append(option); }
         input.value = merged[key];
       } else if (key === "version") {
-        input = document.createElement("input"); input.type = "text"; input.value = selectedV2 ? "Trend Only V2" : "Trend Only V1"; input.disabled = true;
+        input = document.createElement("input"); input.type = "text"; input.value = selectedV3 ? "Trend Only V3" : selectedV2 ? "Trend Only V2" : "Trend Only V1"; input.disabled = true;
       } else if (key === "weekendMode" || key.endsWith("Timeframe")) {
         input = document.createElement("select");
         const options = key === "weekendMode" ? ["no_new_position", "force_flat_before_weekend"] : ["1m", "5m", "15m", "1h", "4h", "1d"];
@@ -117,7 +118,7 @@
     const result = {};
     for (const [key, input] of Object.entries(inputs)) {
       if (key === "entryModes") result[key] = input.value === "hybrid" ? ["breakout_entry", "pullback_entry", "continuation_entry"] : [input.value];
-      else if (key === "version") result[key] = document.getElementById("strategyType")?.value === "trend_only_v2" ? "v2" : "v1";
+      else if (key === "version") result[key] = document.getElementById("strategyType")?.value === "trend_only_v3" ? "v3" : document.getElementById("strategyType")?.value === "trend_only_v2" ? "v2" : "v1";
       else result[key] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
     }
     return result;
@@ -154,7 +155,7 @@
     const data = await api("/api/trend-only");
     if (!Object.keys(inputs).length) setConfig(window.__pendingTrendOnlyConfig || data.config);
     const selector = document.getElementById("strategyType");
-    const visible = selector ? ["trend_only_v1", "trend_only_v2"].includes(selector.value) : data.active;
+    const visible = selector ? ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(selector.value) : data.active;
     setVisible(visible);
     if (visible) render(data);
     return data;
@@ -205,7 +206,7 @@
   }
   window.TrendOnlyPanel = { defaults: DEFAULTS, getConfig, setConfig, setVisible, refresh, confirmLive, closePosition };
   setConfig(window.__pendingTrendOnlyConfig || DEFAULTS);
-  setVisible(["trend_only_v1", "trend_only_v2"].includes(document.getElementById("strategyType")?.value));
+  setVisible(["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(document.getElementById("strategyType")?.value));
   refresh().catch(report);
   setInterval(() => { if (!document.hidden && !mount.hidden) refresh().catch(report); }, 5000);
   document.dispatchEvent(new CustomEvent("trend-only-panel-ready"));

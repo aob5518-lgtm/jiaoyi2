@@ -1,5 +1,5 @@
 "use strict";
-const fs = require("fs"), path = require("path"), crypto = require("crypto"), V1 = require("./trend_only"), V2 = require("./trend_only_v2");
+const fs = require("fs"), path = require("path"), crypto = require("crypto"), V1 = require("./trend_only"), V2 = require("./trend_only_v2"), V3 = require("./trend_only_v3");
 
 function paperStopFill({ side, stopPrice, currentPrice, previousPrice, slippageBps = 5 }) {
   const stop = Number(stopPrice), current = Number(currentPrice), previous = Number(previousPrice);
@@ -24,8 +24,9 @@ function createTrendRuntime(d) {
   let states = {};
   if (fs.existsSync(file)) states = JSON.parse(fs.readFileSync(file, "utf8")); // Fail closed on corrupted state.
   const approvals = new Map();
-  function isV2(acc) { return acc?.strategyType === "trend_only_v2"; }
-  function engine(acc) { return isV2(acc) ? V2 : V1; }
+  // V2+ share the hardened execution layer; strategy math remains version-specific.
+  function isV2(acc) { return ["trend_only_v2", "trend_only_v3"].includes(acc?.strategyType); }
+  function engine(acc) { return acc?.strategyType === "trend_only_v3" ? V3 : acc?.strategyType === "trend_only_v2" ? V2 : V1; }
   function get(acc) {
     const initial = engine(acc).initialState();
     const state = states[acc.id] ||= initial;
@@ -98,6 +99,7 @@ function createTrendRuntime(d) {
     if (s.riskLock) return { state: s.riskLockType === "POST_FILL_RISK_LOCK" ? "POST_FILL_RISK_LOCK" : "RISK_LOCK", reason: s.riskLockReason || "保护止损单未确认" };
     if (s.position) return { state: "POSITION_MANAGED", reason: "当前已有趋势仓位，执行持仓保护" };
     if (!st.running) return { state: "MONITOR_STOPPED", reason: "趋势监控已停止" };
+    if (!paper(acc) && acc.strategyType === "trend_only_v3") return { state: "PLATFORM_UNSUPPORTED", reason: "Trend Only V3 当前仅开放 Paper" };
     if (!paper(acc) && acc.platform === "extended") return { state: "PLATFORM_UNSUPPORTED", reason: "Extended Live 趋势下单暂未开放" };
     if (d.conflictingAccount?.(acc) || s.conflictingAccount) return { state: "ACCOUNT_CONFLICT", reason: "同一交易账户与合约已被其他策略占用" };
     if (s.exchangeOpenOrders) return { state: "OPEN_ORDER_BLOCK", reason: "交易所存在挂单" };
@@ -123,7 +125,7 @@ function createTrendRuntime(d) {
     };
     const indicators = s.indicators || { atr: null, adx: null, chop: null, trendDirection: "none", higherDirection: "none" };
     const execution = executionSnapshot(acc, st, weekendBlocked);
-    const retention = isV2(acc) ? V2.journalRetentionBars(config.entryTimeframe) : 0;
+    const retention = isV2(acc) ? T.journalRetentionBars(config.entryTimeframe) : 0;
     const fullJournal = isV2(acc) ? (s.signalJournal || []).slice(-retention) : [];
     st.trendOnly = {
       weekendBlocked,
@@ -143,8 +145,13 @@ function createTrendRuntime(d) {
       pauseUntil: Number(s.pauseUntil || 0),
       trendContext: s.trendContext || null,
       signalJournal: fullJournal.slice(-50).reverse(),
-      signalStats24h: isV2(acc) ? V2.signalStats(fullJournal, 24) : null,
-      signalStats72h: isV2(acc) ? V2.signalStats(fullJournal, 72) : null,
+      signalStats24h: isV2(acc) ? T.signalStats(fullJournal, 24) : null,
+      signalStats72h: isV2(acc) ? T.signalStats(fullJournal, 72) : null,
+      strategyVersion: acc.strategyType,
+      strategyState: p ? (p.defensiveMode ? "DEFENSIVE" : "MANAGING") : (signal.setupState || "SCANNING"),
+      riskState: s.riskLock ? "RISK_LOCKED" : "NORMAL",
+      systemHealth: st.activeError ? "ERROR" : "HEALTHY",
+      decisionFunnel: typeof T.buildDecisionFunnel === "function" ? T.buildDecisionFunnel(signal, { riskBlocked: !!s.riskLock, executionBlocked: !paper(acc) && acc.strategyType === "trend_only_v3" }) : null,
       riskLock: !!s.riskLock,
       riskLockReason: s.riskLockReason || "",
       stopOrderId: s.stopOrderId || "",
@@ -503,7 +510,7 @@ function createTrendRuntime(d) {
         const sets = await Promise.all([c.entryTimeframe, c.trendTimeframe, c.higherTimeframe].map(tf => d.candles(acc.symbol, tf, 300, acc.platform)));
         if (sets.some(x => x.stale)) throw Error("行情过期或使用跨交易所备用行情");
         const values = sets.map((x, n) => T.indicatorsFor(x.candles, c, [c.entryTimeframe, c.trendTimeframe, c.higherTimeframe][n]));
-        i = { ...values[0], config: c, entryDirection: T.directionOf(values[0]), trendDirection: T.directionOf(values[1]), higherDirection: T.directionOf(values[2]), price: Number(st.currentPrice) };
+        i = { ...values[0], config: c, entryDirection: T.directionOf(values[0]), trendDirection: T.directionOf(values[1]), higherDirection: T.directionOf(values[2]), entryIndicators: values[0], trendIndicators: values[1], higherIndicators: values[2], price: Number(st.currentPrice) };
         s.signal = T.detectMarketRegime(i.candles, i);
         if (isV2(acc)) {
           Object.assign(i, {

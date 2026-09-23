@@ -3085,6 +3085,7 @@
                     <select id="strategyType">
                       <option value="classic">经典补仓策略</option>
                       <option value="smart_regime_v1">智能趋势策略 V1</option>
+                      <option value="trend_only_v3">Trend Only V3（Paper 实验）</option>
                       <option value="trend_only_v2">Trend Only V2（推荐）</option>
                       <option value="trend_only_v1">Trend Only V1（兼容保留）</option>
                     </select>
@@ -3596,13 +3597,14 @@
       $("smartLossCooldownMinutes").value = smart.lossCooldownMinutes;
     }
 
-    function isTrendOnlyType(type) { return type === "trend_only_v1" || type === "trend_only_v2"; }
+    function isTrendOnlyType(type) { return ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(type); }
 
     function updateStrategyForm() {
       const smart = $("strategyType").value === "smart_regime_v1";
       const trendOnly = isTrendOnlyType($("strategyType").value);
       const trendV2 = $("strategyType").value === "trend_only_v2";
-      const extendedLiveBlocked = trendV2 && $("platform").value === "extended" && $("tradeMode").value === "live";
+      const trendV3 = $("strategyType").value === "trend_only_v3";
+      const extendedLiveBlocked = (trendV2 || trendV3) && $("platform").value === "extended" && $("tradeMode").value === "live";
       $("smartStrategyBlock").hidden = !smart;
       $("trendOnlyBlock").hidden = !trendOnly;
       window.TrendOnlyPanel?.setVisible(trendOnly);
@@ -3612,7 +3614,7 @@
         ? "智能策略实际仓位还会受单轮风险、保证金和可用余额限制。"
         : "经典策略的首次固定名义仓位。";
       $("strategyContext").innerHTML = trendOnly
-        ? `<span class="strategy-context-dot"></span><span><strong>${trendV2 ? "Trend Only V2" : "Trend Only V1"}</strong>只做趋势、单仓且不补仓；${extendedLiveBlocked ? "Extended Live 趋势下单暂未开放；请使用 Paper 测试或切换 Hyperliquid/Binance。" : trendV2 ? "支持突破、回踩与延续入场。" : "V1 兼容模式。"}</span>`
+        ? `<span class="strategy-context-dot"></span><span><strong>${trendV3 ? "Trend Only V3" : trendV2 ? "Trend Only V2" : "Trend Only V1"}</strong>只做趋势、单仓且不补仓；${trendV3 ? "V3 当前仅开放 Paper，采用评分、入场质量与成本风控。" : extendedLiveBlocked ? "Extended Live 趋势下单暂未开放；请使用 Paper 测试或切换 Hyperliquid/Binance。" : trendV2 ? "支持突破、回踩与延续入场。" : "V1 兼容模式。"}</span>`
         : smart
           ? '<span class="strategy-context-dot"></span><span><strong>智能趋势策略 V1</strong>已启用：下方参数独立生效，经典补仓字段已隐藏。</span>'
           : '<span class="strategy-context-dot"></span><span><strong>经典补仓策略</strong>使用固定补仓与止盈参数。</span>';
