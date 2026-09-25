@@ -57,6 +57,9 @@ function normalizeConfig(input = {}) {
   }
   config.version = "v3";
   config.allowLive = false;
+  if (!Array.isArray(config.entryModes) || !config.entryModes.length || config.entryModes.some(mode => !["breakout_entry", "pullback_entry", "continuation_entry"].includes(mode))) throw Error("V3 entryModes 无效");
+  config.entryModes = [...new Set(config.entryModes)];
+  if (!["strict_align", "not_against", "off"].includes(config.higherTimeframeMode)) throw Error("V3 higherTimeframeMode 无效");
   if (!(config.gradeAThreshold > config.gradeBThreshold && config.gradeAThreshold <= 100)) throw Error("V3 等级阈值无效");
   if (!(config.gradeARiskMultiplier > 0 && config.gradeARiskMultiplier <= 1 && config.gradeBRiskMultiplier > 0 && config.gradeBRiskMultiplier <= config.gradeARiskMultiplier)) throw Error("V3 风险倍率无效");
   if (!(config.maxAllowedCostR > 0 && config.minimumPotentialR > 0)) throw Error("V3 成本或空间过滤参数无效");

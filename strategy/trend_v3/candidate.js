@@ -2,6 +2,7 @@
 
 const { calculateInitialStop } = require("./stops");
 const { buildTradeCostModel } = require("./costs");
+const { calculateRewardSpace } = require("./reward_space");
 
 function buildCandidateSetup(account, signal, input, config) {
   const direction = signal.tradeDirection || signal.directionRaw;
@@ -12,7 +13,8 @@ function buildCandidateSetup(account, signal, input, config) {
   const plannedRiskU = Number(account.equity || 0) * Number(config.riskPerTrade) * riskMultiplier;
   const cost = buildTradeCostModel(account, entryMode || "candidate", { plannedRiskAmount: plannedRiskU });
   const stopDistance = stop?.allowed ? stop.distance : null;
-  const potentialR = Number.isFinite(Number(input.potentialR)) ? Number(input.potentialR) : stopDistance ? 2.5 : null;
+  const rewardSpace = stopDistance ? calculateRewardSpace(input, direction, entryPrice, stopDistance) : { potentialR: null, forwardLevel: null, source: "unknown" };
+  const potentialR = rewardSpace.potentialR;
   const costR = stopDistance ? entryPrice * cost.roundTripCostRate / (stopDistance + entryPrice * cost.roundTripCostRate) : null;
   return {
     direction,
@@ -28,6 +30,7 @@ function buildCandidateSetup(account, signal, input, config) {
     riskPercent: config.riskPerTrade * riskMultiplier,
     costR,
     potentialR,
+    rewardSpace,
     state: signal.setupState,
     waitingReason: (signal.blockers || [])[0] || "全部条件已满足"
   };

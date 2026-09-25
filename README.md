@@ -46,6 +46,35 @@ V3 不是“降低阈值的 V2”。它保留数据异常、系统风险、周�
 - 历史记录保存 `strategyVersion`、`experimentId` 与 `configHash`，默认不跨版本、实验或配置混算；统计统一使用 `netPnl` 与 `netR`。
 - “策略分析”按 Breakout、Pullback、Continuation 展示样本、胜率、Avg Net R、Net Expectancy、Profit Factor、净盈亏与 Fee Drag，不自动评价哪种模式最好。
 
+### V3 配置与数学口径
+
+V3 参数页只展示真实参与策略的配置：账户风险与周期参数、ATR/ADX/CHOP/EMA 周期、`chopIdealMax/chopTransitionMax/chopHardBlock`、四级 ADX 阈值、`minDiSpread`、`higherTimeframeMode`、`entryModes`、三种入场及压缩参数、结构/ATR 止损参数、Defensive/Trailing 参数、成本与 Potential R 上限、再入场窗口、实验与 Shadow 开关。继承自旧版本但 V3 不使用的 `enabled`、`weekendMode`、`weekendExitHourUTC`、`minAdxToTrade`、`breakEvenAtR`、`timeStopBars`、`minProfitForTimeStopR`、`requireMultiTimeframeConfirm`、`softBreakEvenAtR`、`realBreakEvenAtR`、`reentryCooldownBars` 已从 V3 UI 隐藏。
+
+- `riskBudgetU = equity × riskPerTrade × gradeRiskMultiplier`
+- `initialPriceRiskU = qty × |entryPrice - initialStopLossPrice|`
+- `expectedCostPerUnit = entryPrice × roundTripCostRate`；有真实入场费后改用真实入场费加预计出场费/滑点
+- `initialEffectiveRiskU = initialPriceRiskU + qty × expectedCostPerUnit`
+- `floatingNetR = (estimatedGrossPnl - estimatedTradingCost) / initialEffectiveRiskU`
+- `realizedNetR = finalNetPnl / initialEffectiveRiskU`
+- `netBreakEvenPrice = entryPrice ± expectedCostPerUnit`，多头加、空头减
+- `potentialR = 前方已确认 1H/4H 结构空间 / stopDistance`；结构未知时进入 `WAIT_STRUCTURE_SPACE`，不再默认 2.5R
+
+```mermaid
+flowchart LR
+  A[已收盘行情与指标] --> B[硬阻断与主趋势]
+  B --> C[CHOP/ADX/DI/多周期评分]
+  C --> D[启用的 Entry Setup]
+  D --> E[Cost Efficiency]
+  E --> F[1H/4H Potential R]
+  F --> G[风险仓位与再入场]
+  G --> H[执行层账户/挂单/平台检查]
+  H --> I{effectiveDecisionState}
+  I -->|READY| J[Paper 提交与成交]
+  I -->|WAIT/BLOCK| K[等待并记录统一 Funnel]
+  J --> L[MANAGING / DEFENSIVE]
+  L --> M[最终 Net PnL 与 Realized Net R]
+```
+
 V3 至少运行 7 天，建议 14 天或累计 50 个有效候选 setup 后，再结合 Paper Forward Test、V2 Shadow 和事后错过机会审计评估参数。短期没有开仓不是调低阈值的依据。
 
 ## Trend Only V2 推荐规则

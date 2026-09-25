@@ -10,7 +10,7 @@ function calculatePositionSize({ equity, available, entryPrice, stopDistance, ri
   const qty = Math.floor(rawQty / qtyStep + 1e-9) * qtyStep;
   if (!(qty > 0) || qty * entryPrice < minNotional) return { allowed: false, reason: "风险仓位小于交易所最小下单金额" };
   const priceRiskU = qty * stopDistance, expectedCostU = qty * entryPrice * costRate, effectiveRiskU = priceRiskU + expectedCostU;
-  return { allowed: true, qty, positionValue: qty * entryPrice, plannedRiskAmount: riskBudget, priceRiskU, expectedCostU, effectiveRiskU, actualPlannedRiskRatio: effectiveRiskU / equity };
+  return { allowed: true, qty, positionValue: qty * entryPrice, riskBudgetU: riskBudget, plannedRiskAmount: riskBudget, initialPriceRiskU: priceRiskU, priceRiskU, expectedCostU, initialEffectiveRiskU: effectiveRiskU, effectiveRiskU, actualPlannedRiskRatio: effectiveRiskU / equity, positionCapped: rawQty + qtyStep < riskQty };
 }
 
 module.exports = { calculatePositionSize };

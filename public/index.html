@@ -3908,26 +3908,29 @@
       if (position) $("v3PositionRows").innerHTML = [
         row("方向 / 入场", `${position.side === "long" ? "做多" : "做空"} · ${v3ModeLabel(position.entryMode)}`),
         row("入场价 / 当前价", `${fmt(position.entryPrice, 2)} / ${fmt(st.currentPrice, 2)}`),
-        row("浮动净盈亏", `${fmt(st.pnl, 2)} U`, signClass(st.pnl)),
+        row("浮动净盈亏", `${fmt(position.estimatedNetPnl, 2)} U`, signClass(position.estimatedNetPnl)),
         row("初始 / 当前止损", `${fmt(position.initialStopLossPrice, 2)} / ${fmt(position.currentStopLossPrice, 2)}`),
-        row("grossR / netR", `${fmt(position.grossR ?? position.rMultiple, 2)} / ${fmt(position.netR ?? position.rMultiple, 2)}`),
+        row("grossR / netR", `${fmt(position.grossR ?? position.rMultiple, 2)} / ${fmt(position.floatingNetR ?? position.netR, 2)}`),
+        row("风险预算 / 实际 Risk Unit", `${fmt(position.riskBudgetU, 2)} U / ${fmt(position.initialEffectiveRiskU, 2)} U`),
         row("MFE_R / MAE_R", `${fmt(position.MFE_R, 2)} / ${fmt(position.MAE_R, 2)}`),
         row("保护阶段 / Trailing", `${position.netBreakEvenActivated ? "净保本" : position.oneRMilestone ? "1R 里程碑" : "初始保护"} / ${position.trailingActive ? "已启动" : "等待"}`),
         row("Trend Health / Exit", `${position.defensiveMode ? "DEFENSIVE" : "HEALTHY"} / ${trend.executionState || "POSITION_MANAGED"}`, position.defensiveMode ? "orange" : "green")
       ].join("");
       $("v3HealthRows").innerHTML = [
+        row("系统健康", trend.systemHealth || "HEALTHY", trend.systemHealth === "ERROR" ? "red" : "green"),
         row("策略状态", trend.strategyState || signal.setupState || "SCANNING"),
         row("风险状态", trend.riskState || "NORMAL", trend.riskState === "RISK_LOCKED" ? "red" : "green"),
-        row("系统健康", trend.systemHealth || "HEALTHY", trend.systemHealth === "ERROR" ? "red" : "green"),
         row("执行状态", trend.executionState || "NO_SIGNAL"),
         row("保护止损", trend.stopProtectionHealth || "NOT_REQUIRED")
       ].join("");
       $("v3AdvancedDiagnosticRows").innerHTML = [
         row("CHOP / ADX / ATR", `${fmt(indicators.chop, 2)} / ${fmt(indicators.adx, 2)} / ${fmt(indicators.atr, 4)}`),
-        row("DI+ / DI-", `${fmt(signal.diagnostics?.adx?.diPlus ?? indicators.diPlus, 2)} / ${fmt(signal.diagnostics?.adx?.diMinus ?? indicators.diMinus, 2)}`),
         row("1H / 4H / 15m", `${indicators.trendDirection || "none"} / ${indicators.higherDirection || "none"} / ${indicators.entryDirection || "none"}`),
-        row("评分组成", Object.entries(signal.scoreBreakdown || {}).map(([key, value]) => `${key} ${fmt(value, 1)}`).join(" · ") || "等待评分"),
-        row("结构位", `${signal.structureLow == null ? "-" : fmt(signal.structureLow, 2)} / ${signal.structureHigh == null ? "-" : fmt(signal.structureHigh, 2)}`),
+        row("评分组成", ["structure","strength","multiTimeframe","environment","entryQuality","costEfficiency","total"].map(key => `${key} ${fmt(signal.scoreBreakdown?.[key], 1)}`).join(" · ")),
+        row("DI+ / DI-", `${fmt(indicators.diPlus, 2)} / ${fmt(indicators.diMinus, 2)}`),
+        row("EMA20 / EMA50 / Slope", `${fmt(indicators.emaFast, 4)} / ${fmt(indicators.emaMid, 4)} / ${fmt(indicators.emaFastSlope, 4)}`),
+        row("EMA 距离 ATR", fmt(indicators.distanceFromEmaAtr, 3)),
+        row("结构位", `${indicators.structureLow == null ? "-" : fmt(indicators.structureLow, 2)} / ${indicators.structureHigh == null ? "-" : fmt(indicators.structureHigh, 2)}`),
         row("内部阻断", (signal.blockers || []).join("；") || "无")
       ].join("");
     }
@@ -4204,12 +4207,13 @@
       $("topbarAccountMeta").textContent =
         `${cfg.name || "-"} ｜ ${cfg.platform || "-"} ｜ ${tradingPair(cfg.symbol, cfg.quoteAsset)} ｜ ${cfg.strategyLabel || (trendOnlyMode ? (cfg.strategyType === "trend_only_v3" ? "Trend Only V3" : cfg.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1") : smartMode ? "智能趋势策略 V1" : "经典补仓策略")} ｜ ${cfg.tradeMode === "simulation" || cfg.simulationEnabled ? "模拟" : "实盘"} ｜ ${st.running ? "运行中" : "未运行"}`;
 
-      const v3DecisionMap = { SCANNING:"扫描中", TREND_FOUND:"趋势已发现", WAIT_PULLBACK:"等待回踩", WAIT_BREAKOUT:"等待突破", WAIT_RETEST:"等待回踩确认", WAIT_CONTINUATION:"等待延续", WAIT_ENTRY_ALIGNMENT:"等待周期对齐", READY_A:"可以开仓", READY_B:"可以开仓", BLOCKED:"当前阻断", MANAGING:"持仓管理", DEFENSIVE:"防守管理", REENTRY_COOLDOWN:"再入场冷却" };
-      $("metricPnl").textContent = v3Mode ? (v3Trend.riskState === "RISK_LOCKED" ? "风控锁定" : v3Trend.position ? "持仓管理" : v3DecisionMap[v3Trend.strategyState || v3Signal.setupState] || "扫描中") : `${fmt(st.pnl, 2)} U`;
-      $("metricPnl").className = `hero-v ${v3Mode ? (v3Trend.riskState === "RISK_LOCKED" ? "red" : ["READY_A","READY_B","MANAGING"].includes(v3Trend.strategyState || v3Signal.setupState) ? "green" : "orange") : signClass(st.pnl)}`;
+      const v3DecisionMap = { SYSTEM_ERROR:"系统异常", RISK_LOCK:"风控锁定", POST_FILL_RISK_LOCK:"成交后风控锁定", UNKNOWN_ORDER:"订单状态未知", PENDING_ORDER:"订单待确认", ACCOUNT_CONFLICT:"账户冲突", OPEN_ORDER_BLOCK:"挂单阻断", PLATFORM_UNSUPPORTED:"平台不支持", REENTRY_COOLDOWN:"再入场冷却", WAIT_LIVE_CONFIRM:"等待 Live 确认", MONITOR_STOPPED:"监控已停止", READY:"可以开仓", POSITION_MANAGED:"持仓管理", SCANNING:"扫描中", TREND_FOUND:"趋势已发现", WAIT_PULLBACK:"等待回踩", WAIT_BREAKOUT:"等待突破", WAIT_RETEST:"等待回踩确认", WAIT_CONTINUATION:"等待延续", WAIT_ENTRY_ALIGNMENT:"等待周期对齐", WAIT_STRUCTURE_SPACE:"等待结构空间", READY_A:"可以开仓", READY_B:"可以开仓", BLOCKED:"当前阻断", MANAGING:"持仓管理", DEFENSIVE:"防守管理" };
+      const effectiveV3Decision = v3Trend.effectiveDecisionState || v3Trend.executionState || v3Trend.strategyState || v3Signal.setupState;
+      $("metricPnl").textContent = v3Mode ? (v3DecisionMap[effectiveV3Decision] || "扫描中") : `${fmt(st.pnl, 2)} U`;
+      $("metricPnl").className = `hero-v ${v3Mode ? (["SYSTEM_ERROR","RISK_LOCK","POST_FILL_RISK_LOCK","UNKNOWN_ORDER","ACCOUNT_CONFLICT","OPEN_ORDER_BLOCK","PLATFORM_UNSUPPORTED"].includes(effectiveV3Decision) ? "red" : ["READY","POSITION_MANAGED","MANAGING"].includes(effectiveV3Decision) ? "green" : "orange") : signClass(st.pnl)}`;
       if (v3Mode) {
         document.querySelector("#metricPnl").previousElementSibling.textContent = "当前决策";
-        $("metricPnlDescription").textContent = v3Trend.executionReason || "等待下一根已收盘 K 线";
+        $("metricPnlDescription").textContent = v3Trend.effectiveDecisionReason || v3Trend.executionReason || "等待下一根已收盘 K 线";
       } else {
         document.querySelector("#metricPnl").previousElementSibling.textContent = "当前盈亏";
         $("metricPnlDescription").textContent = "Current PnL";
@@ -4478,7 +4482,7 @@ function buildVoucherData(item) {
     legacyRecord: legacyOf(item),
     sections: {
       "A. 交易结果": { "币种": item.symbol || "未记录", "方向": item.side || "未记录", "入场模式": modeLabel(item.entryMode), "开仓价": value(item.entryPrice), "平仓价": value(item.exitPrice), "持仓时长": durationLabel(durationOf(item)), "R 倍数": value(item.rMultiple," R",3), "毛盈亏": value(item.grossPnl," U"), "手续费": value(item.tradingFee," U"), "资金费": value(item.fundingPnl," U"), "净盈亏": value(netPnlOf(item)," U") },
-      "B. 风控": { "入场 ATR": value(item.atrAtEntry), "初始止损": value(item.initialStopLossPrice), "最终止损": value(item.finalStopLossPrice), "计划风险": value(item.plannedRiskAmount ?? item.riskAmount," U"), "实际风险": value(item.actualRiskAmount," U"), "actualRiskRatio": value(item.actualRiskRatio,"",6), "riskDeviationRatio": value(item.riskDeviationRatio,"",6), "止损触发价": value(item.stopTriggerPrice), "止损成交价": value(item.stopExecutionPrice), "止损滑点": value(item.stopSlippageAmount,"",6), "止损滑点 bps": value(item.stopSlippageBps," bps",2), "止损成交模式": ({normal_trigger:"正常触发",gap_through:"跳空穿越"})[item.stopExecutionMode] || item.stopExecutionMode || missing },
+      "B. 风控": { "入场 ATR": value(item.atrAtEntry), "初始止损": value(item.initialStopLossPrice), "最终止损": value(item.finalStopLossPrice), "风险预算": value(item.riskBudgetU ?? item.plannedRiskAmount," U"), "初始价格风险": value(item.initialPriceRiskU," U"), "初始有效 Risk Unit": value(item.initialEffectiveRiskU," U"), "实际风险（有效）": value(item.actualEffectiveRiskU ?? item.actualRiskAmount," U"), "actualRiskRatio": value(item.actualRiskRatio,"",6), "riskDeviationRatio": value(item.riskDeviationRatio,"",6), "止损触发价": value(item.stopTriggerPrice), "止损成交价": value(item.stopExecutionPrice), "止损滑点": value(item.stopSlippageAmount,"",6), "止损滑点 bps": value(item.stopSlippageBps," bps",2), "止损成交模式": ({normal_trigger:"正常触发",gap_through:"跳空穿越"})[item.stopExecutionMode] || item.stopExecutionMode || missing },
       "C. 行情表现": { "MAE": value(item.maximumAdverseExcursion), "MAE_R": value(item.MAE_R," R",3), "MFE": value(item.maximumFavorableExcursion), "MFE_R": value(item.MFE_R," R",3), "最高价": value(item.highestPriceSinceEntry), "最低价": value(item.lowestPriceSinceEntry) },
       "D. 审计信息": { "closeReason 中文": reasonLabel(item.closeReason), "原始 closeReason": item.closeReason || "未记录", "platform": item.platform || "未记录", "clientOrderId": item.clientOrderId || "未记录", "exchangeOrderId": item.exchangeOrderId || item.platformOrderId || "未记录", "platformTradeId": item.platformTradeId || "未记录", "txHash": item.txHash || "未记录", "explorerUrl": item.explorerUrl || "未记录", "costSource": accountingSource, "strategyVersion": item.strategyVersion || "未记录", "experimentId": item.experimentId || "未记录", "configHash": item.configHash || "未记录" },
       "E. 策略质量": { "Trend Score": value(item.trendScore,"",1), "Entry Score": value(item.entryScore,"",1), "Grade": item.grade || missing, "Potential R": value(item.potentialR," R",2), "Cost R": value(item.costR," R",3), "Gross R": value(item.grossR," R",3), "Net R": value(item.netR ?? item.rMultiple," R",3), "为什么开仓": item.whyEntered || missing, "为什么退出": item.whyExited || reasonLabel(item.closeReason), "PostExitMFE_8": value(item.PostExitMFE_R_8," R",3), "PostExitMFE_16": value(item.PostExitMFE_R_16," R",3), "PostExitMFE_32": value(item.PostExitMFE_R_32," R",3) }

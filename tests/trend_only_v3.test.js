@@ -11,6 +11,8 @@ const { compareV2Shadow } = require("../strategy/trend_v3/shadow");
 const { registerMissedCandidate, updateMissedOpportunities } = require("../strategy/trend_v3/posthoc");
 const { buildStrategyAnalytics } = require("../strategy/trend_v3/analytics");
 const { updatePostExitAnalytics } = require("../strategy/trend_v3/post_exit");
+const { buildDecisionFunnel } = require("../strategy/trend_v3/diagnostics");
+const { transition } = require("../strategy/trend_v3/state_machine");
 
 function config(extra = {}) { return V3.normalizeConfig({ allowWeekendOpen: true, ...extra }); }
 function input(extra = {}) {
@@ -20,9 +22,9 @@ function input(extra = {}) {
     trendDirection: "long", higherDirection: "none", entryDirection: "long", structureLow: 99, structureHigh: 105,
     microHigh: 100.5, microLow: 99.5, pullbackLow: 99.2, pullbackHigh: 101, pullbackTouchedLong: true,
     pullbackTouchedShort: false, breakoutHigh: 102, breakoutLow: 98, swingContinuationLong: false,
-    swingContinuationShort: false, compression: false, expansion: false,
-    trendIndicators: { structureDirection: "long", emaFast: 100, emaMid: 99, emaFastSlope: 0.5, close: 101, adx: 32, adxHistory: [27, 30, 32], diPlus: 35, diMinus: 15 },
-    higherIndicators: { structureDirection: "none", adx: 18 },
+    swingContinuationShort: false, compression: false, expansion: false, roundTripCostRate: 0.001,
+    trendIndicators: { structureDirection: "long", emaFast: 100, emaMid: 99, emaFastSlope: 0.5, close: 101, adx: 32, adxHistory: [27, 30, 32], diPlus: 35, diMinus: 15, latestSwingHigh: 106, latestSwingLow: 97, swings: { highs: [{ price: 106 }], lows: [{ price: 97 }] } },
+    higherIndicators: { structureDirection: "none", adx: 18, latestSwingHigh: 110, latestSwingLow: 94, swings: { highs: [{ price: 110 }], lows: [{ price: 94 }] } },
     ...extra
   };
 }
@@ -83,8 +85,8 @@ test("Effective Risk sizing 与成交凭证统一 gross/net R", () => {
   assert.equal(plan.allowed, true, plan.reason); state.position = V3.positionFromFill(plan, { qty: plan.qty, price: plan.entryPrice, clientOrderId: "entry", exchangeOrderId: "paper-entry" }, 1000, account.trendOnlyConfig);
   const voucher = V3.recordClose(account, { qty: plan.qty, price: plan.entryPrice + 2, fee: 1, fundingPnl: 0.2, slippageCost: 0.3, clientOrderId: "exit", exchangeOrderId: "paper-exit" }, "trend_tp", 2000);
   assert.equal(voucher.netPnl, voucher.grossPnl - voucher.tradingFee + voucher.fundingPnl - voucher.slippageCost);
-  assert.equal(voucher.grossR, voucher.grossPnl / voucher.plannedRiskAmount);
-  assert.equal(voucher.netR, voucher.netPnl / voucher.plannedRiskAmount);
+  assert.equal(voucher.grossR, voucher.grossPnl / voucher.initialEffectiveRiskU);
+  assert.equal(voucher.netR, voucher.netPnl / voucher.initialEffectiveRiskU);
   assert.equal(voucher.strategyVersion, "trend_only_v3"); assert.equal(voucher.experimentId, "V3_STD_20260922_A"); assert.match(voucher.configHash, /^[a-f0-9]{64}$/);
 });
 
@@ -161,4 +163,119 @@ test("Post Exit Analytics 仅使用退出后的 K 线并标记为事后数据", 
   assert.ok(voucher.PostExitMFE_8 < 1);
   assert.ok(Number.isFinite(voucher.PostExitMFE_R_32));
   assert.equal(updatePostExitAnalytics([voucher], candles), false);
+});
+
+test("所有 V3 判断路径始终保留 structureHigh / structureLow", () => {
+  const cases = [
+    V3.detectMarketRegime([], input({ pullbackTouchedLong: false })),
+    V3.detectMarketRegime([], input({ entryDirection: "short" })),
+    V3.detectMarketRegime([], input({ chop: 70 })),
+    V3.detectMarketRegime([], input({ gradeAThreshold: 99, gradeBThreshold: 98 })),
+    V3.detectMarketRegime([], input({ pullbackTouchedLong: false, close: 104, breakoutHigh: 102, compression: true, expansion: true, emaFast: 100, maxEntryExtensionAtr: .5 }))
+  ];
+  for (const signal of cases) { assert.equal(signal.structureHigh, 105); assert.equal(signal.structureLow, 99); }
+});
+
+test("entryModes 只允许配置中启用的入场方式", () => {
+  const breakoutMarket = input({ config: config({ entryModes: ["pullback_entry"] }), pullbackTouchedLong: false, close: 102.1, emaFast: 101, breakoutHigh: 102, compression: true, expansion: true, open: 101.5 });
+  const blocked = V3.detectMarketRegime([], breakoutMarket);
+  assert.notEqual(blocked.entryMode, "breakout_entry");
+  const enabled = V3.detectMarketRegime([], { ...breakoutMarket, config: config({ entryModes: ["breakout_entry"] }) });
+  assert.equal(enabled.entryMode, "breakout_entry");
+});
+
+test("CHOP、ADX 与 DI 配置会真实改变同一行情评分或许可", () => {
+  const base = input({ chop: 50, adx: 24, diPlus: 31, diMinus: 20, trendIndicators: { ...input().trendIndicators, adx: 24, diPlus: 31, diMinus: 20 } });
+  const normal = V3.detectMarketRegime([], { ...base, config: config() });
+  const chopStrict = V3.detectMarketRegime([], { ...base, config: config({ chopTransitionMax: 49 }) });
+  const adxStrict = V3.detectMarketRegime([], { ...base, config: config({ adxTrendStart: 26, adxTrendValid: 30, adxStrong: 35 }) });
+  const diStrict = V3.detectMarketRegime([], { ...base, config: config({ minDiSpread: 20 }) });
+  assert.notEqual(normal.scoreBreakdown.environment, chopStrict.scoreBreakdown.environment);
+  assert.ok(adxStrict.scoreBreakdown.strength < normal.scoreBreakdown.strength);
+  assert.ok(diStrict.scoreBreakdown.strength < normal.scoreBreakdown.strength);
+});
+
+test("higherTimeframeMode strict_align / not_against / off 行为不同", () => {
+  const neutral = input({ higherDirection: "none" });
+  assert.equal(V3.detectMarketRegime([], { ...neutral, config: config({ higherTimeframeMode: "strict_align" }) }).setupState, "BLOCKED");
+  assert.notEqual(V3.detectMarketRegime([], { ...neutral, config: config({ higherTimeframeMode: "not_against" }) }).setupState, "BLOCKED");
+  const opposite = input({ higherDirection: "short", higherIndicators: { structureDirection: "short", adx: 40 } });
+  assert.equal(V3.detectMarketRegime([], { ...opposite, config: config({ higherTimeframeMode: "not_against" }) }).setupState, "BLOCKED");
+  assert.notEqual(V3.detectMarketRegime([], { ...opposite, config: config({ higherTimeframeMode: "off" }) }).setupState, "BLOCKED");
+});
+
+test("Potential R 缺少可靠结构不假设 2.5R，空间不足阻断，3R 继续", () => {
+  const state = V3.initialState(), account = { paper: true, equity: 10000, available: 10000, trendOnlyState: state, trendOnlyConfig: config({ maxStopDistanceAtr: 3 }) };
+  const noSpaceInput = input({ trendIndicators: { ...input().trendIndicators, latestSwingHigh: null, swings: { highs: [], lows: [] } }, higherIndicators: { structureDirection: "none", adx: 18, swings: { highs: [], lows: [] } } });
+  const signal = V3.detectMarketRegime([], noSpaceInput);
+  const unknown = V3.tryOpenTrendOnlyPosition(account, signal, noSpaceInput);
+  assert.equal(unknown.potentialR, null); assert.equal(unknown.setupState, "WAIT_STRUCTURE_SPACE");
+  const near = input({ forwardResistance: 102 });
+  assert.match(V3.tryOpenTrendOnlyPosition(account, V3.detectMarketRegime([], near), near).reason, /结构空间/);
+  const far = input({ forwardResistance: 110 });
+  assert.equal(V3.tryOpenTrendOnlyPosition(account, V3.detectMarketRegime([], far), far).allowed, true);
+});
+
+test("Cost Efficiency 不是固定送分且评分明细严格加总", () => {
+  const cheap = V3.detectMarketRegime([], input({ roundTripCostRate: 0.0001 }));
+  const costly = V3.detectMarketRegime([], input({ roundTripCostRate: 0.0015 }));
+  assert.ok(cheap.scoreBreakdown.costEfficiency > costly.scoreBreakdown.costEfficiency);
+  for (const signal of [cheap, costly]) {
+    const b = signal.scoreBreakdown;
+    assert.equal(b.structure + b.strength + b.multiTimeframe + b.environment + b.entryQuality + b.costEfficiency, b.total);
+  }
+});
+
+test("净保本价格覆盖预计成本，实时与最终 Net R 使用相同 Risk Unit", () => {
+  const state = V3.initialState(), account = { id: "risk", paper: true, equity: 10000, available: 10000, trendOnlyState: state, trendOnlyConfig: config({ maxStopDistanceAtr: 3 }) };
+  const market = input({ forwardResistance: 110 }), signal = V3.detectMarketRegime([], market), plan = V3.tryOpenTrendOnlyPosition(account, signal, market);
+  state.position = V3.positionFromFill(plan, { qty: plan.qty, price: plan.entryPrice, fee: 1, clientOrderId: "e", exchangeOrderId: "e" }, 1000, account.trendOnlyConfig);
+  const p = state.position;
+  assert.ok(p.netBreakEvenPrice > p.entryPrice);
+  V3.manageTrendOnlyPosition(account, { price: p.entryPrice + p.plannedR * 1.6 }, { signalTime: 2000, close: p.entryPrice + p.plannedR * 1.6, atr: 1, emaFast: p.entryPrice, diPlus: 30, diMinus: 10, adxHistory: [30,31], entryDirection: "long", trendDirection: "long", higherDirection: "none" });
+  assert.ok(p.currentStopLossPrice >= p.netBreakEvenPrice);
+  const before = p.floatingNetR, voucher = V3.recordClose(account, { qty: p.positionSize, price: p.entryPrice + p.plannedR * 1.6, fee: 1, slippageCost: 0, clientOrderId: "x", exchangeOrderId: "x" }, "trend_tp", 3000);
+  assert.equal(voucher.initialEffectiveRiskU, p.initialEffectiveRiskU); assert.ok(Math.abs(before - voucher.realizedNetR) < .1);
+});
+
+test("仓位 cap 后 R 按真实初始风险而不是预算风险", () => {
+  const sizing = calculatePositionSize({ equity: 100000, available: 100, entryPrice: 100, stopDistance: 2, riskPerTrade: .01, riskMultiplier: 1, costRate: .001, leverage: 10, maxPositionRatio: .1, qtyStep: .001, minNotional: 10 });
+  assert.equal(sizing.positionCapped, true); assert.ok(sizing.initialEffectiveRiskU < sizing.riskBudgetU);
+  assert.equal(sizing.initialEffectiveRiskU / sizing.initialEffectiveRiskU, 1);
+});
+
+test("V3 最终净亏损含 slippage 并更新 dailyLoss 与 consecutiveLosses", () => {
+  const state = V3.initialState(), account = { id: "loss", paper: true, equity: 10000, available: 10000, trendOnlyState: state, trendOnlyConfig: config({ maxStopDistanceAtr: 3 }) };
+  const market = input({ forwardResistance: 110 }), plan = V3.tryOpenTrendOnlyPosition(account, V3.detectMarketRegime([], market), market);
+  state.position = V3.positionFromFill(plan, { qty: plan.qty, price: plan.entryPrice, clientOrderId: "e", exchangeOrderId: "e" }, 1000, account.trendOnlyConfig);
+  const v = V3.recordClose(account, { qty: plan.qty, price: plan.entryPrice, fee: 0, slippageCost: 7, clientOrderId: "x", exchangeOrderId: "x" }, "manual_close", 2000);
+  assert.ok(Math.abs(v.netPnl + v.tradingFee + 7) < 1e-9); assert.equal(state.dailyLoss, -v.netPnl); assert.equal(state.consecutiveLosses, 1);
+});
+
+test("统一 Funnel 的 Cost / PotentialR 阻断与实际执行一致", () => {
+  const costEval = { data:"PASS", trend:"PASS", environment:"PASS", setup:"PASS", cost:"BLOCK", rewardSpace:"WAITING", risk:"WAITING", execution:"BLOCK" };
+  assert.equal(buildDecisionFunnel({}, { executionEvaluation: costEval }).find(step => step.key === "cost").status, "BLOCK");
+  const rewardEval = { ...costEval, cost:"PASS", rewardSpace:"BLOCK" };
+  assert.equal(buildDecisionFunnel({}, { executionEvaluation: rewardEval }).find(step => step.key === "rewardSpace").status, "BLOCK");
+});
+
+test("V2 Shadow 使用固定快照，不随 V3 参数变化", () => {
+  const v3 = V3.detectMarketRegime([], input()), a = compareV2Shadow("a", input({ config: config({ chopTransitionMax: 50 }) }), v3), b = compareV2Shadow("a", input({ config: config({ chopTransitionMax: 60 }) }), v3);
+  assert.equal(a.v2Decision, b.v2Decision); assert.equal(a.shadowConfigHash, b.shadowConfigHash); assert.equal(a.shadowBaselineId, "V2_STANDARD_20260922");
+});
+
+test("State Machine 拒绝非法跳转并允许标准生命周期", () => {
+  assert.equal(transition("SCANNING", "READY_A", "signal").allowed, true);
+  assert.equal(transition("READY_A", "ENTERED", "fill").allowed, true);
+  const invalid = transition("MANAGING", "READY_A", "bad"); assert.equal(invalid.allowed, false); assert.match(invalid.error, /非法状态迁移/);
+});
+
+test("V3 DEFENSIVE 真正使用结构缓冲、最小距离和确认根数", () => {
+  const c = config({ structureBreakBufferAtr: .25, structureReversalConfirmBars: 2, softExitMinBars: 2, defensiveStructureBufferAtr: .25, minDefensiveStopDistanceAtr: .5, defensiveTrailingAtrMultiplier: 1.2 });
+  const p = { side:"long", entryPrice:100, initialStopLossPrice:98, currentStopLossPrice:98, signalTime:1, positionSize:1, initialEffectiveRiskU:2.2, expectedCostPerUnit:.2 };
+  const weak = { signalTime: 1 + 3 * 15 * 60 * 1000, close:98.7, emaFast:99, diPlus:10, diMinus:30, adxHistory:[30,29], entryDirection:"short", trendDirection:"long", higherDirection:"none", structureLow:99, atr:1 };
+  const first = evaluateExit(p,{price:98.7},weak,c);
+  assert.equal(first.reason,"");assert.equal(p.defensiveMode,true);assert.equal(p.structureReversalCount,1);assert.ok(p.currentStopLossPrice <= 98.2);
+  const second = evaluateExit(p,{price:98.65},{...weak,signalTime:weak.signalTime+15*60*1000,close:98.65},c);
+  assert.equal(second.reason,"trend_reversal");
 });

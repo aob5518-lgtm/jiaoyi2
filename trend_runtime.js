@@ -46,6 +46,16 @@ function createTrendRuntime(d) {
     st.lastAction = message;
     if (get(acc).lastLog !== message) { d.log(acc.id, message); get(acc).lastLog = message; }
   }
+  function moveStrategyState(acc, nextState, event) {
+    if (!isV3(acc)) return nextState;
+    const s = get(acc), result = V3.transition(s.strategyState || "SCANNING", nextState, event);
+    s.stateTransitionLog ||= [];
+    if (!result.allowed) {
+      s.stateTransitionLog.push({ time: Date.now(), ...result });
+      if (s.stateTransitionLog.length > 100) s.stateTransitionLog.shift();
+    } else s.strategyState = result.state;
+    return result.state;
+  }
   function journalItem(s, signalTime = s.signal?.signalTime) {
     return (s.signalJournal || []).findLast?.(entry => entry.time === signalTime) || (s.signalJournal || []).find(entry => entry.time === signalTime);
   }
@@ -92,18 +102,20 @@ function createTrendRuntime(d) {
     if (/risk_lock|日亏损|连续亏损|风控暂停|权益无效/.test(reason)) return "RISK_LOCK";
     if (/pendingOrder|订单状态|挂单|重复下单/.test(reason)) return "OPEN_ORDER_BLOCK";
     if (/已有仓位|禁止加仓/.test(reason)) return "POSITION_MANAGED";
+    if (/结构空间|前方空间/.test(reason)) return "WAIT_STRUCTURE_SPACE";
     return "NO_SIGNAL";
   }
   function executionSnapshot(acc, st, weekendBlocked) {
     const s = get(acc), signal = s.signal || {};
-    if (s.pendingOrder) return { state: "ORDER_SUBMITTED", reason: s.pendingOrder.status === "unknown_order_state" ? "订单状态尚未确认，禁止重复下单" : "订单已提交，等待交易所确认" };
+    if (st.activeError) return { state: "SYSTEM_ERROR", reason: st.activeError };
+    if (s.pendingOrder) return { state: s.pendingOrder.status === "unknown_order_state" ? "UNKNOWN_ORDER" : "PENDING_ORDER", reason: s.pendingOrder.status === "unknown_order_state" ? "订单状态尚未确认，禁止重复下单" : "订单已提交，等待交易所确认" };
     if (s.riskLock) return { state: s.riskLockType === "POST_FILL_RISK_LOCK" ? "POST_FILL_RISK_LOCK" : "RISK_LOCK", reason: s.riskLockReason || "保护止损单未确认" };
-    if (s.position) return { state: "POSITION_MANAGED", reason: "当前已有趋势仓位，执行持仓保护" };
-    if (!st.running) return { state: "MONITOR_STOPPED", reason: "趋势监控已停止" };
-    if (!paper(acc) && acc.strategyType === "trend_only_v3") return { state: "PLATFORM_UNSUPPORTED", reason: "Trend Only V3 当前仅开放 Paper" };
-    if (!paper(acc) && acc.platform === "extended") return { state: "PLATFORM_UNSUPPORTED", reason: "Extended Live 趋势下单暂未开放" };
     if (d.conflictingAccount?.(acc) || s.conflictingAccount) return { state: "ACCOUNT_CONFLICT", reason: "同一交易账户与合约已被其他策略占用" };
     if (s.exchangeOpenOrders) return { state: "OPEN_ORDER_BLOCK", reason: "交易所存在挂单" };
+    if (!paper(acc) && acc.strategyType === "trend_only_v3") return { state: "PLATFORM_UNSUPPORTED", reason: "Trend Only V3 当前仅开放 Paper" };
+    if (!paper(acc) && acc.platform === "extended") return { state: "PLATFORM_UNSUPPORTED", reason: "Extended Live 趋势下单暂未开放" };
+    if (s.position) return { state: "POSITION_MANAGED", reason: "当前已有趋势仓位，执行持仓保护" };
+    if (!st.running) return { state: "MONITOR_STOPPED", reason: "趋势监控已停止" };
     if (weekendBlocked) return { state: "NO_SIGNAL", reason: "周末过滤：禁止新开仓" };
     if (Number(s.pauseUntil) > Date.now()) return { state: "RISK_LOCK", reason: "连续亏损冷却中" };
     if (Number(s.dayStartEquity) > 0 && Number(s.dailyLoss) >= Number(s.dayStartEquity) * Number(acc.trendOnlyConfig?.maxDailyLossRatio || 0.03)) return { state: "RISK_LOCK", reason: "日亏损达到上限" };
@@ -111,7 +123,8 @@ function createTrendRuntime(d) {
       const approval = approvals.get(acc.id), confirmed = approval && approval.signalTime === signal.signalTime && approval.expires >= Date.now() && approval.configHash === configHash(acc);
       if (!confirmed) return { state: "WAIT_LIVE_CONFIRM", reason: "Live 开仓等待本次信号二次确认" };
     }
-    return { state: s.executionState || decisionFromSignal(signal), reason: s.executionReason || (signal.blockers || signal.reasons || []).join("；") };
+    const state = s.executionState || decisionFromSignal(signal);
+    return { state: state === "READY_TO_OPEN" ? "READY" : state, reason: s.executionReason || (signal.blockers || signal.reasons || []).join("；") };
   }
   function publish(acc, st) {
     const s = get(acc), p = s.position;
@@ -126,6 +139,9 @@ function createTrendRuntime(d) {
     };
     const indicators = s.indicators || { atr: null, adx: null, chop: null, trendDirection: "none", higherDirection: "none" };
     const execution = executionSnapshot(acc, st, weekendBlocked);
+    const executionEvaluation = { ...(s.executionEvaluation || {}) };
+    if (["SYSTEM_ERROR", "RISK_LOCK", "POST_FILL_RISK_LOCK"].includes(execution.state)) executionEvaluation.risk = "BLOCK";
+    if (["SYSTEM_ERROR", "RISK_LOCK", "POST_FILL_RISK_LOCK", "UNKNOWN_ORDER", "PENDING_ORDER", "ACCOUNT_CONFLICT", "OPEN_ORDER_BLOCK", "PLATFORM_UNSUPPORTED", "REENTRY_COOLDOWN", "WAIT_LIVE_CONFIRM", "MONITOR_STOPPED"].includes(execution.state)) executionEvaluation.execution = "BLOCK";
     const retention = isV2(acc) ? T.journalRetentionBars(config.entryTimeframe) : 0;
     const fullJournal = isV2(acc) ? (s.signalJournal || []).slice(-retention) : [];
     st.trendOnly = {
@@ -133,6 +149,8 @@ function createTrendRuntime(d) {
       signal,
       executionState: execution.state,
       executionReason: execution.reason,
+      effectiveDecisionState: execution.state,
+      effectiveDecisionReason: execution.reason,
       indicators,
       position: p || null,
       preview: s.preview || null,
@@ -149,10 +167,11 @@ function createTrendRuntime(d) {
       signalStats24h: isV2(acc) ? T.signalStats(fullJournal, 24) : null,
       signalStats72h: isV2(acc) ? T.signalStats(fullJournal, 72) : null,
       strategyVersion: acc.strategyType,
-      strategyState: p ? (p.defensiveMode ? "DEFENSIVE" : "MANAGING") : (signal.setupState || "SCANNING"),
+      strategyState: p ? (p.defensiveMode ? "DEFENSIVE" : "MANAGING") : (s.strategyState || signal.setupState || "SCANNING"),
       riskState: s.riskLock ? "RISK_LOCKED" : "NORMAL",
       systemHealth: st.activeError ? "ERROR" : "HEALTHY",
-      decisionFunnel: typeof T.buildDecisionFunnel === "function" ? T.buildDecisionFunnel(signal, { riskBlocked: !!s.riskLock, executionBlocked: !paper(acc) && acc.strategyType === "trend_only_v3" }) : null,
+      executionEvaluation,
+      decisionFunnel: typeof T.buildDecisionFunnel === "function" ? T.buildDecisionFunnel(signal, { executionEvaluation }) : null,
       candidateSetup: s.candidateSetup || null,
       shadowComparison: isV3(acc) ? (s.shadowComparisons || []).at(-1) || null : null,
       shadowStats: isV3(acc) ? s.shadowStats || null : null,
@@ -378,6 +397,7 @@ function createTrendRuntime(d) {
     if (result.fill) {
       if (o.kind === "open") {
         s.position = T.positionFromFill(o.plan, result.fill, o.createdAt, o.config);
+        moveStrategyState(acc, "ENTERED", "order_filled"); moveStrategyState(acc, "MANAGING", "position_active");
         s.lastEntrySignalTime = o.plan.signal.signalTime;
         if (isV3(acc)) {
           s.trendEntryCounts ||= {};
@@ -406,6 +426,7 @@ function createTrendRuntime(d) {
         }
         if (isV2(acc)) await cancelProtectiveStop(acc, s, { ignoreFailure: true });
         const closingPosition = { ...s.position }, v = T.recordClose(account(acc, st), result.fill, o.reason);
+        moveStrategyState(acc, "EXITED", "position_closed"); moveStrategyState(acc, "REENTRY_COOLDOWN", "exit_recorded");
         if (isV2(acc)) recordJournalExit(s, closingPosition, v);
         if (isV2(acc)) { s.riskLock = false; s.riskLockType = ""; s.riskLockReason = ""; clearStopState(s); }
         if (paper(acc)) s.simBalance += v.pnl;
@@ -519,13 +540,15 @@ function createTrendRuntime(d) {
         const sets = await Promise.all([c.entryTimeframe, c.trendTimeframe, c.higherTimeframe].map(tf => d.candles(acc.symbol, tf, 300, acc.platform)));
         if (sets.some(x => x.stale)) throw Error("行情过期或使用跨交易所备用行情");
         const values = sets.map((x, n) => T.indicatorsFor(x.candles, c, [c.entryTimeframe, c.trendTimeframe, c.higherTimeframe][n]));
-        i = { ...values[0], config: c, entryDirection: T.directionOf(values[0]), trendDirection: T.directionOf(values[1]), higherDirection: T.directionOf(values[2]), entryIndicators: values[0], trendIndicators: values[1], higherIndicators: values[2], price: Number(st.currentPrice) };
+        const estimatedCost = isV3(acc) ? T.buildTradeCostModel(account(acc, st), "candidate") : null;
+        i = { ...values[0], config: c, entryDirection: T.directionOf(values[0]), trendDirection: T.directionOf(values[1]), higherDirection: T.directionOf(values[2]), entryIndicators: values[0], trendIndicators: values[1], higherIndicators: values[2], price: Number(st.currentPrice), roundTripCostRate: estimatedCost?.roundTripCostRate };
         s.signal = T.detectMarketRegime(i.candles, i);
+        if (!s.position) moveStrategyState(acc, s.signal.setupState || "SCANNING", "signal_evaluated");
         if (isV2(acc)) {
           Object.assign(i, {
-            structureHigh: s.signal.structureHigh,
-            structureLow: s.signal.structureLow,
-            distanceFromEmaAtr: s.signal.distanceFromEmaAtr,
+            structureHigh: s.signal.structureHigh ?? i.structureHigh,
+            structureLow: s.signal.structureLow ?? i.structureLow,
+            distanceFromEmaAtr: s.signal.distanceFromEmaAtr ?? i.distanceFromEmaAtr,
             states: s.signal.states || { breakout: false, pullback: false, continuation: false }
           });
           T.updateTrendContext(s, s.signal, i);
@@ -554,7 +577,7 @@ function createTrendRuntime(d) {
           }
           setDecision(acc, decisionFromSignal(s.signal), (s.signal.blockers || []).join("；"), { executionPermission: s.signal.entryPermission === "allowed" ? "pending" : "blocked" });
         }
-        s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, entryDirection: i.entryDirection, trendDirection: i.trendDirection, higherDirection: i.higherDirection };
+        s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, diPlus: i.diPlus, diMinus: i.diMinus, emaFast: i.emaFast, emaMid: i.emaMid, emaFastSlope: i.emaFastSlope, distanceFromEmaAtr: i.distanceFromEmaAtr, structureHigh: i.structureHigh, structureLow: i.structureLow, entryDirection: i.entryDirection, trendDirection: i.trendDirection, higherDirection: i.higherDirection };
       } catch (e) {
         log(acc, st, `趋势行情暂不可用：${e.message}；已有价格止损继续执行`);
         throw e;
@@ -566,6 +589,7 @@ function createTrendRuntime(d) {
         if (result.reason) { annotateSignal(acc, result.reason, "平仓信号", "POSITION_MANAGED"); await submit(acc, st, "close", null, result.reason); }
         else {
           if (isV2(acc) && Number(s.position.currentStopLossPrice) !== beforeStop) await syncProtectiveStop(acc, st, true);
+          moveStrategyState(acc, s.position.defensiveMode ? "DEFENSIVE" : "MANAGING", "position_managed");
           if (s.riskLock) annotateSignal(acc, `risk_lock：${s.riskLockReason || "保护止损单未确认"}`, "持仓保护异常", "RISK_LOCK");
           else { const actionText = s.position.defensiveMode ? "趋势衰减，进入防守模式" : s.position.trailingActive ? "移动止盈中" : s.position.breakEvenActivated ? "已保本，等待趋势延续" : "已开仓，等待 1R"; annotateSignal(acc, "当前已有仓位", actionText, "POSITION_MANAGED"); log(acc, st, actionText); }
         }
@@ -581,9 +605,11 @@ function createTrendRuntime(d) {
       try { bounds = await constraints(acc); }
       catch (error) { annotateSignal(acc, `交易所交易规则读取失败：${error.message}`, "执行层暂不可用", "RISK_LOCK"); throw error; }
       const preview = T.tryOpenTrendOnlyPosition({ ...a, confirmLive: true }, s.signal, { ...i, ...bounds });
+      if (isV3(acc)) s.executionEvaluation = preview.executionEvaluation || null;
       s.preview = preview.allowed ? { ...preview, expires: Date.now() + 60000, configHash: configHash(acc) } : null;
       const plan = T.tryOpenTrendOnlyPosition(a, s.signal, { ...i, ...bounds });
-      if (!plan.allowed) { const decision = s.signal.entryPermission === "allowed" ? decisionFromBlocker(plan.reason) : decisionFromSignal(s.signal); annotateSignal(acc, plan.reason, plan.reason, decision); log(acc, st, plan.reason); return; }
+      if (isV3(acc)) s.executionEvaluation = plan.executionEvaluation || s.executionEvaluation;
+      if (!plan.allowed) { const decision = s.signal.entryPermission === "allowed" ? decisionFromBlocker(plan.reason) : decisionFromSignal(s.signal); if (isV3(acc) && plan.setupState) moveStrategyState(acc, plan.setupState, "execution_evaluated"); annotateSignal(acc, plan.reason, plan.reason, decision); log(acc, st, plan.reason); return; }
       setDecision(acc, "READY_TO_OPEN", "全部执行条件通过", { executionPermission: "allowed", finalAction: paper(acc) ? "Paper 准备开仓" : "Live 信号已确认，准备开仓" });
       await submit(acc, st, "open", plan);
     } finally { publish(acc, st); save(); }

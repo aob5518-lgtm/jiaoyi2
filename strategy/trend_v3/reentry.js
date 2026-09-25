@@ -10,6 +10,10 @@ function evaluateReentry(state, signal, config) {
   const interval = Number(config.entryIntervalMs || 15 * 60 * 1000);
   const bars = Math.floor((Number(signal.signalTime) - Number(prior.lastExitSignalTime)) / interval);
   if (bars < config.reentryMinBars) return { allowed: false, state: "REENTRY_COOLDOWN", reason: `再入场冷却中，还需 ${config.reentryMinBars - Math.max(0, bars)} 根 K 线`, trendId };
+  if (bars > config.reentryMaxBars) {
+    state.reentryState = {};
+    return { allowed: true, state: "READY", reason: "旧再入场上下文已过期，按当前新趋势重新评估", trendId, contextExpired: true, barsSinceExit: bars };
+  }
   const newSetup = ["pullback_entry", "continuation_entry"].includes(signal.entryMode);
   const structureUpdated = signal.tradeDirection === "long"
     ? Number.isFinite(signal.structureLow) && (!Number.isFinite(prior.structureLow) || signal.structureLow > prior.structureLow)

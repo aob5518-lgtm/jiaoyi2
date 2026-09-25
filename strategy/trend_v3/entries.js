@@ -22,21 +22,27 @@ function evaluateBreakout(direction, input, config) {
   const extended = distance > Number(config.maxEntryExtensionAtr);
   const body = Math.abs(Number(input.close) - Number(input.open || input.close));
   const bodyQuality = Number(input.atr) > 0 && body >= Number(input.atr) * 0.35;
-  const score = (broke ? 8 : 0) + (input.compression ? 4 : 0) + (input.expansion ? 4 : 0) + (bodyQuality ? 2 : 0) + (!extended ? 2 : 0);
-  return { type: "breakout_entry", triggered: broke && !extended && score >= 12, waitRetest: broke && extended, score, distanceFromEmaAtr: distance, factors: { broke, compression: !!input.compression, expansion: !!input.expansion, bodyQuality, extended } };
+  const compression = input.breakoutCompression ?? input.compression;
+  const score = (broke ? 8 : 0) + (compression ? 4 : 0) + (input.expansion ? 4 : 0) + (bodyQuality ? 2 : 0) + (!extended ? 2 : 0);
+  return { type: "breakout_entry", triggered: broke && !extended && score >= 12, waitRetest: broke && extended, score, distanceFromEmaAtr: distance, factors: { broke, compression: !!compression, expansion: !!input.expansion, bodyQuality, extended } };
 }
 
 function evaluateContinuation(direction, input) {
   const long = direction === "long";
   const structure = long ? input.swingContinuationLong : input.swingContinuationShort;
   const released = !!input.expansion && (long ? Number(input.close) > Number(input.microHigh) : Number(input.close) < Number(input.microLow));
-  const score = (structure ? 8 : 0) + (input.compression ? 6 : 0) + (released ? 6 : 0);
-  return { type: "continuation_entry", triggered: !!structure && !!input.compression && released, score, factors: { structure: !!structure, compression: !!input.compression, released } };
+  const compression = input.continuationCompression ?? input.compression;
+  const score = (structure ? 8 : 0) + (compression ? 6 : 0) + (released ? 6 : 0);
+  return { type: "continuation_entry", triggered: !!structure && !!compression && released, score, factors: { structure: !!structure, compression: !!compression, released } };
 }
 
 function chooseEntry(direction, input, config) {
-  const candidates = [evaluatePullback(direction, input, config), evaluateBreakout(direction, input, config), evaluateContinuation(direction, input, config)];
-  return { selected: candidates.find(item => item.triggered) || null, candidates, waitRetest: candidates[1].waitRetest };
+  const enabled = new Set(Array.isArray(config.entryModes) ? config.entryModes : []);
+  const all = [evaluatePullback(direction, input, config), evaluateBreakout(direction, input, config), evaluateContinuation(direction, input, config)];
+  const candidates = all.map(item => ({ ...item, enabled: enabled.has(item.type) }));
+  const selected = candidates.find(item => item.enabled && item.triggered) || null;
+  const breakout = candidates.find(item => item.type === "breakout_entry");
+  return { selected, candidates, waitRetest: !!(breakout?.enabled && breakout.waitRetest) };
 }
 
 module.exports = { evaluatePullback, evaluateBreakout, evaluateContinuation, chooseEntry };

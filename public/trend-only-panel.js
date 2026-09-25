@@ -39,6 +39,15 @@
     standard: { gradeAThreshold: 82, gradeBThreshold: 74, gradeBRiskMultiplier: 0.5, htfMildPenalty: 5, highQualityPullbackScore: 15, minimumPotentialR: 1.8, maxAllowedCostR: 0.15, riskPerTrade: 0.01 },
     sensitive: { gradeAThreshold: 78, gradeBThreshold: 70, gradeBRiskMultiplier: 0.4, htfMildPenalty: 3, highQualityPullbackScore: 13, minimumPotentialR: 1.5, maxAllowedCostR: 0.12, riskPerTrade: 0.005 }
   };
+  const V3_EFFECTIVE_KEYS = new Set([
+    "leverage", "allowWeekendOpen", "riskPerTrade", "maxPositionRatio", "maxDailyLossRatio", "maxConsecutiveLosses", "cooldownHoursAfterLossLimit",
+    "atrPeriod", "adxPeriod", "chopPeriod", "emaFast", "emaMid", "emaSlow", "stopLossAtrMultiplier", "trailingAtrMultiplier", "trailStartAtR", "paperStopSlippageBps", "breakoutLookback",
+    "entryTimeframe", "trendTimeframe", "higherTimeframe", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread",
+    "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr",
+    "maxStopDistanceAtr", "minStopDistanceAtr", "breakoutMinStopAtr", "pullbackMinStopAtr", "continuationMinStopAtr", "structureBreakBufferAtr", "structureReversalConfirmBars", "softExitMinBars",
+    "defensiveStructureBufferAtr", "minDefensiveStopDistanceAtr", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars",
+    ...Object.keys(V3_DEFAULTS)
+  ]);
   const labels = {
     enabled: "启用趋势策略", leverage: "杠杆（最高 10）", allowWeekendOpen: "允许周末开新仓", weekendMode: "周末保护模式",
     weekendExitHourUTC: "周五保护开始（UTC 小时）", riskPerTrade: "单笔风险比例（0.01=1%）", maxPositionRatio: "最大保证金比例",
@@ -102,6 +111,7 @@
     document.getElementById("trendV1Warning").hidden = selectedV2 || selectedV3;
     document.getElementById("trendStrictnessWrap").hidden = !(selectedV2 || selectedV3);
     for (const [key, fallback] of Object.entries(activeDefaults)) {
+      if (selectedV3 && key !== "version" && !V3_EFFECTIVE_KEYS.has(key)) continue;
       const label = document.createElement("label"); label.textContent = labels[key] || key;
       if (!simpleKeys.has(key)) label.classList.add("trend-advanced-field");
       if (v2Only.has(key) && !(selectedV2 || selectedV3)) label.hidden = true;
@@ -169,7 +179,7 @@
     document.getElementById("trendOnlyStatusMessage").textContent = data.active ? (view?.nextAction || data.lastAction || "等待趋势") : "当前账户尚未启用 Trend Only";
     const pairs = [["市场阶段", view?.market || "行情数据不足"], ["原始趋势方向", view?.direction || "无方向"], ["交易方向", signal.tradeDirection === "long" ? "准备做多" : signal.tradeDirection === "short" ? "准备做空" : "暂不交易"], ["周末过滤", view?.weekend || "-"],
       ["CHOP", indicators.chop ?? "-"], ["ADX", indicators.adx ?? "-"], ["ATR", indicators.atr ?? "-"], ["趋势评分", signal.score ?? 0],
-      ["当前 R", position?.rMultiple ?? "-"], ["当前止损价", position?.currentStopLossPrice ?? "-"], ["订单状态", trend.pendingOrder?.status || "无待确认订单"]];
+      ["当前 Net R", position?.floatingNetR ?? position?.netR ?? "-"], ["当前止损价", position?.currentStopLossPrice ?? "-"], ["订单状态", trend.pendingOrder?.status || "无待确认订单"]];
     document.getElementById("trendOnlyStatus").innerHTML = pairs.map(([key, value]) => `<div class="data-row"><div class="data-k">${esc(key)}</div><div class="data-v">${esc(value)}</div></div>`).join("");
     document.getElementById("trendOnlyReasons").textContent = (signal.reasons || []).join("；") || "暂无信号原因";
     const upgradeButton = document.getElementById("trendUpgradeV2"), upgradeStatus = document.getElementById("trendUpgradeStatus");

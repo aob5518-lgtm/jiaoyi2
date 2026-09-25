@@ -1,5 +1,5 @@
 const {test}=require('node:test'), assert=require('node:assert/strict'),fs=require('fs'),os=require('os'),path=require('path');
-const T=require('../trend_only'),V2=require('../trend_only_v2'),{createTrendRuntime,paperStopFill}=require('../trend_runtime');
+const T=require('../trend_only'),V2=require('../trend_only_v2'),V3=require('../trend_only_v3'),{createTrendRuntime,paperStopFill}=require('../trend_runtime');
 function fixture(t,live=false){
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'trend-v1-test-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
   const acc={id:'a',name:'paper',platform:'hyperliquid',symbol:'ETH',address:'0xTEST',simulationBalance:10000,trendOnlyConfig:T.normalizeConfig({allowWeekendOpen:true})};
@@ -130,4 +130,14 @@ test('成交后实际风险超过计划 15% 会进入 POST_FILL_RISK_LOCK',t=>{
   const f=fixture(t);f.acc.strategyType='trend_only_v2';const s=f.r.get(f.acc);s.position={...v2Position(),postFillRiskExceeded:true,actualRiskAmount:116,plannedRiskAmount:100};
   assert.equal(f.r.enforcePostFillRisk(f.acc),true);assert.equal(s.riskLock,true);assert.equal(s.riskLockType,'POST_FILL_RISK_LOCK');
   f.r.publish(f.acc,f.st);assert.equal(f.st.trendOnly.executionState,'POST_FILL_RISK_LOCK');
+});
+test('V3 effectiveDecision 优先反映账户冲突与挂单阻断，诊断发布真实 DI/EMA/结构数据',t=>{
+  const f=fixture(t);f.acc.strategyType='trend_only_v3';f.acc.trendOnlyConfig=V3.normalizeConfig({allowWeekendOpen:true});const s=f.r.get(f.acc);
+  s.signal={directionRaw:'long',entryPermission:'allowed',setupState:'READY_A',scoreBreakdown:{environment:10}};
+  s.indicators={diPlus:31,diMinus:12,emaFast:101,emaMid:99,emaFastSlope:.5,distanceFromEmaAtr:.7,structureHigh:106,structureLow:98};
+  f.d.conflictingAccount=()=>true;f.r.publish(f.acc,f.st);
+  assert.equal(f.st.trendOnly.effectiveDecisionState,'ACCOUNT_CONFLICT');assert.equal(f.st.trendOnly.decisionFunnel.at(-1).status,'BLOCK');
+  assert.equal(f.st.trendOnly.indicators.diPlus,31);assert.equal(f.st.trendOnly.indicators.structureLow,98);
+  f.d.conflictingAccount=()=>false;s.conflictingAccount=false;s.exchangeOpenOrders=true;f.r.publish(f.acc,f.st);
+  assert.equal(f.st.trendOnly.effectiveDecisionState,'OPEN_ORDER_BLOCK');assert.notEqual(f.st.trendOnly.effectiveDecisionState,'READY');
 });

@@ -3,7 +3,7 @@
 function calculateInitialStop({ side, entryMode, entryPrice, atr, signal, input, config }) {
   const sign = side === "long" ? 1 : -1;
   const minByMode = entryMode === "breakout_entry" ? config.breakoutMinStopAtr : entryMode === "continuation_entry" ? config.continuationMinStopAtr : config.pullbackMinStopAtr;
-  const minimum = Math.max(Number(atr) * Math.max(minByMode, config.minimumEffectiveStopAtr), Number(entryPrice) * config.minimumEffectiveStopBps / 10000);
+  const minimum = Math.max(Number(atr) * Math.max(minByMode, config.minStopDistanceAtr, config.minimumEffectiveStopAtr), Number(entryPrice) * config.minimumEffectiveStopBps / 10000);
   let structure;
   if (entryMode === "pullback_entry") structure = side === "long" ? Number(input.pullbackLow ?? signal.structureLow) - atr * config.pullbackStopBuffer : Number(input.pullbackHigh ?? signal.structureHigh) + atr * config.pullbackStopBuffer;
   else if (entryMode === "breakout_entry") structure = side === "long" ? Number(input.breakoutLow ?? signal.structureLow) - atr * 0.25 : Number(input.breakoutHigh ?? signal.structureHigh) + atr * 0.25;
