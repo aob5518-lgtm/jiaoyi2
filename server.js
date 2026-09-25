@@ -4454,6 +4454,14 @@ function buildDashboardPayload(acc, st) {
   const health = buildAccountHealth(acc, st);
   return {
     config: sanitizeAccountForDashboard(acc, st),
+    strategyRuntime: isTrendOnly(acc) ? trendRuntime.runtimeDiagnostic(acc, st.running) : {
+      configuredType: strategyType,
+      configuredVersion: null,
+      activeEngine: strategyType === "smart_regime_v1" ? "SmartRegimeV1" : "ClassicDCA",
+      engineVersion: null,
+      running: !!st.running,
+      versionMismatch: false
+    },
     state: {
       ...state,
       activeStrategyType: strategyType,
@@ -4825,7 +4833,10 @@ const server = http.createServer((req, res) => {
           target.maxAdds = 0;
           // Initial activation is Paper. Live remains an explicit separate account setting.
           if (!isTrendOnly(acc) || requestedType === "trend_only_v3") { target.tradeMode = "simulation"; target.simulationEnabled = true; }
-          saveConfig(cfg); config = cfg; trendRuntime.clearApproval(acc.id);
+          const switchedVersion = getStrategyType(acc) !== requestedType;
+          saveConfig(cfg);
+          if (switchedVersion) trendRuntime.resetForStrategySwitch(acc, requestedType);
+          config = cfg; trendRuntime.clearApproval(acc.id);
         } else {
           if (!isTrendOnly(acc)) throw new Error("当前账户未选择 Trend Only 策略");
           if (pathname === "/api/trend-only/confirm") { trendRuntime.confirm(acc, data); await trendRuntime.tick(acc, st); }
@@ -4961,7 +4972,8 @@ const server = http.createServer((req, res) => {
       currentAccountId: config.currentAccountId,
       accounts: accountSummaries,
       config: dashboard.config,
-      state: dashboard.state
+      state: dashboard.state,
+      strategyRuntime: dashboard.strategyRuntime
     });
   }
 
@@ -5021,7 +5033,7 @@ const server = http.createServer((req, res) => {
         }
         if (isTrendOnly(next)) { next.trendOnlyConfig = trendEngine(next).normalizeConfig(next.trendOnlyConfig || current.trendOnlyConfig); next.leverage = next.trendOnlyConfig.leverage; next.maxAdds = 0; }
         if ((isTrendOnly(current) || isTrendOnly(next)) && (currentState.tickRunning || currentState.running || trendRuntime.busy(current))) throw new Error("趋势策略运行、持仓或订单未确认时禁止修改配置");
-        if (isTrendOnly(next) && !isTrendOnly(current)) { next.tradeMode = "simulation"; next.simulationEnabled = true; }
+        if (isTrendOnly(next) && (!isTrendOnly(current) || next.strategyType === "trend_only_v3")) { next.tradeMode = "simulation"; next.simulationEnabled = true; }
         if (isTrendOnly(current) && !next.strategyType) next.leverage = (next.trendOnlyConfig || current.trendOnlyConfig).leverage;
         if (next.strategyType && !isTrendOnly(next)) next.strategyMode = next.strategyType === "classic" ? "DCA基础模式" : "智能V1";
         trendRuntime.clearApproval(current.id);
@@ -5036,8 +5048,10 @@ const server = http.createServer((req, res) => {
           clearSmartRuntime(current.id);
           resetSmartPosition(currentState);
         }
+        const switchedTrendVersion = isTrendOnly(current) && isTrendOnly(next) && getStrategyType(current) !== getStrategyType(next);
         cfg.accounts[idx] = { ...cfg.accounts[idx], ...next };
         saveConfig(cfg);
+        if (switchedTrendVersion) trendRuntime.resetForStrategySwitch(current, getStrategyType(cfg.accounts[idx]));
         config = cfg;
         ensureAccountStates();
 
@@ -5267,6 +5281,11 @@ const server = http.createServer((req, res) => {
       try {
         const current = getCurrentAccount();
         if (isTrendOnly(current)) {
+          const runtime = trendRuntime.runtimeDiagnostic(current, stateMap[current.id].running);
+          if (runtime.versionMismatch) {
+            const message = "配置策略与实际运行引擎不一致，已禁止启动新开仓。";
+            return jsonRes(res, 409, { ok: false, error: message, message, ...runtime });
+          }
           if (isTrendOnlyV3(current) && !isSimulationAccount(current)) {
             const message = "Trend Only V3 当前仅开放 Paper；请切换为模拟交易。";
             return jsonRes(res, 400, { ok: false, error: message, message });
@@ -5276,7 +5295,9 @@ const server = http.createServer((req, res) => {
             return jsonRes(res, 400, { ok: false, error: message, message });
           }
           stateMap[current.id].running = true; persistAccountRunning(current.id, true);
-          return jsonRes(res, 200, { ok: true, message: "趋势监控已启动；周末/震荡行情不会新开仓；Live 每次新仓仍须确认。" });
+          const strategyType = getStrategyType(current), strategyMode = getStrategyMode(current);
+          const strategyVersion = strategyType === "trend_only_v3" ? "v3" : strategyType === "trend_only_v2" ? "v2" : "v1";
+          return jsonRes(res, 200, { ok: true, message: `${strategyMode} 趋势监控已启动 · ${isSimulationAccount(current) ? "Paper" : "Live"}`, strategyType, strategyMode, strategyVersion, running: true });
         }
         validateAccountConfigPayload({
           platform: current.platform,

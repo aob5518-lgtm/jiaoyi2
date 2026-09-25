@@ -28,10 +28,15 @@ function createTrendRuntime(d) {
   function isV2(acc) { return ["trend_only_v2", "trend_only_v3"].includes(acc?.strategyType); }
   function isV3(acc) { return acc?.strategyType === "trend_only_v3"; }
   function engine(acc) { return acc?.strategyType === "trend_only_v3" ? V3 : acc?.strategyType === "trend_only_v2" ? V2 : V1; }
+  function configuredVersion(acc) { return acc?.strategyType === "trend_only_v3" ? "v3" : acc?.strategyType === "trend_only_v2" ? "v2" : "v1"; }
+  function engineNameForVersion(version) { return version === "v3" ? "TrendOnlyV3" : version === "v2" ? "TrendOnlyV2" : version === "v1" ? "TrendOnlyV1" : "UnknownTrendEngine"; }
   function get(acc) {
     const initial = engine(acc).initialState();
     const state = states[acc.id] ||= initial;
     for (const [key, value] of Object.entries(initial)) if (state[key] === undefined) state[key] = value;
+    // Old runtime files did not carry an engine version. Adopt the configured
+    // version once for backwards compatibility; future switches are explicit.
+    if (!state.engineVersion) state.engineVersion = state.strategyVersion === "trend_only_v3" ? "v3" : configuredVersion(acc);
     return state;
   }
   function save() {
@@ -108,6 +113,7 @@ function createTrendRuntime(d) {
   function executionSnapshot(acc, st, weekendBlocked) {
     const s = get(acc), signal = s.signal || {};
     if (st.activeError) return { state: "SYSTEM_ERROR", reason: st.activeError };
+    if (s.engineVersion !== configuredVersion(acc)) return { state: "STRATEGY_VERSION_MISMATCH", reason: "配置策略与实际运行引擎不一致，已禁止新开仓。" };
     if (s.pendingOrder) return { state: s.pendingOrder.status === "unknown_order_state" ? "UNKNOWN_ORDER" : "PENDING_ORDER", reason: s.pendingOrder.status === "unknown_order_state" ? "订单状态尚未确认，禁止重复下单" : "订单已提交，等待交易所确认" };
     if (s.riskLock) return { state: s.riskLockType === "POST_FILL_RISK_LOCK" ? "POST_FILL_RISK_LOCK" : "RISK_LOCK", reason: s.riskLockReason || "保护止损单未确认" };
     if (d.conflictingAccount?.(acc) || s.conflictingAccount) return { state: "ACCOUNT_CONFLICT", reason: "同一交易账户与合约已被其他策略占用" };
@@ -167,6 +173,8 @@ function createTrendRuntime(d) {
       signalStats24h: isV2(acc) ? T.signalStats(fullJournal, 24) : null,
       signalStats72h: isV2(acc) ? T.signalStats(fullJournal, 72) : null,
       strategyVersion: acc.strategyType,
+      engineVersion: s.engineVersion,
+      strategyVersionMismatch: s.engineVersion !== configuredVersion(acc),
       strategyState: p ? (p.defensiveMode ? "DEFENSIVE" : "MANAGING") : (s.strategyState || signal.setupState || "SCANNING"),
       riskState: s.riskLock ? "RISK_LOCKED" : "NORMAL",
       systemHealth: st.activeError ? "ERROR" : "HEALTHY",
@@ -595,6 +603,7 @@ function createTrendRuntime(d) {
         }
         return;
       }
+      if (s.engineVersion !== configuredVersion(acc)) { annotateSignal(acc, "配置策略与实际运行引擎不一致，已禁止新开仓。", "版本不一致，禁止新开仓", "STRATEGY_VERSION_MISMATCH"); log(acc, st, "配置策略与实际运行引擎不一致，已禁止新开仓。"); return; }
       if (!st.running) { annotateSignal(acc, "趋势监控已停止，禁止新开仓", "监控已停止", "MONITOR_STOPPED"); log(acc, st, "趋势监控已停止，禁止新开仓"); return; }
       if (s.conflictingAccount) { annotateSignal(acc, "同一交易账户与合约已被其他策略占用", "风控暂停", "ACCOUNT_CONFLICT"); log(acc, st, "同一交易账户与合约已被其他策略占用，禁止新开仓"); return; }
       if (remote.openOrders.length) { annotateSignal(acc, "交易所存在挂单", "等待挂单完成", "OPEN_ORDER_BLOCK"); log(acc, st, "交易所存在挂单，禁止新开仓"); return; }
@@ -625,11 +634,40 @@ function createTrendRuntime(d) {
     const rows = (s.signalJournal || []).filter(item => (!from || Number(item.time) >= from) && (!to || Number(item.time) <= to) && (!decision || item.finalDecision === decision)).slice().reverse();
     return { total: rows.length, limit, offset, items: rows.slice(offset, offset + limit) };
   }
+  function resetForStrategySwitch(acc, targetType) {
+    const s = get(acc);
+    if (s.position || s.pendingOrder) throw Error("当前存在趋势仓位或待确认订单，禁止切换策略");
+    for (const key of [
+      "signal", "preview", "executionState", "executionReason", "executionEvaluation",
+      "strategyState", "candidateSetup", "pendingSetup", "trendContext", "indicators",
+      "lastEntrySignalTime", "lastJournalSignalTime", "lastMarketPrice", "previousMarketPrice",
+      "reentryState", "reversalCount", "stateTransitionLog", "conflictingAccount", "exchangeOpenOrders"
+    ]) delete s[key];
+    s.engineVersion = configuredVersion({ strategyType: targetType });
+    s.strategyVersion = targetType;
+    if (targetType === "trend_only_v3") s.strategyState = "SCANNING";
+    approvals.delete(acc.id);
+    save();
+    return s;
+  }
+  function runtimeDiagnostic(acc, running = false) {
+    const s = get(acc);
+    return {
+      configuredType: acc.strategyType,
+      configuredVersion: configuredVersion(acc),
+      activeEngine: engineNameForVersion(s.engineVersion),
+      engineVersion: s.engineVersion,
+      running: !!running,
+      versionMismatch: s.engineVersion !== configuredVersion(acc)
+    };
+  }
   return {
     get, save, tick, publish, confirm, signalJournal,
     syncProtection: (acc, st, force = true) => syncProtectiveStop(acc, st, force),
     reconcileProtection: (acc, remote = { openOrders: [] }) => reconcileOrphanStops(acc, get(acc), remote),
     enforcePostFillRisk: acc => applyPostFillRiskLock(acc),
+    resetForStrategySwitch,
+    runtimeDiagnostic,
     clearApproval: id => approvals.delete(id),
     busy: acc => !!(get(acc).position || get(acc).pendingOrder)
   };

@@ -127,3 +127,34 @@ test('V3 Post Exit 更新按凭证键合并，不会制造重复历史',async t=
  const f=setup(t);vm.runInContext(`addProfitHistory('legacy',{dedupeKey:'v3-1',strategyVersion:'trend_only_v3',exitTime:1000,netPnl:1});addProfitHistory('legacy',{dedupeKey:'v3-1',strategyVersion:'trend_only_v3',exitTime:1000,netPnl:1,PostExitMFE_8:2,postExitAnalyticsPostHocOnly:true})`,f.ctx);
  const r=await f.call('/api/profit-history?id=legacy');assert.equal(r.code,200);assert.equal(r.data.items.length,1);assert.equal(r.data.items[0].PostExitMFE_8,2);assert.equal(r.data.items[0].postExitAnalyticsPostHocOnly,true);
 });
+
+test('停止后切换 V2 到 V3 会强制 Paper、发布真实引擎并清除瞬时状态',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{version:'v2'}});
+ vm.runInContext('Object.assign(trendRuntime.get(config.accounts[0]),{signal:{directionRaw:"short"},preview:{qty:1},executionState:"READY_TO_OPEN",executionReason:"old",strategyState:"READY",candidateSetup:{grade:"A"},trendContext:{trendId:"old"},signalJournal:[{time:1}],journal:[{id:"history-1"}],simBalance:9988})',f.ctx);
+ const switched=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});assert.equal(switched.code,200,JSON.stringify(switched.data));
+ const status=await f.call('/api/status');
+ assert.equal(status.data.config.strategyType,'trend_only_v3');assert.equal(status.data.config.strategyMode,'Trend Only V3');assert.equal(status.data.config.trendOnlyConfig.version,'v3');
+ assert.equal(status.data.config.tradeMode,'simulation');assert.equal(status.data.config.simulationEnabled,true);
+ assert.deepEqual(status.data.strategyRuntime,{configuredType:'trend_only_v3',configuredVersion:'v3',activeEngine:'TrendOnlyV3',engineVersion:'v3',running:false,versionMismatch:false});
+ const runtime=vm.runInContext('trendRuntime.get(config.accounts[0])',f.ctx);assert.equal(runtime.signal,undefined);assert.equal(runtime.preview,undefined);assert.equal(runtime.candidateSetup,undefined);assert.equal(runtime.trendContext,null);assert.equal(runtime.strategyState,'SCANNING');assert.equal(runtime.signalJournal.length,1);assert.equal(runtime.journal.length,1);assert.equal(runtime.simBalance,9988);
+});
+
+test('趋势版本切换对持仓、pending 与 unknown order 全部 fail closed',async t=>{
+ for(const setupState of ['position','pending','unknown']){
+  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{version:'v2'}});
+  vm.runInContext(setupState==='position'?'trendRuntime.get(config.accounts[0]).position={positionSize:1}':setupState==='pending'?'trendRuntime.get(config.accounts[0]).pendingOrder={status:"submitted"}':'trendRuntime.get(config.accounts[0]).pendingOrder={status:"unknown_order_state"}',f.ctx);
+  const r=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});assert.equal(r.code,400,setupState);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v2');
+ }
+});
+
+test('配置与运行时引擎版本不一致时状态告警且禁止启动',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
+ vm.runInContext('trendRuntime.get(config.accounts[0]).engineVersion="v2"',f.ctx);
+ const status=await f.call('/api/status');assert.equal(status.data.strategyRuntime.activeEngine,'TrendOnlyV2');assert.equal(status.data.strategyRuntime.versionMismatch,true);assert.equal(status.data.state.trendOnly.executionState,'STRATEGY_VERSION_MISMATCH');
+ const start=await f.call('/api/start',{});assert.equal(start.code,409);assert.match(start.data.error,/禁止启动/);assert.equal(vm.runInContext('stateMap.legacy.running',f.ctx),false);
+});
+
+test('/api/start 返回实际 Trend Only 版本、模式与运行状态',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
+ const r=await f.call('/api/start',{});assert.equal(r.code,200);assert.equal(r.data.strategyType,'trend_only_v3');assert.equal(r.data.strategyMode,'Trend Only V3');assert.equal(r.data.strategyVersion,'v3');assert.equal(r.data.running,true);assert.match(r.data.message,/Paper/);
+});

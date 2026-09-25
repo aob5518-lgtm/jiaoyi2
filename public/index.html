@@ -2624,6 +2624,16 @@
       box-shadow:0 0 10px rgba(24,214,163,.55);
     }
 
+    #strategyDraftNotice{
+      justify-content:space-between;
+      padding:12px 14px;
+      border:1px solid rgba(255,178,74,.35);
+      background:rgba(255,178,74,.09);
+      color:#ffd59a;
+    }
+
+    #strategyDraftNotice strong{color:#ffb24a;letter-spacing:.08em}
+
     .config-section{
       padding:14px 16px 16px;
     }
@@ -2908,6 +2918,9 @@
       <div class="main-panel">
         <div class="main-content">
           <div id="tab-overview" class="tab-panel">
+            <div class="strategy-context" id="activeStrategyRuntimeBadge" style="margin-bottom:12px;">
+              <span class="strategy-context-dot"></span><span>ACTIVE · 等待服务器状态</span>
+            </div>
             <div class="hero-grid">
               <div class="hero-card">
                 <div class="hero-k">当前盈亏</div>
@@ -3025,6 +3038,10 @@
             <div class="mode-switch">
               <button id="simpleModeBtn" class="active" type="button">简洁模式</button>
               <button id="advancedModeBtn" type="button">高级模式</button>
+            </div>
+            <div class="strategy-context" id="strategyDraftNotice" hidden style="margin-bottom:16px;">
+              <span><strong>UNSAVED CHANGES</strong><br/><span id="strategyDraftNoticeText"></span></span>
+              <button class="start" id="switchTrendStrategyBtn" type="button">停止监控并切换策略</button>
             </div>
             <div class="overview-grid">
               <div class="block">
@@ -3576,6 +3593,7 @@
     let currentTab = "overview";
     let latestAccounts = [];
     let configMode = "simple";
+    let activeStrategyType = "classic";
     const instrumentCatalogCache = new Map();
 
     function ensureSymbolOption(symbol) {
@@ -3678,6 +3696,48 @@
     }
 
     function isTrendOnlyType(type) { return ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(type); }
+    function strategyName(type) {
+      return type === "trend_only_v3" ? "Trend Only V3" : type === "trend_only_v2" ? "Trend Only V2" : type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能趋势策略 V1" : "经典补仓策略";
+    }
+    function strategyLabel(type) {
+      return type === "trend_only_v3" ? "Trend Only V3（评分 + 入场质量 + 成本风控）" : type === "trend_only_v2" ? "Trend Only V2（趋势过滤 + 回踩入场 + 延续入场）" : strategyName(type);
+    }
+    function strategyModeName(type) { return isTrendOnlyType(type) ? strategyName(type) : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式"; }
+    function strategyVersion(type) { return type === "trend_only_v3" ? "v3" : type === "trend_only_v2" ? "v2" : type === "trend_only_v1" ? "v1" : null; }
+    function verifyStrategyStatus(data, expectedType) {
+      const expectedVersion = strategyVersion(expectedType);
+      return data?.config?.strategyType === expectedType
+        && data?.config?.strategyMode === strategyModeName(expectedType)
+        && data?.config?.strategyLabel === strategyLabel(expectedType)
+        && (!expectedVersion || data?.config?.trendOnlyConfig?.version === expectedVersion)
+        && (!expectedVersion || data?.strategyRuntime?.configuredType === expectedType)
+        && (!expectedVersion || data?.strategyRuntime?.configuredVersion === expectedVersion)
+        && (!expectedVersion || data?.strategyRuntime?.engineVersion === expectedVersion)
+        && !data?.strategyRuntime?.versionMismatch;
+    }
+
+    function updateDraftStrategyNotice() {
+      const draftStrategyType = $("strategyType").value;
+      const changed = !!activeStrategyType && draftStrategyType !== activeStrategyType;
+      const notice = $("strategyDraftNotice"), button = $("switchTrendStrategyBtn");
+      notice.hidden = !changed;
+      window.TrendOnlyPanel?.setStrategyContext?.(activeStrategyType, draftStrategyType);
+      if (!changed) return;
+      const state = latestStatusData?.state || {}, trend = state.trendOnly || {};
+      const position = trend.position || Number(state.positionQty || state.realPositionSize) > 0;
+      const pending = trend.pendingOrder;
+      const unknown = pending?.status === "unknown_order_state";
+      let suffix = `策略修改尚未生效。当前运行策略：${strategyName(activeStrategyType)}；准备切换：${strategyName(draftStrategyType)}。`;
+      if (position) suffix += " 当前存在趋势仓位。为避免不同版本接管旧仓，必须先平仓后才能切换策略。";
+      else if (pending || unknown) suffix += " 当前订单尚未确认，禁止切换策略。";
+      else if (state.running) suffix += ` 当前 ${strategyName(activeStrategyType)} 正在运行，切换需要先停止趋势监控。`;
+      else suffix += " 保存并通过服务器校验后才会生效。";
+      $("strategyDraftNoticeText").textContent = suffix;
+      const trendSwitch = isTrendOnlyType(activeStrategyType) && isTrendOnlyType(draftStrategyType);
+      button.hidden = !trendSwitch;
+      button.disabled = !!(position || pending || unknown);
+      button.textContent = state.running ? `停止监控并切换到 ${strategyName(draftStrategyType).replace("Trend Only ", "")}` : `保存并切换到 ${strategyName(draftStrategyType).replace("Trend Only ", "")}`;
+    }
 
     function updateStrategyForm() {
       const smart = $("strategyType").value === "smart_regime_v1";
@@ -3722,6 +3782,7 @@
       $("strategyContext").classList.toggle("danger-box", extendedLiveBlocked);
       if (extendedLiveBlocked) $("strategyContext").textContent = "Extended 当前仅支持 Paper 趋势测试，Live 趋势下单未开放。";
       $("trendCloseBtn").hidden = !trendOnly;
+      updateDraftStrategyNotice();
       applyConfigMode();
     }
 
@@ -4203,14 +4264,22 @@
       const strategyViewMissing = trendOnlyMode && (window.__strategyViewLoadFailed || !window.StrategyView?.buildTrendView);
       const effectiveSide = trendOnlyMode ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.directionRaw || st.trendOnly?.signal?.direction || "auto") : smartMode ? (st.smartSide || "auto") : cfg.side;
       const directionText = effectiveSide === "long" ? "做多" : effectiveSide === "short" ? "做空" : "自动多空";
+      const runtime = latestStatusData?.strategyRuntime || {};
+      const activeBadge = $("activeStrategyRuntimeBadge");
+      const activeTradeMode = cfg.tradeMode === "simulation" || cfg.simulationEnabled ? "PAPER" : "LIVE";
+      activeBadge.textContent = trendOnlyMode
+        ? `ACTIVE · ${cfg.strategyType === "trend_only_v3" ? `V3 · ${activeTradeMode}` : cfg.strategyType === "trend_only_v2" ? "V2" : "V1"} · ${runtime.activeEngine || "等待引擎诊断"}`
+        : `ACTIVE · ${cfg.strategyLabel || strategyName(cfg.strategyType)}`;
+      activeBadge.classList.toggle("danger-box", !!runtime.versionMismatch);
+      if (runtime.versionMismatch) activeBadge.textContent += " · STRATEGY_VERSION_MISMATCH：配置策略与实际运行引擎不一致，已禁止新开仓。";
       $("topbarAccountName").textContent = `当前账户：${cfg.name || "-"}`;
       $("topbarAccountMeta").textContent =
         `${cfg.name || "-"} ｜ ${cfg.platform || "-"} ｜ ${tradingPair(cfg.symbol, cfg.quoteAsset)} ｜ ${cfg.strategyLabel || (trendOnlyMode ? (cfg.strategyType === "trend_only_v3" ? "Trend Only V3" : cfg.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1") : smartMode ? "智能趋势策略 V1" : "经典补仓策略")} ｜ ${cfg.tradeMode === "simulation" || cfg.simulationEnabled ? "模拟" : "实盘"} ｜ ${st.running ? "运行中" : "未运行"}`;
 
-      const v3DecisionMap = { SYSTEM_ERROR:"系统异常", RISK_LOCK:"风控锁定", POST_FILL_RISK_LOCK:"成交后风控锁定", UNKNOWN_ORDER:"订单状态未知", PENDING_ORDER:"订单待确认", ACCOUNT_CONFLICT:"账户冲突", OPEN_ORDER_BLOCK:"挂单阻断", PLATFORM_UNSUPPORTED:"平台不支持", REENTRY_COOLDOWN:"再入场冷却", WAIT_LIVE_CONFIRM:"等待 Live 确认", MONITOR_STOPPED:"监控已停止", READY:"可以开仓", POSITION_MANAGED:"持仓管理", SCANNING:"扫描中", TREND_FOUND:"趋势已发现", WAIT_PULLBACK:"等待回踩", WAIT_BREAKOUT:"等待突破", WAIT_RETEST:"等待回踩确认", WAIT_CONTINUATION:"等待延续", WAIT_ENTRY_ALIGNMENT:"等待周期对齐", WAIT_STRUCTURE_SPACE:"等待结构空间", READY_A:"可以开仓", READY_B:"可以开仓", BLOCKED:"当前阻断", MANAGING:"持仓管理", DEFENSIVE:"防守管理" };
+      const v3DecisionMap = { SYSTEM_ERROR:"系统异常", STRATEGY_VERSION_MISMATCH:"策略版本不一致", RISK_LOCK:"风控锁定", POST_FILL_RISK_LOCK:"成交后风控锁定", UNKNOWN_ORDER:"订单状态未知", PENDING_ORDER:"订单待确认", ACCOUNT_CONFLICT:"账户冲突", OPEN_ORDER_BLOCK:"挂单阻断", PLATFORM_UNSUPPORTED:"平台不支持", REENTRY_COOLDOWN:"再入场冷却", WAIT_LIVE_CONFIRM:"等待 Live 确认", MONITOR_STOPPED:"监控已停止", READY:"可以开仓", POSITION_MANAGED:"持仓管理", SCANNING:"扫描中", TREND_FOUND:"趋势已发现", WAIT_PULLBACK:"等待回踩", WAIT_BREAKOUT:"等待突破", WAIT_RETEST:"等待回踩确认", WAIT_CONTINUATION:"等待延续", WAIT_ENTRY_ALIGNMENT:"等待周期对齐", WAIT_STRUCTURE_SPACE:"等待结构空间", READY_A:"可以开仓", READY_B:"可以开仓", BLOCKED:"当前阻断", MANAGING:"持仓管理", DEFENSIVE:"防守管理" };
       const effectiveV3Decision = v3Trend.effectiveDecisionState || v3Trend.executionState || v3Trend.strategyState || v3Signal.setupState;
       $("metricPnl").textContent = v3Mode ? (v3DecisionMap[effectiveV3Decision] || "扫描中") : `${fmt(st.pnl, 2)} U`;
-      $("metricPnl").className = `hero-v ${v3Mode ? (["SYSTEM_ERROR","RISK_LOCK","POST_FILL_RISK_LOCK","UNKNOWN_ORDER","ACCOUNT_CONFLICT","OPEN_ORDER_BLOCK","PLATFORM_UNSUPPORTED"].includes(effectiveV3Decision) ? "red" : ["READY","POSITION_MANAGED","MANAGING"].includes(effectiveV3Decision) ? "green" : "orange") : signClass(st.pnl)}`;
+      $("metricPnl").className = `hero-v ${v3Mode ? (["SYSTEM_ERROR","STRATEGY_VERSION_MISMATCH","RISK_LOCK","POST_FILL_RISK_LOCK","UNKNOWN_ORDER","ACCOUNT_CONFLICT","OPEN_ORDER_BLOCK","PLATFORM_UNSUPPORTED"].includes(effectiveV3Decision) ? "red" : ["READY","POSITION_MANAGED","MANAGING"].includes(effectiveV3Decision) ? "green" : "orange") : signClass(st.pnl)}`;
       if (v3Mode) {
         document.querySelector("#metricPnl").previousElementSibling.textContent = "当前决策";
         $("metricPnlDescription").textContent = v3Trend.effectiveDecisionReason || v3Trend.executionReason || "等待下一根已收盘 K 线";
@@ -4231,7 +4300,7 @@
       $("metricPriceDescription").textContent = v3Mode ? (v3Candidate?.waitingReason || "等待形成具备结构空间的入场形态") : trendOnlyMode ? "Next Action" : "Current Price";
       const protection = st.trendOnly || {};
       const executionState = protection.executionState;
-      const actionStateClass = ["error", "risk_locked"].includes(health.status) || protection.pendingOrder?.status === "unknown_order_state" || ["RISK_LOCK", "POST_FILL_RISK_LOCK", "ACCOUNT_CONFLICT", "PLATFORM_UNSUPPORTED"].includes(executionState) ? "red"
+      const actionStateClass = ["error", "risk_locked"].includes(health.status) || protection.pendingOrder?.status === "unknown_order_state" || ["STRATEGY_VERSION_MISMATCH", "RISK_LOCK", "POST_FILL_RISK_LOCK", "ACCOUNT_CONFLICT", "PLATFORM_UNSUPPORTED"].includes(executionState) ? "red"
         : protection.position && protection.position.defensiveMode ? "orange"
         : ["READY_TO_OPEN", "ORDER_FILLED", "POSITION_MANAGED"].includes(executionState) ? "green"
         : ["MONITOR_STOPPED", "OPEN_ORDER_BLOCK", "REENTRY_COOLDOWN", "WAIT_LIVE_CONFIRM", "WAIT_ENTRY_ALIGNMENT", "ORDER_SUBMITTED", "WAIT_PULLBACK", "WAIT_BREAKOUT", "WAIT_CONTINUATION"].includes(executionState) ? "orange" : "muted";
@@ -4579,6 +4648,7 @@ window.closeVoucherModal = function() {
 
       latestStatusData = data;
       currentAccountId = data.currentAccountId;
+      activeStrategyType = data.config?.strategyType || "classic";
 
       renderTime();
       renderAccountList(data.accounts || [], data.currentAccountId, data.state || {});
@@ -4589,6 +4659,7 @@ window.closeVoucherModal = function() {
         fillConfig(data.config || {});
         hasInitializedForm = true;
       }
+      updateDraftStrategyNotice();
 
       $("deleteAccountName").textContent = data.config?.name || "当前账户";
     }
@@ -4612,12 +4683,53 @@ window.closeVoucherModal = function() {
           body: JSON.stringify({ accountId: currentAccountId, strategyType: "trend_only_v2", config: { ...(cfg.trendOnlyConfig || {}), version: "v2", leverage: 10 } })
         });
         if (!result.ok) throw Error(result.error || "升级失败");
+        const verified = await api("/api/status");
+        if (!verifyStrategyStatus(verified, "trend_only_v2")) throw Error("升级结果与服务器实际配置不一致");
         hasInitializedForm = false;
         await loadAll(true);
         showToast("已升级到 Trend Only V2；账户平台、币种、模拟余额和密钥配置保持不变。", "success");
       } catch (error) { showToast(error.message || "升级失败", "error"); }
       finally { setButtonLoading(button, false); }
     }
+
+    async function switchTrendStrategy(targetType = $("strategyType").value) {
+      const button = $("switchTrendStrategyBtn");
+      setButtonLoading(button, true, "切换中");
+      try {
+        let status = await api("/api/status");
+        if (!status || status.ok === false) throw Error(status?.error || "读取服务器策略状态失败");
+        const currentType = status.config?.strategyType, state = status.state || {}, trend = state.trendOnly || {};
+        if (!isTrendOnlyType(currentType) || !isTrendOnlyType(targetType)) throw Error("该快捷流程只支持 Trend Only 版本切换");
+        if (trend.position || Number(state.positionQty || state.realPositionSize) > 0) throw Error("当前存在趋势仓位。为避免不同版本接管旧仓，必须先平仓后才能切换策略。");
+        if (trend.pendingOrder?.status === "unknown_order_state") throw Error("当前订单状态未知，禁止切换策略。");
+        if (trend.pendingOrder) throw Error("当前订单尚未确认，禁止切换策略。");
+        if (state.running) {
+          if (!window.confirm(`当前 ${strategyName(currentType)} 正在运行。\n切换到 ${strategyName(targetType)} 需要先停止趋势监控。\n当前无持仓、无待确认订单，可以安全停止并切换。\n是否继续？`)) return;
+          const stopped = await api("/api/stop", { method: "POST" });
+          if (!stopped.ok) throw Error(stopped.error || "停止趋势监控失败");
+          for (let attempt = 0; attempt < 20; attempt += 1) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+            status = await api("/api/status");
+            if (!status.state?.running && !status.state?.tickRunning) break;
+          }
+          if (status.state?.running || status.state?.tickRunning) throw Error("趋势监控尚未完全停止，请稍后重试");
+        }
+        const config = { ...(window.TrendOnlyPanel?.getConfig() || status.config?.trendOnlyConfig || {}), version: strategyVersion(targetType), leverage: 10 };
+        const saved = await api("/api/trend-only/config", { method: "POST", body: JSON.stringify({ accountId: status.currentAccountId, strategyType: targetType, strategyMode: strategyName(targetType), tradeMode: targetType === "trend_only_v3" ? "simulation" : status.config?.tradeMode, simulationEnabled: targetType === "trend_only_v3" ? true : status.config?.simulationEnabled, config }) });
+        if (!saved.ok) throw Error(saved.error || "策略切换失败");
+        const verified = await api("/api/status");
+        if (!verifyStrategyStatus(verified, targetType)) throw Error(`策略切换验证失败，服务器当前仍为 ${strategyName(verified?.config?.strategyType)}。`);
+        if (targetType === "trend_only_v3") $("tradeMode").value = "simulation";
+        hasInitializedForm = false;
+        await loadAll(true);
+        await loadAnalytics();
+        await loadHistory();
+        showToast(`${strategyName(targetType)} 已生效${targetType === "trend_only_v3" ? "，目前处于 Paper 模式" : ""}。请点击启动趋势监控。`, "success");
+      } catch (error) {
+        showToast(error?.message || "策略切换失败", "error");
+      } finally { setButtonLoading(button, false); }
+    }
+    window.switchTrendStrategy = switchTrendStrategy;
 
     async function saveConfig() {
       const btn = $("saveBtn");
@@ -4642,6 +4754,7 @@ window.closeVoucherModal = function() {
           simulationSlippageBps: Number($("simulationSlippageBps").value || 0),
           side: $("side").value,
           strategyType: $("strategyType").value,
+          strategyMode: strategyModeName($("strategyType").value),
           leverage: trendOnlySelected ? 10 : Number($("leverage").value),
           baseAmount: Number($("baseAmount").value),
           addAmount: Number($("addAmount").value),
@@ -4674,6 +4787,10 @@ window.closeVoucherModal = function() {
             lossCooldownMinutes: Number($("smartLossCooldownMinutes").value)
           }
         };
+        if (payload.strategyType === "trend_only_v3") {
+          payload.tradeMode = "simulation";
+          payload.simulationEnabled = true;
+        }
         for (const key of ["privateKey", "apiKey", "apiSecret", "starkPrivateKey", "publicKey", "vault"]) {
           const value = $(key).value.trim();
           if (value) payload[key] = value;
@@ -4685,14 +4802,16 @@ window.closeVoucherModal = function() {
         });
 
         if (res.ok) {
+          const verified = await api("/api/status");
+          if (!verifyStrategyStatus(verified, payload.strategyType)) throw Error("保存结果与服务器实际配置不一致");
           hasInitializedForm = false;
           await loadAll(true);
-          showToast("参数已保存", "success");
+          showToast(`参数已保存，${strategyName(payload.strategyType)} 已生效`, "success");
         } else {
-          showToast(res.error || "保存失败", "error");
+          throw Error(res.error || "保存失败");
         }
       } catch (e) {
-        showToast("保存失败", "error");
+        showToast(e?.message || "保存失败", "error");
       } finally {
         setButtonLoading(btn, false);
       }
@@ -4849,6 +4968,26 @@ window.closeVoucherModal = function() {
       }
     }
 
+    async function startCurrentStrategy() {
+      const btn = $("startBtn");
+      setButtonLoading(btn, true, "启动中");
+      try {
+        const status = await api("/api/status");
+        if (!status || status.ok === false) throw Error(status?.error || "读取服务器策略状态失败");
+        const draftStrategyType = $("strategyType").value;
+        const serverStrategyType = status.config?.strategyType;
+        if (draftStrategyType !== serverStrategyType) {
+          throw Error(`页面中存在尚未保存的策略修改。当前服务器仍运行 ${strategyName(serverStrategyType)}。请先保存 ${strategyName(draftStrategyType)} 后再启动。`);
+        }
+        if (status.strategyRuntime?.versionMismatch) throw Error("配置策略与实际运行引擎不一致，已禁止启动新开仓。");
+        const res = await api("/api/start", { method: "POST" });
+        if (!res.ok) throw Error(res.error || "启动失败");
+        showToast(res.strategyMode ? `${res.strategyMode} 趋势监控已启动 · ${status.config?.simulationEnabled || status.config?.tradeMode === "simulation" ? "Paper" : "Live"}` : (res.message || "机器人已启动"), "success");
+        await loadAll(false);
+      } catch (error) { showToast(error?.message || "启动失败", "error"); }
+      finally { setButtonLoading(btn, false); }
+    }
+
     document.querySelectorAll(".tab-btn").forEach(btn => {
       btn.addEventListener("click", () => { setTab(btn.dataset.tab); if (btn.dataset.tab === "history") loadHistory(); if (btn.dataset.tab === "analytics") loadAnalytics(); });
     });
@@ -4865,6 +5004,7 @@ window.closeVoucherModal = function() {
     $("accountFilter").addEventListener("change", () => renderAccountList(latestAccounts, currentAccountId, latestStatusData?.state || {}));
     $("signalReplayFilter").addEventListener("change", () => renderSignalReplay(latestStatusData?.state?.trendOnly?.signalJournal || [], latestStatusData?.state?.trendOnly?.signalStats24h, latestStatusData?.state?.trendOnly?.signalStats72h));
     $("overviewUpgradeV2Btn").addEventListener("click", upgradeCurrentTrendToV2);
+    $("switchTrendStrategyBtn").addEventListener("click", () => switchTrendStrategy($("strategyType").value));
     $("strategyType").addEventListener("change", () => {
       if (isTrendOnlyType($("strategyType").value)) window.TrendOnlyPanel?.setConfig(window.TrendOnlyPanel?.getConfig() || window.__pendingTrendOnlyConfig || {});
       updateStrategyForm();
@@ -4917,9 +5057,7 @@ window.closeVoucherModal = function() {
       showToast("日志已刷新", "info");
     });
 
-    $("startBtn").addEventListener("click", () =>
-      runSimpleAction("/api/start", "startBtn", "启动中", "机器人已启动", "启动失败")
-    );
+    $("startBtn").addEventListener("click", startCurrentStrategy);
     $("stopBtn").addEventListener("click", () =>
       runSimpleAction("/api/stop", "stopBtn", "停止中", "机器人已停止", "停止失败")
     );

@@ -141,3 +141,7 @@ test('V3 effectiveDecision 优先反映账户冲突与挂单阻断，诊断发�
   f.d.conflictingAccount=()=>false;s.conflictingAccount=false;s.exchangeOpenOrders=true;f.r.publish(f.acc,f.st);
   assert.equal(f.st.trendOnly.effectiveDecisionState,'OPEN_ORDER_BLOCK');assert.notEqual(f.st.trendOnly.effectiveDecisionState,'READY');
 });
+test('config=v3 但 runtime=v2 时 fail closed，tick 不会开仓',async t=>{
+  const f=fixture(t);f.acc.strategyType='trend_only_v3';f.acc.trendOnlyConfig=V3.normalizeConfig({allowWeekendOpen:true});const s=f.r.get(f.acc);s.engineVersion='v2';
+  await f.r.tick(f.acc,f.st);assert.equal(s.position,null);assert.equal(f.st.trendOnly.executionState,'STRATEGY_VERSION_MISMATCH');assert.match(f.st.lastAction,/版本不一致|实际运行引擎不一致/);
+});

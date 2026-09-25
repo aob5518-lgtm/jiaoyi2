@@ -231,3 +231,47 @@ test("V3 P2 支持高级筛选、质量 CSV、Fee Drag 与 Post Exit 复盘", ()
   assert.match(panel, /gradeAThreshold.*gradeBThreshold.*maxAllowedCostR.*minimumPotentialR.*shadowComparison/s);
   assert.match(mobile, /Net R/); assert.match(mobile, /Trend \/ Entry/);
 });
+
+test("Active Strategy 与 Draft Strategy 分离，未保存 V3 不会伪装成已生效", () => {
+  const html = read("public/index.html"), panel = read("public/trend-only-panel.js");
+  assert.match(html, /let activeStrategyType = "classic"/);
+  assert.match(html, /latestStatusData\?\.strategyRuntime/);
+  assert.match(html, /策略修改尚未生效/);
+  assert.match(html, /当前运行策略.*准备切换/s);
+  assert.match(html, /UNSAVED CHANGES/);
+  assert.match(panel, /activeStrategyType !== draftStrategyType/);
+  assert.match(panel, /待保存.*当前生效/s);
+});
+
+test("启动前校验服务器策略版本，保存失败展示原始原因并执行读后校验", () => {
+  const html = read("public/index.html");
+  assert.match(html, /async function startCurrentStrategy/);
+  assert.match(html, /draftStrategyType !== serverStrategyType/);
+  assert.match(html, /页面中存在尚未保存的策略修改/);
+  assert.match(html, /showToast\(e\?\.message \|\| "保存失败"/);
+  assert.match(html, /function verifyStrategyStatus/);
+  assert.match(html, /保存结果与服务器实际配置不一致/);
+});
+
+test("Trend Only 原子切换包含停止、等待、保存、GET 校验和 V3 Paper 强制", () => {
+  const html = read("public/index.html");
+  const start = html.indexOf("async function switchTrendStrategy");
+  const end = html.indexOf("async function saveConfig", start);
+  const flow = html.slice(start, end);
+  assert.match(flow, /api\("\/api\/status"\)/);
+  assert.match(flow, /api\("\/api\/stop"/);
+  assert.match(flow, /tickRunning/);
+  assert.match(flow, /\/api\/trend-only\/config/);
+  assert.match(flow, /verifyStrategyStatus/);
+  assert.match(flow, /trend_only_v3.*simulation/s);
+  assert.match(flow, /当前存在趋势仓位/);
+  assert.match(flow, /当前订单状态未知/);
+});
+
+test("总览 ACTIVE 标识只读取服务器配置与 runtime 诊断", () => {
+  const html = read("public/index.html");
+  assert.match(html, /id="activeStrategyRuntimeBadge"/);
+  assert.match(html, /activeTradeMode.*PAPER.*ACTIVE ·.*V3/s);
+  assert.match(html, /runtime\.activeEngine/);
+  assert.match(html, /STRATEGY_VERSION_MISMATCH/);
+});

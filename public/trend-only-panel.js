@@ -95,8 +95,22 @@
     <div class="left-note" id="trendOnlyActionHint">趋势操作已合并到底部操作栏。</div>`;
   const fieldRoot = document.getElementById("trendOnlyFields");
   const inputs = {};
+  let activeStrategyType = "classic";
+  let draftStrategyType = document.getElementById("strategyType")?.value || "classic";
+  function setStrategyContext(activeType, draftType = document.getElementById("strategyType")?.value) {
+    activeStrategyType = activeType || activeStrategyType;
+    draftStrategyType = draftType || draftStrategyType;
+    const pending = activeStrategyType !== draftStrategyType;
+    const title = document.getElementById("trendOnlyPanelTitle");
+    if (title && ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(draftStrategyType)) {
+      const name = draftStrategyType === "trend_only_v3" ? "Trend Only V3" : draftStrategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
+      title.textContent = `${name} 参数（${pending ? "待保存" : "当前生效"}）`;
+    }
+    const warning = document.getElementById("trendV1Warning");
+    if (warning) warning.hidden = activeStrategyType !== "trend_only_v1";
+  }
   function setConfig(config = {}) {
-    const selectedType = document.getElementById("strategyType")?.value;
+    const selectedType = draftStrategyType = document.getElementById("strategyType")?.value || draftStrategyType;
     const selectedV2 = selectedType === "trend_only_v2", selectedV3 = selectedType === "trend_only_v3";
     const activeDefaults = selectedV3 ? { ...DEFAULTS, ...V3_DEFAULTS, version: "v3" } : DEFAULTS;
     const merged = { ...activeDefaults, ...config };
@@ -107,8 +121,7 @@
       : ["version", "leverage", "riskPerTrade", "allowWeekendOpen", "entryModes"]);
     const v2Only = new Set(["version", "chopIdealMax", "chopTransitionMax", "chopHardBlock", "adxTrendStart", "adxTrendValid", "adxStrong", "adxVeryStrong", "minDiSpread", "higherTimeframeMode", "entryModes", "pullbackEmaBandAtr", "pullbackConfirmLookback", "pullbackInvalidationAtr", "continuationLookback", "microBreakLookback", "maxEntryExtensionAtr", "maxStopDistanceAtr", "minStopDistanceAtr", "breakoutMinStopAtr", "pullbackMinStopAtr", "continuationMinStopAtr", "structureBreakBufferAtr", "structureReversalConfirmBars", "softExitMinBars", "defensiveStructureBufferAtr", "minDefensiveStopDistanceAtr", "softBreakEvenAtR", "realBreakEvenAtR", "lockProfitAtR", "defensiveTrailingAtrMultiplier", "reversalConfirmBars", "reentryCooldownBars"]);
     const v3Only = new Set(Object.keys(V3_DEFAULTS));
-    document.getElementById("trendOnlyPanelTitle").textContent = selectedV3 ? "Trend Only V3 参数（Paper）" : selectedV2 ? "Trend Only V2 参数" : "Trend Only V1 参数";
-    document.getElementById("trendV1Warning").hidden = selectedV2 || selectedV3;
+    setStrategyContext(activeStrategyType, selectedType);
     document.getElementById("trendStrictnessWrap").hidden = !(selectedV2 || selectedV3);
     for (const [key, fallback] of Object.entries(activeDefaults)) {
       if (selectedV3 && key !== "version" && !V3_EFFECTIVE_KEYS.has(key)) continue;
@@ -155,7 +168,7 @@
     const result = {};
     for (const [key, input] of Object.entries(inputs)) {
       if (key === "entryModes") result[key] = input.value === "hybrid" ? ["breakout_entry", "pullback_entry", "continuation_entry"] : [input.value];
-      else if (key === "version") result[key] = document.getElementById("strategyType")?.value === "trend_only_v3" ? "v3" : document.getElementById("strategyType")?.value === "trend_only_v2" ? "v2" : "v1";
+      else if (key === "version") result[key] = draftStrategyType === "trend_only_v3" ? "v3" : draftStrategyType === "trend_only_v2" ? "v2" : "v1";
       else result[key] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
     }
     return result;
@@ -190,17 +203,18 @@
   }
   async function refresh() {
     const data = await api("/api/trend-only");
-    if (!Object.keys(inputs).length) setConfig(window.__pendingTrendOnlyConfig || data.config);
     const selector = document.getElementById("strategyType");
+    setStrategyContext(data.strategyType, selector?.value || data.strategyType);
+    if (!Object.keys(inputs).length) setConfig(window.__pendingTrendOnlyConfig || data.config);
     const visible = selector ? ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(selector.value) : data.active;
     setVisible(visible);
     if (visible) render(data);
     return data;
   }
   function report(error) { document.getElementById("trendOnlyStatusMessage").textContent = error.message || String(error); }
-  document.getElementById("trendRestoreDefaults").onclick = () => setConfig(document.getElementById("strategyType")?.value === "trend_only_v3" ? { ...DEFAULTS, ...V3_DEFAULTS, version: "v3" } : DEFAULTS);
+  document.getElementById("trendRestoreDefaults").onclick = () => setConfig(draftStrategyType === "trend_only_v3" ? { ...DEFAULTS, ...V3_DEFAULTS, version: "v3" } : DEFAULTS);
   document.getElementById("trendStrictness").onchange = event => {
-    const name = event.target.value, preset = (document.getElementById("strategyType")?.value === "trend_only_v3" ? V3_PRESETS : STRICTNESS_PRESETS)[name];
+    const name = event.target.value, preset = (draftStrategyType === "trend_only_v3" ? V3_PRESETS : STRICTNESS_PRESETS)[name];
     if (!preset) return;
     if (name === "sensitive" && document.getElementById("tradeMode")?.value === "live" && !window.confirm("灵敏模式会放宽过滤。Live 使用前需要再次确认，是否继续？")) {
       event.target.value = "custom"; return;
@@ -215,15 +229,10 @@
       const data = await refresh();
       if (data.state?.position) throw Error("当前有趋势仓位，平仓后才能升级。");
       if (data.state?.pendingOrder) throw Error("订单尚未确认，暂不能升级。");
-      if (data.running) {
-        if (!window.confirm("需要先停止趋势监控才能升级。是否停止监控并继续升级？")) return;
-        await api("/api/stop", {});
-      }
       const selector = document.getElementById("strategyType"); if (selector) selector.value = "trend_only_v2";
       setConfig({ ...DEFAULTS, ...(data.config || {}), version: "v2", leverage: 10 });
-      await api("/api/trend-only/config", { accountId: data.accountId, strategyType: "trend_only_v2", config: getConfig() });
-      document.dispatchEvent(new Event("trend-only-upgraded"));
-      location.reload();
+      if (typeof window.switchTrendStrategy !== "function") throw Error("策略切换模块尚未就绪，请刷新页面后重试");
+      await window.switchTrendStrategy("trend_only_v2");
     } catch (error) { report(error); }
   };
   async function confirmLive() {
@@ -241,7 +250,7 @@
       await api("/api/trend-only/close", { accountId: data.accountId }); await refresh();
     } catch (error) { report(error); }
   }
-  window.TrendOnlyPanel = { defaults: DEFAULTS, getConfig, setConfig, setVisible, refresh, confirmLive, closePosition };
+  window.TrendOnlyPanel = { defaults: DEFAULTS, getConfig, setConfig, setVisible, setStrategyContext, refresh, confirmLive, closePosition };
   setConfig(window.__pendingTrendOnlyConfig || DEFAULTS);
   setVisible(["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(document.getElementById("strategyType")?.value));
   refresh().catch(report);
