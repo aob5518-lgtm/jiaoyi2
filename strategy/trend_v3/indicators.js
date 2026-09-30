@@ -15,7 +15,10 @@ function indicatorsFor(candles, config, interval, now) {
   const recentRange = ranges.slice(-3).reduce((sum, value) => sum + value, 0) / Math.max(1, ranges.slice(-3).length);
   const priorRange = ranges.slice(0, -3).reduce((sum, value) => sum + value, 0) / Math.max(1, ranges.slice(0, -3).length);
   const compressed = bars => {
-    const rows = result.candles.slice(-Math.max(4, Number(bars) || 4));
+    // Compression describes the setup *before* the current confirmation candle.
+    // Including the current expansion candle made compression and release mutually
+    // exclusive in many real markets, so continuation setups could never complete.
+    const rows = result.candles.slice(0, -1).slice(-Math.max(4, Number(bars) || 4));
     const rowRanges = rows.map(item => Number(item.high) - Number(item.low)).filter(Number.isFinite);
     const split = Math.max(2, Math.floor(rowRanges.length / 2));
     const earlier = rowRanges.slice(0, split), later = rowRanges.slice(split);
@@ -24,8 +27,13 @@ function indicatorsFor(candles, config, interval, now) {
   };
   return {
     ...result,
+    open: Number(result.candles.at(-1)?.open),
+    high: Number(result.candles.at(-1)?.high),
+    low: Number(result.candles.at(-1)?.low),
     structureDirection,
-    emaFastSlope: Number(result.emaFast) - Number(result.emaFastHistory?.at?.(-2) ?? result.emaFast),
+    // V1/V2 already calculate the real EMA slope. emaFastHistory is not exposed,
+    // therefore the previous fallback silently produced zero on every V3 tick.
+    emaFastSlope: Number(result.emaSlope || 0),
     compression: Number.isFinite(recentRange) && Number.isFinite(priorRange) && recentRange < priorRange * 0.75,
     breakoutCompression: compressed(config.breakoutCompressionBars),
     continuationCompression: compressed(config.continuationCompressionBars),
@@ -35,4 +43,21 @@ function indicatorsFor(candles, config, interval, now) {
   };
 }
 
-module.exports = { indicatorsFor, directionOf: V2.directionOf, detectSwings: V2.detectSwings };
+function directionOf(input, role = "entry") {
+  if (!input) return "none";
+  // Entry alignment remains deliberately strict. The slower trend timeframes use
+  // a small ATR hysteresis so a normal pullback does not erase the 1H trend just
+  // when a pullback entry is becoming interesting.
+  if (role === "entry") return V2.directionOf(input);
+  const close = Number(input.close), fast = Number(input.emaFast), mid = Number(input.emaMid);
+  const slope = Number(input.emaFastSlope ?? input.emaSlope), atr = Number(input.atr);
+  const diPlus = Number(input.diPlus), diMinus = Number(input.diMinus);
+  if (![close, fast, mid, slope, atr, diPlus, diMinus].every(Number.isFinite) || atr <= 0) return "none";
+  const crossoverBuffer = atr * 0.15, pullbackBuffer = atr * 0.25;
+  const structure = input.structureDirection || "none";
+  if (diPlus > diMinus && fast >= mid - crossoverBuffer && close >= mid - pullbackBuffer && (slope > 0 || structure === "long")) return "long";
+  if (diMinus > diPlus && fast <= mid + crossoverBuffer && close <= mid + pullbackBuffer && (slope < 0 || structure === "short")) return "short";
+  return V2.directionOf(input);
+}
+
+module.exports = { indicatorsFor, directionOf, detectSwings: V2.detectSwings };

@@ -184,6 +184,7 @@ function createTrendRuntime(d) {
       shadowComparison: isV3(acc) ? (s.shadowComparisons || []).at(-1) || null : null,
       shadowStats: isV3(acc) ? s.shadowStats || null : null,
       missedOpportunityStats: isV3(acc) ? s.missedOpportunityStats || null : null,
+      marketData: s.marketData || { status: "waiting", lastSuccessAt: 0, lastError: "", lastErrorAt: 0 },
       riskLock: !!s.riskLock,
       riskLockReason: s.riskLockReason || "",
       stopOrderId: s.stopOrderId || "",
@@ -546,10 +547,18 @@ function createTrendRuntime(d) {
       let i;
       try {
         const sets = await Promise.all([c.entryTimeframe, c.trendTimeframe, c.higherTimeframe].map(tf => d.candles(acc.symbol, tf, 300, acc.platform)));
+        s.marketData = {
+          status: sets.some(item => item.warning) ? "degraded" : "healthy",
+          entrySource: sets[0]?.source || "unknown",
+          trendSource: sets[1]?.source || "unknown",
+          higherSource: sets[2]?.source || "unknown",
+          warning: sets.map(item => item.warning).filter(Boolean).join("；"),
+          lastSuccessAt: Date.now(), lastError: "", lastErrorAt: Number(s.marketData?.lastErrorAt || 0)
+        };
         if (sets.some(x => x.stale)) throw Error("行情过期或使用跨交易所备用行情");
         const values = sets.map((x, n) => T.indicatorsFor(x.candles, c, [c.entryTimeframe, c.trendTimeframe, c.higherTimeframe][n]));
         const estimatedCost = isV3(acc) ? T.buildTradeCostModel(account(acc, st), "candidate") : null;
-        i = { ...values[0], config: c, entryDirection: T.directionOf(values[0]), trendDirection: T.directionOf(values[1]), higherDirection: T.directionOf(values[2]), entryIndicators: values[0], trendIndicators: values[1], higherIndicators: values[2], price: Number(st.currentPrice), roundTripCostRate: estimatedCost?.roundTripCostRate };
+        i = { ...values[0], config: c, entryDirection: T.directionOf(values[0], "entry"), trendDirection: T.directionOf(values[1], "trend"), higherDirection: T.directionOf(values[2], "higher"), entryIndicators: values[0], trendIndicators: values[1], higherIndicators: values[2], price: Number(st.currentPrice), roundTripCostRate: estimatedCost?.roundTripCostRate };
         s.signal = T.detectMarketRegime(i.candles, i);
         if (!s.position) moveStrategyState(acc, s.signal.setupState || "SCANNING", "signal_evaluated");
         if (isV2(acc)) {
@@ -587,6 +596,7 @@ function createTrendRuntime(d) {
         }
         s.indicators = { atr: i.atr, adx: i.adx, chop: i.chop, diPlus: i.diPlus, diMinus: i.diMinus, emaFast: i.emaFast, emaMid: i.emaMid, emaFastSlope: i.emaFastSlope, distanceFromEmaAtr: i.distanceFromEmaAtr, structureHigh: i.structureHigh, structureLow: i.structureLow, entryDirection: i.entryDirection, trendDirection: i.trendDirection, higherDirection: i.higherDirection };
       } catch (e) {
+        s.marketData = { ...(s.marketData || {}), status: "error", lastError: e.message, lastErrorAt: Date.now() };
         log(acc, st, `趋势行情暂不可用：${e.message}；已有价格止损继续执行`);
         throw e;
       }

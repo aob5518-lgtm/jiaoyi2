@@ -2841,6 +2841,35 @@
     @media(max-width:900px){.history-secondary,.history-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.review-section-grid{grid-template-columns:1fr 1fr}}
     .hero-v{font-size:clamp(22px,2vw,34px);overflow-wrap:anywhere;word-break:break-word;max-width:100%;}
     .hero-sub{font-size:clamp(12px,1vw,14px);line-height:1.45;overflow-wrap:anywhere;}
+    /* V3 workspace: the live sidebar becomes an on-demand drawer so the decision
+       path, not duplicated telemetry, owns the primary reading area. */
+    body.v3-active .app{grid-template-columns:260px minmax(0,1fr)}
+    body.v3-active .right-panel{position:fixed;right:12px;top:12px;bottom:12px;z-index:40;width:min(360px,calc(100vw - 24px));transform:translateX(calc(100% + 24px));transition:transform .2s ease}
+    body.v3-active.v3-status-open .right-panel{transform:translateX(0)}
+    body.v3-active .history-drawer-close{display:inline-flex}
+    body.v3-active.v3-focus .app{grid-template-columns:minmax(0,1fr)}
+    body.v3-active.v3-focus #leftPanel{display:none}
+    body.v3-active #tab-overview > .overview-grid,
+    body.v3-active #tab-overview > #trendDiagnosticsPanel{display:none !important}
+    body.v3-active .hero-grid{gap:8px}
+    body.v3-active .hero-card{min-height:138px;padding:16px}
+    body.v3-active .hero-v{font-size:clamp(22px,1.7vw,30px)}
+    .v3-command-strip{display:grid;grid-template-columns:minmax(170px,.7fr) minmax(320px,1.7fr) minmax(200px,.8fr);gap:1px;margin-bottom:12px;border:1px solid #24414b;border-radius:14px;overflow:hidden;background:#24414b}
+    .v3-command-strip>div{padding:14px 16px;background:linear-gradient(180deg,#0d1c23,#0a151b);min-width:0}
+    .v3-command-strip strong{display:block;margin-top:5px;color:#42e6ab;font-size:22px}
+    .v3-command-strip b{display:block;margin-top:5px;color:#e5f1f4;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+    .v3-command-label{color:#6f8790;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+    .v3-command-reason{border-left:2px solid #24c7e8}
+    body.v3-active .v3-cockpit-grid{grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr)}
+    body.v3-active #v3PositionCockpit:not([hidden]){grid-column:1/-1}
+    .history-empty-state{padding:32px;margin-bottom:12px;border:1px solid rgba(36,199,232,.28);border-radius:16px;background:radial-gradient(circle at 15% 15%,rgba(36,199,232,.12),transparent 38%),#0a151b;text-align:center}
+    .history-empty-state h2{margin:14px 0 8px;color:#e9f6f8;font-size:24px}
+    .history-empty-state p{margin:0 auto 18px;max-width:760px;color:#89a0a8;line-height:1.7}
+    #tab-history.history-empty .history-top,#tab-history.history-empty .history-secondary,#tab-history.history-empty .history-groups{display:none !important}
+    #tab-history.history-empty .history-filters{padding:8px 12px;opacity:.78}
+    #tab-history.history-empty .table-wrap{min-height:100px}
+    @media(max-width:1050px){.v3-command-strip{grid-template-columns:1fr}.v3-command-reason{border-left:0;border-top:2px solid #24c7e8}body.v3-active .v3-cockpit-grid{grid-template-columns:1fr}}
+    @media(max-width:720px){body.v3-active .app{grid-template-columns:1fr}.v3-command-strip strong{font-size:19px}body.v3-active .hero-grid{grid-template-columns:1fr 1fr}.history-empty-state{padding:22px 14px}}
   </style>
 </head>
 <body>
@@ -2912,6 +2941,8 @@
             <button class="tab-btn" data-tab="history">历史交易</button>
             <button class="tab-btn" data-tab="analytics">策略分析</button>
           </div>
+          <button class="ghost" id="v3StatusBtn" hidden type="button">状态详情</button>
+          <button class="ghost" id="v3FocusBtn" hidden type="button">专注模式</button>
         </div>
       </div>
 
@@ -2988,6 +3019,11 @@
               <div id="trendDiagnosticsSummary" class="left-note" style="margin-top:12px;"></div>
             </div>
             <div id="v3DecisionCockpit" hidden style="margin-top:16px;">
+              <div class="v3-command-strip">
+                <div><span class="v3-command-label">现在能否交易</span><strong id="v3CommandState">扫描中</strong></div>
+                <div class="v3-command-reason"><span class="v3-command-label">当前卡点</span><b id="v3CommandReason">等待首根已收盘 K 线</b></div>
+                <div><span class="v3-command-label">行情链路</span><b id="v3MarketDataState">等待数据</b></div>
+              </div>
               <div class="block">
                 <div class="block-head"><div class="block-title">Trend Only V3 决策漏斗</div><span class="tag">DECISION</span></div>
                 <div id="v3DecisionFunnel" class="v3-funnel"></div>
@@ -3355,6 +3391,12 @@
           </div>
 
           <div id="tab-history" class="tab-panel" style="display:none;">
+            <div id="historyEmptyState" class="history-empty-state" hidden>
+              <span class="tag">NO TRADES YET</span>
+              <h2>还没有成交，不代表系统没有工作</h2>
+              <p id="historyEmptyReason">正在读取最近 72 小时的策略判断。</p>
+              <button class="ghost" id="historyGoReplayBtn" type="button">查看信号回放与阻断原因</button>
+            </div>
             <div class="history-top">
               <div class="history-stat">
                 <div class="history-stat-k">总交易数</div>
@@ -3952,6 +3994,15 @@
 
     function renderV3Cockpit(st) {
       const trend = st.trendOnly || {}, signal = trend.signal || {}, indicators = trend.indicators || {}, candidate = trend.candidateSetup, position = trend.position;
+      const commandLabels = { READY:"可以开仓", READY_A:"A级机会", READY_B:"B级机会", POSITION_MANAGED:"持仓保护中", MANAGING:"持仓保护中", DEFENSIVE:"防守管理", SCANNING:"扫描机会", TREND_FOUND:"趋势形成中", WAIT_PULLBACK:"等待回踩", WAIT_RETEST:"等待回踩确认", WAIT_BREAKOUT:"等待突破", WAIT_CONTINUATION:"等待延续", WAIT_ENTRY_ALIGNMENT:"等待15m转向", WAIT_STRUCTURE_SPACE:"等待盈亏空间", NO_SIGNAL:"暂无机会", BLOCKED:"条件阻断", SYSTEM_ERROR:"行情/系统异常", RISK_LOCK:"风控锁定", MONITOR_STOPPED:"监控已停止" };
+      const decision = trend.effectiveDecisionState || trend.executionState || trend.strategyState || signal.setupState || "SCANNING";
+      const reason = trend.effectiveDecisionReason || trend.executionReason || (signal.blockers || []).join("；") || "等待下一根已收盘 K 线";
+      const market = trend.marketData || {}, ageMinutes = market.lastSuccessAt ? Math.max(0, Math.floor((Date.now() - Number(market.lastSuccessAt)) / 60000)) : null;
+      $("v3CommandState").textContent = commandLabels[decision] || decision;
+      $("v3CommandState").className = ["SYSTEM_ERROR","RISK_LOCK","BLOCKED"].includes(decision) ? "red" : ["READY","READY_A","READY_B","POSITION_MANAGED","MANAGING"].includes(decision) ? "green" : "orange";
+      $("v3CommandReason").textContent = reason;
+      $("v3MarketDataState").textContent = market.status === "error" ? `异常：${market.lastError || "读取失败"}` : market.lastSuccessAt ? `${market.entrySource || "行情"} · ${ageMinutes} 分钟前更新` : "等待行情";
+      $("v3MarketDataState").className = market.status === "error" ? "red" : market.status === "degraded" ? "orange" : "green";
       $("v3DecisionFunnel").innerHTML = (trend.decisionFunnel || []).map(step => `<div class="v3-funnel-step"><span>${safeText(step.label)}</span><strong class="${step.status === "BLOCK" ? "red" : step.status === "PASS" ? "green" : "orange"}">${safeText(step.status)}</strong></div>`).join("") || `<div class="analytics-empty">等待首根已收盘 K 线</div>`;
       $("v3CandidatePanel").hidden = !!position;
       $("v3PositionCockpit").hidden = !position;
@@ -3965,7 +4016,14 @@
         row("成本 / 潜在收益", `${candidate.costR == null ? "-" : fmt(candidate.costR, 2) + "R"} / ${candidate.potentialR == null ? "-" : fmt(candidate.potentialR, 2) + "R"}`),
         row("等待原因", candidate.waitingReason || "等待确认")
       ].join("");
-      else $("v3CandidateRows").innerHTML = row("当前候选", "暂无具备方向的候选机会");
+      else {
+        const factorNames = { touched:"触碰EMA", structureHeld:"结构未破", microBreak:"微结构突破", diRecovery:"DI恢复", reclaim:"重回EMA", broke:"突破结构", compression:"先有压缩", expansion:"波动释放", bodyQuality:"实体质量", extended:"远离EMA", structure:"延续结构", released:"确认释放" };
+        const candidateRows = (signal.entryCandidates || []).filter(item => item.enabled).map(item => {
+          const missing = Object.entries(item.factors || {}).filter(([, value]) => !value).map(([key]) => factorNames[key] || key);
+          return row(v3ModeLabel(item.type), item.triggered ? `已触发 · ${item.score || 0} 分` : `还差：${missing.join("、") || "等待确认"}` , item.triggered ? "green" : "orange");
+        });
+        $("v3CandidateRows").innerHTML = candidateRows.length ? candidateRows.join("") : row("当前候选", "尚未形成 1H 主趋势，入场形态暂不评分");
+      }
       if (position) $("v3PositionRows").innerHTML = [
         row("方向 / 入场", `${position.side === "long" ? "做多" : "做空"} · ${v3ModeLabel(position.entryMode)}`),
         row("入场价 / 当前价", `${fmt(position.entryPrice, 2)} / ${fmt(st.currentPrice, 2)}`),
@@ -3993,6 +4051,8 @@
         row("EMA 距离 ATR", fmt(indicators.distanceFromEmaAtr, 3)),
         row("结构位", `${indicators.structureLow == null ? "-" : fmt(indicators.structureLow, 2)} / ${indicators.structureHigh == null ? "-" : fmt(indicators.structureHigh, 2)}`),
         row("内部阻断", (signal.blockers || []).join("；") || "无")
+        ,row("行情来源", `${market.entrySource || "-"} / ${market.trendSource || "-"} / ${market.higherSource || "-"}`)
+        ,row("最近成功行情", market.lastSuccessAt ? new Date(market.lastSuccessAt).toLocaleString("zh-CN") : "-")
       ].join("");
     }
 
@@ -4261,6 +4321,10 @@
       };
       const trendView = trendOnlyMode ? getTrendView(cfg, st) : null;
       const v3Mode = cfg.strategyType === "trend_only_v3", v3Trend = st.trendOnly || {}, v3Signal = v3Trend.signal || {}, v3Candidate = v3Trend.candidateSetup;
+      document.body.classList.toggle("v3-active", v3Mode);
+      if (!v3Mode) document.body.classList.remove("v3-status-open", "v3-focus");
+      $("v3StatusBtn").hidden = !v3Mode;
+      $("v3FocusBtn").hidden = !v3Mode;
       const strategyViewMissing = trendOnlyMode && (window.__strategyViewLoadFailed || !window.StrategyView?.buildTrendView);
       const effectiveSide = trendOnlyMode ? (st.trendOnly?.position?.side || st.trendOnly?.signal?.directionRaw || st.trendOnly?.signal?.direction || "auto") : smartMode ? (st.smartSide || "auto") : cfg.side;
       const directionText = effectiveSide === "long" ? "做多" : effectiveSide === "short" ? "做空" : "自动多空";
@@ -4423,8 +4487,8 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       $("rightStatusList").innerHTML = rightStatusRows.join("");
 
       const rightRiskRows = trendOnlyMode ? [
-        quick("账户余额", st.balance ?? "-"),
-        quick("可用余额", st.available ?? "-"),
+        quick("账户余额", Number.isFinite(Number(st.balance)) ? `${fmt(st.balance, 2)} U` : "-"),
+        quick("可用余额", Number.isFinite(Number(st.available)) ? `${fmt(st.available, 2)} U` : "-"),
         quick("单笔风险比例", `${fmt(Number(cfg.trendOnlyConfig?.riskPerTrade || 0) * 100, 2)}%`),
         quick("日亏损限制", `${fmt(Number(cfg.trendOnlyConfig?.maxDailyLossRatio || 0) * 100, 2)}%`),
         quick("当前止损价", st.trendOnly?.position?.currentStopLossPrice ?? "-"),
@@ -4509,6 +4573,14 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
     }
     function renderHistoryView() {
       filteredHistoryItems = filteredHistory(); renderHistoryStats(filteredHistoryItems); renderStrategyGroups(filteredHistoryItems);
+      const noHistory = latestHistoryItems.length === 0, historyTab = $("tab-history"), empty = $("historyEmptyState");
+      historyTab.classList.toggle("history-empty", noHistory); empty.hidden = !noHistory;
+      if (noHistory) {
+        const stats = latestStatusData?.state?.trendOnly?.signalStats72h || {}, total = Number(stats.total || 0);
+        const causes = [["CHOP/震荡",stats.chop],["ADX/强度",stats.adx],["多周期冲突",stats.higher],["追单距离",stats.extended],["风控",stats.risk]].sort((a,b)=>Number(b[1]||0)-Number(a[1]||0));
+        const top = causes[0], opportunities = Number(stats.signalOpportunities || 0);
+        $("historyEmptyReason").textContent = total ? `最近 72 小时已完成 ${total} 次判断，策略机会 ${opportunities} 次；主要阻断：${top[0]} ${Number(top[1] || 0)} 次。先看信号回放，不需要从一排“数据不足”里猜原因。` : "尚未积累足够的已收盘 K 线判断，请先确认趋势监控和行情链路正常。";
+      }
       if (!filteredHistoryItems.length) { $("historyTableBody").innerHTML = `<tr><td colspan="9" class="muted" style="padding:16px;">当前筛选条件下暂无历史交易</td></tr>`; return; }
       $("historyTableBody").innerHTML = filteredHistoryItems.map((item, idx) => { const side = String(item.side || "").toLowerCase() === "short" ? "short" : "long", timestamp = exitTimeOf(item), date = timestamp ? new Date(timestamp) : null, reason = reasonLabel(item.closeReason), reasonClass = item.closeReason === "trend_tp" ? "profit" : item.closeReason === "trend_reversal" ? "reversal" : ["hard_sl","structure_sl","post_fill_risk_invalid"].includes(item.closeReason) ? "loss" : "", legacy = legacyOf(item), net = netPnlOf(item); return `
         <tr>
@@ -5003,6 +5075,9 @@ window.closeVoucherModal = function() {
     $("accountSearch").addEventListener("input", () => renderAccountList(latestAccounts, currentAccountId, latestStatusData?.state || {}));
     $("accountFilter").addEventListener("change", () => renderAccountList(latestAccounts, currentAccountId, latestStatusData?.state || {}));
     $("signalReplayFilter").addEventListener("change", () => renderSignalReplay(latestStatusData?.state?.trendOnly?.signalJournal || [], latestStatusData?.state?.trendOnly?.signalStats24h, latestStatusData?.state?.trendOnly?.signalStats72h));
+    $("v3StatusBtn").addEventListener("click", () => document.body.classList.toggle("v3-status-open"));
+    $("v3FocusBtn").addEventListener("click", () => { document.body.classList.toggle("v3-focus"); $("v3FocusBtn").textContent = document.body.classList.contains("v3-focus") ? "退出专注" : "专注模式"; });
+    $("historyGoReplayBtn").addEventListener("click", () => { setTab("overview"); const panel = $("signalReplayPanel"); panel.hidden = false; panel.open = true; panel.scrollIntoView({ behavior:"smooth", block:"start" }); });
     $("overviewUpgradeV2Btn").addEventListener("click", upgradeCurrentTrendToV2);
     $("switchTrendStrategyBtn").addEventListener("click", () => switchTrendStrategy($("strategyType").value));
     $("strategyType").addEventListener("change", () => {
@@ -5050,7 +5125,7 @@ window.closeVoucherModal = function() {
     ["historyExperimentFilter","historyConfigFilter"].forEach(id => $(id).addEventListener("input", renderHistoryView));
     $("exportHistoryCsvBtn").addEventListener("click", exportHistoryCsv);
     $("historyStatusBtn").addEventListener("click", () => document.body.classList.toggle("history-status-open"));
-    $("historyStatusCloseBtn").addEventListener("click", () => document.body.classList.remove("history-status-open"));
+    $("historyStatusCloseBtn").addEventListener("click", () => document.body.classList.remove("history-status-open", "v3-status-open"));
     $("historyFocusBtn").addEventListener("click", () => { document.body.classList.toggle("history-focus"); $("historyFocusBtn").textContent = document.body.classList.contains("history-focus") ? "退出专注" : "专注模式"; });
     $("refreshLogsBtn").addEventListener("click", async () => {
       await loadAll(false);

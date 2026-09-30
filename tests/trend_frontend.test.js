@@ -119,7 +119,7 @@ test("V2 运行时回填结构字段且 Extended Live 有明确提示", () => {
   const html = read("public/index.html");
   const panel = read("public/trend-only-panel.js");
   assert.match(runtime, /structureHigh: s\.signal\.structureHigh/);
-  assert.match(runtime, /entryDirection: T\.directionOf\(values\[0\]\)/);
+  assert.match(runtime, /entryDirection: T\.directionOf\(values\[0\], "entry"\)/);
   assert.match(runtime, /distanceFromEmaAtr: s\.signal\.distanceFromEmaAtr/);
   assert.match(html, /Extended Live 趋势下单暂未开放；请使用 Paper 测试或切换 Hyperliquid\/Binance/);
   assert.match(html, /Extended 当前仅支持 Paper 趋势测试，Live 趋势下单未开放/);
@@ -221,6 +221,24 @@ test("Trend Only V3 提供决策漏斗、候选机会、持仓驾驶舱与策略
   assert.match(html, /当前决策.*趋势.*Setup.*账户风险/s);
   assert.match(html, /systemHealth.*strategyState.*riskState.*executionState/s);
   assert.match(html, /font-size:clamp\(22px,2vw,34px\).*overflow-wrap:anywhere/);
+});
+
+test("Trend Only V3 总览使用交易决策工作台并把实时状态改为抽屉", () => {
+  const html = read("public/index.html");
+  assert.match(html, /id="v3CommandState"/);
+  assert.match(html, /id="v3CommandReason"/);
+  assert.match(html, /id="v3MarketDataState"/);
+  assert.match(html, /body\.v3-active \.right-panel/);
+  assert.match(html, /id="v3StatusBtn"/);
+  assert.match(html, /id="v3FocusBtn"/);
+});
+
+test("零交易历史显示诊断空状态而不是成排数据不足卡片", () => {
+  const html = read("public/index.html");
+  assert.match(html, /id="historyEmptyState"/);
+  assert.match(html, /id="historyEmptyReason"/);
+  assert.match(html, /history-empty \.history-top/);
+  assert.match(html, /查看信号回放与阻断原因/);
 });
 
 test("V3 P2 支持高级筛选、质量 CSV、Fee Drag 与 Post Exit 复盘", () => {

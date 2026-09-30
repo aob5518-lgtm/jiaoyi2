@@ -32,7 +32,26 @@ function input(extra = {}) {
 test("V3 独立版本、标准默认值且 Live 默认关闭", () => {
   const c = config();
   assert.equal(c.version, "v3"); assert.equal(c.gradeAThreshold, 82); assert.equal(c.gradeBThreshold, 74);
-  assert.equal(c.chopHardBlock, 61.8); assert.equal(c.maxAllowedCostR, 0.15); assert.equal(c.minimumPotentialR, 1.8); assert.equal(c.allowLive, false);
+  assert.equal(c.chopHardBlock, 61.8); assert.equal(c.maxPreferredCostR, 0.15); assert.equal(c.maxAllowedCostR, 0.35); assert.equal(c.minimumPotentialR, 1.8); assert.equal(c.allowLive, false);
+});
+
+test("V3 修复 EMA slope 并让 1H 趋势在正常回踩中保持，15m 入场仍严格", () => {
+  const trend = { close: 100.1, emaFast: 100.2, emaMid: 100.3, emaSlope: -0.02, emaFastSlope: -0.02, atr: 1, diPlus: 32, diMinus: 18, structureDirection: "long" };
+  assert.equal(V3.directionOf(trend, "trend"), "long");
+  assert.equal(V3.directionOf(trend, "entry"), "none");
+  const interval = 15 * 60 * 1000, count = 260, start = Date.now() - count * interval;
+  const candles = Array.from({ length: count }, (_, index) => { const close = 100 + index * 0.08, range = index >= count - 6 && index <= count - 5 ? 2 : index >= count - 4 && index <= count - 2 ? 0.4 : index === count - 1 ? 3 : 1; return { time:start + index * interval, open:close - 0.02, high:close + range / 2, low:close - range / 2, close }; });
+  const result = V3.indicatorsFor(candles, config(), "15m", Date.now());
+  assert.notEqual(result.emaFastSlope, 0);
+  assert.equal(result.continuationCompression, true);
+  assert.equal(result.expansion, true);
+});
+
+test("旧版 0.15R 单阈值迁移为优选线，0.35R 仍是硬上限", () => {
+  const migrated = V3.normalizeConfig({ maxAllowedCostR: 0.15 });
+  assert.equal(migrated.maxPreferredCostR, 0.15);
+  assert.equal(migrated.maxAllowedCostR, 0.35);
+  assert.equal(V3.normalizeConfig({ experimentId: "V3_STD_20260922_A" }).experimentId, "V3_STD_20260930_B");
 });
 
 test("1H 强趋势、4H neutral、15m alignment 可达到可交易分数", () => {
@@ -87,7 +106,7 @@ test("Effective Risk sizing 与成交凭证统一 gross/net R", () => {
   assert.equal(voucher.netPnl, voucher.grossPnl - voucher.tradingFee + voucher.fundingPnl - voucher.slippageCost);
   assert.equal(voucher.grossR, voucher.grossPnl / voucher.initialEffectiveRiskU);
   assert.equal(voucher.netR, voucher.netPnl / voucher.initialEffectiveRiskU);
-  assert.equal(voucher.strategyVersion, "trend_only_v3"); assert.equal(voucher.experimentId, "V3_STD_20260922_A"); assert.match(voucher.configHash, /^[a-f0-9]{64}$/);
+  assert.equal(voucher.strategyVersion, "trend_only_v3"); assert.equal(voucher.experimentId, "V3_STD_20260930_B"); assert.match(voucher.configHash, /^[a-f0-9]{64}$/);
 });
 
 test("V3 盈利保护：未到 1R 不保本，1.5R 才净保本，单个弱信号不退出", () => {

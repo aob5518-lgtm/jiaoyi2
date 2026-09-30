@@ -13,12 +13,13 @@ function marketEnvironment(chop, config) {
 function costEfficiencyFromR(costR, config) {
   const value = Number(costR);
   if (!Number.isFinite(value)) return { score: 0, state: "WAITING", label: "成本数据不足" };
-  if (value > config.maxAllowedCostR) return { score: 0, state: "BLOCK", label: "预计成本超过上限" };
+  if (value > config.maxAllowedCostR) return { score: 0, state: "BLOCK", label: "预计成本超过硬上限" };
   if (value <= 0.05) return { score: 10, state: "PASS", label: "成本效率优秀" };
   if (value <= 0.08) return { score: 8, state: "PASS", label: "成本效率良好" };
   if (value <= 0.10) return { score: 6, state: "PASS", label: "成本效率一般" };
   if (value <= 0.12) return { score: 4, state: "CONDITIONAL", label: "成本偏高" };
-  return { score: 2, state: "CONDITIONAL", label: "成本接近上限" };
+  if (value <= config.maxPreferredCostR) return { score: 2, state: "CONDITIONAL", label: "成本接近优选上限" };
+  return { score: 0, state: "CONDITIONAL", label: "成本偏高，仅允许高质量机会并降低风险" };
 }
 
 function scoreTrend(input, direction, config) {

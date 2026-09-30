@@ -26,18 +26,18 @@
     sensitive: { chopIdealMax: 48, chopTransitionMax: 58, chopHardBlock: 65, adxTrendStart: 20, adxTrendValid: 25, adxStrong: 30, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.8, riskPerTrade: 0.005 }
   };
   const V3_DEFAULTS = {
-    experimentId: "V3_STD_20260922_A", gradeAThreshold: 82, gradeBThreshold: 74,
+    experimentId: "V3_STD_20260930_B", gradeAThreshold: 82, gradeBThreshold: 74,
     gradeARiskMultiplier: 1, gradeBRiskMultiplier: 0.5, htfStrongAdx: 30, htfMildPenalty: 5,
     highQualityPullbackScore: 15, breakoutCompressionBars: 6, continuationCompressionBars: 5,
     pullbackStopBuffer: 0.5, minimumEffectiveStopAtr: 1, minimumEffectiveStopBps: 20,
     netBreakEvenAtR: 1.5, lockProfitR: 0.8, minTrailingDistanceAtr: 0.8,
-    maxAllowedCostR: 0.15, minimumPotentialR: 1.8, maxEntriesPerTrend: 2,
+    maxPreferredCostR: 0.15, maxAllowedCostR: 0.35, minimumPotentialR: 1.8, maxEntriesPerTrend: 2,
     reentryMinBars: 3, reentryMaxBars: 6, shadowComparison: true
   };
   const V3_PRESETS = {
-    conservative: { gradeAThreshold: 86, gradeBThreshold: 78, gradeBRiskMultiplier: 0.4, htfMildPenalty: 8, highQualityPullbackScore: 17, minimumPotentialR: 2, maxAllowedCostR: 0.12, riskPerTrade: 0.01 },
-    standard: { gradeAThreshold: 82, gradeBThreshold: 74, gradeBRiskMultiplier: 0.5, htfMildPenalty: 5, highQualityPullbackScore: 15, minimumPotentialR: 1.8, maxAllowedCostR: 0.15, riskPerTrade: 0.01 },
-    sensitive: { gradeAThreshold: 78, gradeBThreshold: 70, gradeBRiskMultiplier: 0.4, htfMildPenalty: 3, highQualityPullbackScore: 13, minimumPotentialR: 1.5, maxAllowedCostR: 0.12, riskPerTrade: 0.005 }
+    conservative: { gradeAThreshold: 86, gradeBThreshold: 78, gradeBRiskMultiplier: 0.4, htfMildPenalty: 8, highQualityPullbackScore: 17, minimumPotentialR: 2, maxPreferredCostR: 0.12, maxAllowedCostR: 0.25, riskPerTrade: 0.01 },
+    standard: { gradeAThreshold: 82, gradeBThreshold: 74, gradeBRiskMultiplier: 0.5, htfMildPenalty: 5, highQualityPullbackScore: 15, minimumPotentialR: 1.8, maxPreferredCostR: 0.15, maxAllowedCostR: 0.35, riskPerTrade: 0.01 },
+    sensitive: { gradeAThreshold: 78, gradeBThreshold: 70, gradeBRiskMultiplier: 0.4, htfMildPenalty: 3, highQualityPullbackScore: 13, minimumPotentialR: 1.5, maxPreferredCostR: 0.15, maxAllowedCostR: 0.35, riskPerTrade: 0.005 }
   };
   const V3_EFFECTIVE_KEYS = new Set([
     "leverage", "allowWeekendOpen", "riskPerTrade", "maxPositionRatio", "maxDailyLossRatio", "maxConsecutiveLosses", "cooldownHoursAfterLossLimit",
@@ -69,7 +69,7 @@
     experimentId: "实验 ID", gradeAThreshold: "Grade A 分数", gradeBThreshold: "Grade B 分数", gradeARiskMultiplier: "A 级风险倍率", gradeBRiskMultiplier: "B 级风险倍率",
     htfStrongAdx: "4H 强趋势 ADX", htfMildPenalty: "4H 轻微反向扣分", highQualityPullbackScore: "高质量回踩分", breakoutCompressionBars: "突破压缩 K 线", continuationCompressionBars: "延续压缩 K 线",
     pullbackStopBuffer: "回踩止损缓冲 ATR", minimumEffectiveStopAtr: "最小有效止损 ATR", minimumEffectiveStopBps: "最小有效止损 bps", netBreakEvenAtR: "净保本启动 R", lockProfitR: "锁定利润 R", minTrailingDistanceAtr: "Trailing 最小距离 ATR",
-    maxAllowedCostR: "最大允许 Cost R", minimumPotentialR: "最小 Potential R", maxEntriesPerTrend: "单趋势最多入场", reentryMinBars: "再入场最少等待 K 线", reentryMaxBars: "再入场观察上限 K 线", shadowComparison: "启用 V2 Shadow 对照"
+    maxPreferredCostR: "优选成本上限 Cost R", maxAllowedCostR: "硬性成本上限 Cost R", minimumPotentialR: "最小 Potential R", maxEntriesPerTrend: "单趋势最多入场", reentryMinBars: "再入场最少等待 K 线", reentryMaxBars: "再入场观察上限 K 线", shadowComparison: "启用 V2 Shadow 对照"
   };
   mount.innerHTML = `
     <div class="block-head">

@@ -31,7 +31,7 @@
       "running": false,
       "trendOnlyConfig": {
         "version": "v3",
-        "experimentId": "V3_STD_20260922_A",
+        "experimentId": "V3_STD_20260930_B",
         "enabled": true,
         "leverage": 10,
         "allowWeekendOpen": false,
@@ -106,7 +106,8 @@
         "netBreakEvenAtR": 1.5,
         "lockProfitR": 0.8,
         "minTrailingDistanceAtr": 0.8,
-        "maxAllowedCostR": 0.15,
+        "maxPreferredCostR": 0.15,
+        "maxAllowedCostR": 0.35,
         "minimumPotentialR": 1.8,
         "maxEntriesPerTrend": 2,
         "reentryMinBars": 3,
