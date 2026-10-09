@@ -158,3 +158,45 @@ test('/api/start 返回实际 Trend Only 版本、模式与运行状态',async t
  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
  const r=await f.call('/api/start',{});assert.equal(r.code,200);assert.equal(r.data.strategyType,'trend_only_v3');assert.equal(r.data.strategyMode,'Trend Only V3');assert.equal(r.data.strategyVersion,'v3');assert.equal(r.data.running,true);assert.match(r.data.message,/Paper/);
 });
+
+test('普通配置保存 classic/smart 到 V1/V2/V3 均初始化正确引擎',async t=>{
+ for(const source of ['classic','smart_regime_v1']) for(const version of ['v1','v2','v3']) {
+  const f=setup(t);vm.runInContext(`config.accounts[0].strategyType=${JSON.stringify(source)};saveConfig(config);trendRuntime.busy(config.accounts[0])`,f.ctx);
+  const saved=await f.call('/api/config',{strategyType:'trend_only_'+version,strategyMode:'Trend Only '+version.toUpperCase(),symbol:'BTC',trendOnlyConfig:{version},privateKey:'',apiSecret:'',starkPrivateKey:''});
+  assert.equal(saved.code,200,JSON.stringify(saved.data));
+  const status=await f.call('/api/status');assert.equal(status.data.strategyRuntime.engineVersion,version);assert.equal(status.data.strategyRuntime.versionMismatch,false);
+  assert.equal(status.data.config.symbol,'BTC');assert.equal(status.data.config.hasPrivateKey,true);
+  assert.equal(vm.runInContext('config.accounts[0].apiSecret',f.ctx),'secret');
+  assert.equal(status.data.state.running,false);
+  const start=await f.call('/api/start',{});assert.equal(start.code,200,JSON.stringify(start.data));
+ }
+});
+
+test('创建账户默认 V2 后保存 BTC V3 不留下 V2 引擎',async t=>{
+ const f=setup(t);const created=await f.call('/api/account/create',{name:'BTC-paper',platform:'extended'});assert.equal(created.code,200);
+ await f.call('/api/status'); // Dashboard initialization before config save.
+ const saved=await f.call('/api/config',{strategyType:'trend_only_v3',symbol:'BTC',quoteAsset:'USDC',trendOnlyConfig:{version:'v3'}});assert.equal(saved.code,200,JSON.stringify(saved.data));
+ const status=await f.call('/api/status');assert.equal(status.data.strategyRuntime.engineVersion,'v3');assert.equal(status.data.strategyRuntime.versionMismatch,false);assert.equal(status.data.state.running,false);
+});
+
+test('停止后显式保存可修复旧 V3/V1 标记并保留余额、历史与风控锁',async t=>{
+ for(const endpoint of ['/api/config','/api/trend-only/config']){
+  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
+  vm.runInContext('Object.assign(trendRuntime.get(config.accounts[0]),{engineVersion:"v1",journal:[{id:"keep-history"}],signalJournal:[{time:1}],simBalance:9988,riskLock:true,riskLockReason:"保留保护锁"})',f.ctx);
+  const before=await f.call('/api/start',{});assert.equal(before.code,409);
+  const body=endpoint==='/api/config'?{strategyType:'trend_only_v3',trendOnlyConfig:{version:'v3'}}:{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}};
+  const saved=await f.call(endpoint,body);assert.equal(saved.code,200,JSON.stringify(saved.data));
+  const status=await f.call('/api/status');assert.equal(status.data.strategyRuntime.engineVersion,'v3');assert.equal(status.data.strategyRuntime.versionMismatch,false);assert.equal(status.data.state.running,false);
+  const s=vm.runInContext('trendRuntime.get(config.accounts[0])',f.ctx);assert.equal(s.simBalance,9988);assert.equal(s.journal[0].id,'keep-history');assert.equal(s.signalJournal[0].time,1);assert.equal(s.riskLock,true);assert.equal(s.riskLockReason,'保留保护锁');
+ }
+});
+
+test('普通配置保存不能利用引擎修复绕过运行、持仓或待确认订单',async t=>{
+ for(const kind of ['running','position','pending','unknown']){
+  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
+  vm.runInContext('trendRuntime.get(config.accounts[0]).engineVersion="v1"',f.ctx);
+  vm.runInContext(kind==='running'?'config.accounts[0].running=true;stateMap.legacy.running=true;saveConfig(config)':kind==='position'?'trendRuntime.get(config.accounts[0]).position={positionSize:1}':`trendRuntime.get(config.accounts[0]).pendingOrder={status:${JSON.stringify(kind==='unknown'?'unknown_order_state':'submitted')}}`,f.ctx);
+  const saved=await f.call('/api/config',{strategyType:'trend_only_v3',trendOnlyConfig:{version:'v3'}});assert.equal(saved.code,400,kind);
+  assert.equal(vm.runInContext('trendRuntime.get(config.accounts[0]).engineVersion',f.ctx),'v1');
+ }
+});

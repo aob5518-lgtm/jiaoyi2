@@ -4833,7 +4833,9 @@ const server = http.createServer((req, res) => {
           target.maxAdds = 0;
           // Initial activation is Paper. Live remains an explicit separate account setting.
           if (!isTrendOnly(acc) || requestedType === "trend_only_v3") { target.tradeMode = "simulation"; target.simulationEnabled = true; }
-          const switchedVersion = getStrategyType(acc) !== requestedType;
+          // Explicit stopped-account saves also repair a stale engine marker.
+          // Startup itself must continue to fail closed on any mismatch.
+          const switchedVersion = getStrategyType(acc) !== requestedType || trendRuntime.runtimeDiagnostic(acc).engineVersion !== requestedType.replace("trend_only_", "");
           saveConfig(cfg);
           if (switchedVersion) trendRuntime.resetForStrategySwitch(acc, requestedType);
           config = cfg; trendRuntime.clearApproval(acc.id);
@@ -5048,8 +5050,12 @@ const server = http.createServer((req, res) => {
           clearSmartRuntime(current.id);
           resetSmartPosition(currentState);
         }
-        const switchedTrendVersion = isTrendOnly(current) && isTrendOnly(next) && getStrategyType(current) !== getStrategyType(next);
-        cfg.accounts[idx] = { ...cfg.accounts[idx], ...next };
+        const nextAccount = { ...current, ...next };
+        const switchedTrendVersion = isTrendOnly(nextAccount) && (
+          getStrategyType(current) !== getStrategyType(nextAccount) ||
+          trendRuntime.runtimeDiagnostic(current).engineVersion !== getStrategyType(nextAccount).replace("trend_only_", "")
+        );
+        cfg.accounts[idx] = nextAccount;
         saveConfig(cfg);
         if (switchedTrendVersion) trendRuntime.resetForStrategySwitch(current, getStrategyType(cfg.accounts[idx]));
         config = cfg;
