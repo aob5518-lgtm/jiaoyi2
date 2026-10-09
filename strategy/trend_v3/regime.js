@@ -23,6 +23,7 @@ function detectMarketRegime(candles, input) {
   if (directionRaw === "none") return { ...base, regime: "unclear", blockers: ["1H 主趋势结构尚未成立"], reasons: ["1H 主趋势结构尚未成立"] };
   const score = scoreTrend(input, directionRaw, config);
   const entry = chooseEntry(directionRaw, input, config);
+  base.entryCandidates = entry.candidates;
   const selected = entry.selected;
   const entryDirection = input.entryDirection || "none";
   const emptyBreakdown = { structure: score.structure, strength: score.strength, multiTimeframe: score.multiTimeframe, environment: score.environment, entryQuality: 0, costEfficiency: 0, total: score.baseScore };
@@ -34,6 +35,7 @@ function detectMarketRegime(candles, input) {
   if (entry.waitRetest) return { ...base, regime: "trend", trendScore: score.baseScore, score: score.baseScore, setupState: "WAIT_RETEST", entryPermission: "wait_pullback", blockers: ["突破位置远离 EMA20，等待回踩确认，不追单"], reasons: ["突破位置远离 EMA20，等待回踩确认，不追单"], scoreBreakdown: emptyBreakdown };
   if (!selected) return { ...base, regime: "trend", trendScore: score.baseScore, score: score.baseScore, setupState: "WAIT_PULLBACK", entryPermission: "wait_pullback", blockers: ["趋势已识别，等待已启用的入场形态触发"], reasons: ["趋势已识别，等待已启用的入场形态触发"], scoreBreakdown: emptyBreakdown, entryCandidates: entry.candidates };
   const stopPreview = calculateInitialStop({ side: directionRaw, entryMode: selected.type, entryPrice: Number(input.close), atr: Number(input.atr), signal: base, input, config });
+  if (!stopPreview.allowed) return { ...base, regime: "blocked", setupState: "WAIT_STRUCTURE_SPACE", entryMode: selected.type, blockers: [stopPreview.reason], reasons: [stopPreview.reason], stopPreview };
   const modeMinAtr = selected.type === "breakout_entry" ? config.breakoutMinStopAtr : selected.type === "continuation_entry" ? config.continuationMinStopAtr : config.pullbackMinStopAtr;
   const estimatedStop = stopPreview.allowed ? stopPreview.distance : Math.max(Number(input.atr) * Math.max(modeMinAtr, config.minStopDistanceAtr, config.minimumEffectiveStopAtr), Number(input.close) * config.minimumEffectiveStopBps / 10000);
   const costPerUnit = Number(input.close) * Number(input.roundTripCostRate);

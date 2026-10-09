@@ -295,7 +295,7 @@ function updateTrendContext(state, signal, i, now = Date.now()) {
   };
   return state.trendContext;
 }
-function appendShadowSignal(state, accountId, signal, i, finalAction = "") {
+function appendShadowSignal(state, accountId, signal, i, finalAction = "", retentionHours = 72) {
   if (!signal.signalTime || signal.signalTime === state.lastJournalSignalTime) return false;
   state.lastJournalSignalTime = signal.signalTime;
   state.signalJournal ||= [];
@@ -308,7 +308,7 @@ function appendShadowSignal(state, accountId, signal, i, finalAction = "") {
     distanceFromEmaAtr: Number.isFinite(signal.distanceFromEmaAtr) ? signal.distanceFromEmaAtr : Math.abs(i.close - i.emaFast) / i.atr,
     breakoutState: !!signal.states?.breakout, pullbackState: !!signal.states?.pullback, continuationState: !!signal.states?.continuation,
     blockers: signal.blockers || [], finalAction });
-  const keep = journalRetentionBars(i.config?.entryTimeframe || "15m");
+  const keep = journalRetentionBars(i.config?.entryTimeframe || "15m", retentionHours);
   if (state.signalJournal.length > keep) state.signalJournal.splice(0, state.signalJournal.length - keep);
   return true;
 }

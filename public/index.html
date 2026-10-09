@@ -4019,10 +4019,18 @@
       else {
         const factorNames = { touched:"触碰EMA", structureHeld:"结构未破", microBreak:"微结构突破", diRecovery:"DI恢复", reclaim:"重回EMA", broke:"突破结构", compression:"先有压缩", expansion:"波动释放", bodyQuality:"实体质量", extended:"远离EMA", structure:"延续结构", released:"确认释放" };
         const candidateRows = (signal.entryCandidates || []).filter(item => item.enabled).map(item => {
-          const missing = Object.entries(item.factors || {}).filter(([, value]) => !value).map(([key]) => factorNames[key] || key);
+          const missing = Object.entries(item.factors || {}).filter(([key, value]) => key === "extended" ? value : !value).map(([key]) => factorNames[key] || key);
           return row(v3ModeLabel(item.type), item.triggered ? `已触发 · ${item.score || 0} 分` : `还差：${missing.join("、") || "等待确认"}` , item.triggered ? "green" : "orange");
         });
         $("v3CandidateRows").innerHTML = candidateRows.length ? candidateRows.join("") : row("当前候选", "尚未形成 1H 主趋势，入场形态暂不评分");
+      }
+      if (candidate) {
+        const names = { touched:"触碰EMA", structureHeld:"结构未破", microBreak:"微结构突破", diRecovery:"DI恢复", reclaim:"重回EMA", broke:"突破结构", compression:"先有压缩", expansion:"波动释放", bodyQuality:"实体质量", extended:"追单风险", structure:"延续摆动结构", released:"确认释放" };
+        $("v3CandidateRows").innerHTML += (signal.entryCandidates || []).filter(item => item.enabled).map(item => {
+          const failed = Object.entries(item.factors || {}).filter(([key, value]) => key === "extended" ? value : !value).map(([key]) => names[key] || key);
+          const message = item.stopAllowed === false ? `结构止损不合格：${item.stopReason}` : item.triggered ? `形态已触发 · ${item.score} 分；仍需通过评分、空间与执行校验` : `未触发：${failed.join("、") || "等待确认"}`;
+          return row(v3ModeLabel(item.type), message, item.triggered && item.stopAllowed !== false ? "green" : "orange");
+        }).join("");
       }
       if (position) $("v3PositionRows").innerHTML = [
         row("方向 / 入场", `${position.side === "long" ? "做多" : "做空"} · ${v3ModeLabel(position.entryMode)}`),
@@ -4686,7 +4694,9 @@ window.closeVoucherModal = function() {
       const shadow = trend.shadowStats || {}, comparison = trend.shadowComparison || {};
       $("analyticsShadow").innerHTML = [row("样本", shadow.total || 0), row("V2 独有机会", shadow.v2Only || 0), row("V3 独有机会", shadow.v3Only || 0), row("共同机会", shadow.both || 0), row("最近 V2 / V3", `${comparison.v2Decision || "-"} / ${comparison.v3Decision || "-"}`), row("下单权限", "Shadow 永久禁用", "green")].join("");
       const missed = trend.missedOpportunityStats || {};
-      $("analyticsMissed").innerHTML = [row("候选样本", missed.candidates || 0), row("事后错过趋势", missed.missedTrends || 0), row("Missed Trend Rate", percentage(missed.missedTrendRate)), row("正确阻断", missed.goodBlocks || 0), row("用途", "仅用于事后分析，不参与实时决策")].join("");
+      const coverage = trend.signalJournalCoverage || {};
+      const coverageText = coverage.from && coverage.to ? `${new Date(coverage.from).toLocaleString()} — ${new Date(coverage.to).toLocaleString()} · ${coverage.bars} 根` : "等待记录";
+      $("analyticsMissed").innerHTML = [row("诊断覆盖范围", coverageText), row("留存上限", `${coverage.retentionHours || 72} 小时（升级后逐步积累，不补造旧记录）`), row("逐根候选样本", missed.candidates || 0), row("成熟样本（32根）", missed.matureCandidates ?? "旧统计口径"), row("事后趋势候选", missed.missedTrends || 0), row("事后趋势候选占比", percentage(missed.missedTrendRate)), row("正确阻断候选", missed.goodBlocks || 0), row("用途", "仅用于事后分析；相邻K线可能属于同一行情，不等于错过交易数，不参与实时决策")].join("");
     }
 
     async function loadAnalytics() {

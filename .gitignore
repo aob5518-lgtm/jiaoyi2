@@ -1,4 +1,5 @@
 node_modules/
+.audit/
 config.json
 auth.json
 profit_history.json

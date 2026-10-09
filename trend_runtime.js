@@ -170,6 +170,7 @@ function createTrendRuntime(d) {
       pauseUntil: Number(s.pauseUntil || 0),
       trendContext: s.trendContext || null,
       signalJournal: fullJournal.slice(-50).reverse(),
+      signalJournalCoverage: { bars: fullJournal.length, from: fullJournal[0]?.time || null, to: fullJournal.at(-1)?.time || null, retentionHours: isV3(acc) ? 14 * 24 : 72 },
       signalStats24h: isV2(acc) ? T.signalStats(fullJournal, 24) : null,
       signalStats72h: isV2(acc) ? T.signalStats(fullJournal, 72) : null,
       strategyVersion: acc.strategyType,
@@ -411,6 +412,7 @@ function createTrendRuntime(d) {
         if (isV3(acc)) {
           s.trendEntryCounts ||= {};
           s.trendEntryCounts[o.plan.trendId] = Number(s.trendEntryCounts[o.plan.trendId] || 0) + 1;
+          if (o.plan.executionEvaluation?.trendWave) s.activeEntryWave = o.plan.executionEvaluation.trendWave;
         }
         log(acc, st, `趋势开仓成功：${acc.symbol} ${s.position.side === "long" ? "做多" : "做空"}，${s.position.leverage}倍杠杆，入场价 ${s.position.entryPrice}，初始止损 ${s.position.initialStopLossPrice}`);
         if (isV2(acc) && s.position.postFillRiskInvalid) {
@@ -588,9 +590,10 @@ function createTrendRuntime(d) {
                 both: rows.filter(item => item.v3Decision === "allowed" && item.v2Decision === "allowed").length
               };
             }
-            const missed = s.missedOpportunityJournal || [], classifications = missed.map(item => Object.values(item.outcomes || {}).map(outcome => outcome.classification));
-            const missedTrends = classifications.filter(items => items.includes("MISSED_TREND")).length, goodBlocks = classifications.filter(items => items.length && items.every(value => value === "GOOD_BLOCK")).length;
-            s.missedOpportunityStats = { candidates: missed.length, missedTrends, goodBlocks, missedTrendRate: missed.length ? missedTrends / missed.length : null };
+            const missed = s.missedOpportunityJournal || [], mature = missed.filter(item => item.outcomes?.[32]);
+            const missedTrends = mature.filter(item => item.outcomes[32].classification === "MISSED_TREND").length;
+            const goodBlocks = mature.filter(item => item.outcomes[32].classification === "GOOD_BLOCK").length;
+            s.missedOpportunityStats = { candidates: missed.length, matureCandidates: mature.length, horizonBars: 32, missedTrends, goodBlocks, missedTrendRate: mature.length ? missedTrends / mature.length : null };
           }
           setDecision(acc, decisionFromSignal(s.signal), (s.signal.blockers || []).join("；"), { executionPermission: s.signal.entryPermission === "allowed" ? "pending" : "blocked" });
         }

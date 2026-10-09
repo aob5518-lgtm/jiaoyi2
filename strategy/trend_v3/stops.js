@@ -6,7 +6,12 @@ function calculateInitialStop({ side, entryMode, entryPrice, atr, signal, input,
   const minimum = Math.max(Number(atr) * Math.max(minByMode, config.minStopDistanceAtr, config.minimumEffectiveStopAtr), Number(entryPrice) * config.minimumEffectiveStopBps / 10000);
   let structure;
   if (entryMode === "pullback_entry") structure = side === "long" ? Number(input.pullbackLow ?? signal.structureLow) - atr * config.pullbackStopBuffer : Number(input.pullbackHigh ?? signal.structureHigh) + atr * config.pullbackStopBuffer;
-  else if (entryMode === "breakout_entry") structure = side === "long" ? Number(input.breakoutLow ?? signal.structureLow) - atr * 0.25 : Number(input.breakoutHigh ?? signal.structureHigh) + atr * 0.25;
+  else if (entryMode === "breakout_entry") {
+    // Invalidate at the last confirmed setup pivot, not the far opposite edge
+    // of the entire breakout range. Never clamp a genuinely distant pivot.
+    const pivot = side === "long" ? input.latestSwingLow : input.latestSwingHigh;
+    structure = side === "long" ? Number(pivot ?? input.breakoutLow ?? signal.structureLow) - atr * 0.25 : Number(pivot ?? input.breakoutHigh ?? signal.structureHigh) + atr * 0.25;
+  }
   else structure = side === "long" ? Number(signal.structureLow) - atr * 0.35 : Number(signal.structureHigh) + atr * 0.35;
   const legal = Number.isFinite(structure) && structure > 0 && sign * (entryPrice - structure) > 0;
   const distance = Math.max(minimum, legal ? Math.abs(entryPrice - structure) : minimum);

@@ -245,7 +245,7 @@ test("V3 P2 支持高级筛选、质量 CSV、Fee Drag 与 Post Exit 复盘", ()
   const html = read("public/index.html"), panel = read("public/trend-only-panel.js"), mobile = read("public/mobile_view.html");
   assert.match(html, /historyVersionFilter.*historyExperimentFilter.*historyConfigFilter/s);
   assert.match(html, /grossR.*netR.*trendScore.*entryScore.*potentialR.*costR.*PostExitMFE_32/s);
-  assert.match(html, /False Entry Rate/); assert.match(html, /Missed Trend Rate/); assert.match(html, /成本侵蚀/);
+  assert.match(html, /False Entry Rate/); assert.match(html, /事后趋势候选占比/); assert.match(html, /成本侵蚀/);
   assert.match(panel, /gradeAThreshold.*gradeBThreshold.*maxAllowedCostR.*minimumPotentialR.*shadowComparison/s);
   assert.match(mobile, /Net R/); assert.match(mobile, /Trend \/ Entry/);
 });

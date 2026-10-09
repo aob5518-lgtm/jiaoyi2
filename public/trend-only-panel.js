@@ -26,6 +26,7 @@
     sensitive: { chopIdealMax: 48, chopTransitionMax: 58, chopHardBlock: 65, adxTrendStart: 20, adxTrendValid: 25, adxStrong: 30, higherTimeframeMode: "not_against", maxEntryExtensionAtr: 1.8, riskPerTrade: 0.005 }
   };
   const V3_DEFAULTS = {
+    swingStructureLookback: 48, continuationSetupValidBars: 3,
     experimentId: "V3_STD_20260930_B", gradeAThreshold: 82, gradeBThreshold: 74,
     gradeARiskMultiplier: 1, gradeBRiskMultiplier: 0.5, htfStrongAdx: 30, htfMildPenalty: 5,
     highQualityPullbackScore: 15, breakoutCompressionBars: 6, continuationCompressionBars: 5,
@@ -49,6 +50,7 @@
     ...Object.keys(V3_DEFAULTS)
   ]);
   const labels = {
+    swingStructureLookback: "已确认趋势结构观察 K 线", continuationSetupValidBars: "延续压缩形态有效 K 线",
     enabled: "启用趋势策略", leverage: "杠杆（最高 10）", allowWeekendOpen: "允许周末开新仓", weekendMode: "周末保护模式",
     weekendExitHourUTC: "周五保护开始（UTC 小时）", riskPerTrade: "单笔风险比例（0.01=1%）", maxPositionRatio: "最大保证金比例",
     maxDailyLossRatio: "日亏损限制比例", maxConsecutiveLosses: "连续亏损次数", cooldownHoursAfterLossLimit: "亏损暂停小时",

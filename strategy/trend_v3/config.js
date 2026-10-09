@@ -16,6 +16,8 @@ const DEFAULTS = Object.freeze({
   highQualityPullbackScore: 15,
   breakoutCompressionBars: 6,
   continuationCompressionBars: 5,
+  swingStructureLookback: 48,
+  continuationSetupValidBars: 3,
   pullbackStopBuffer: 0.5,
   minimumEffectiveStopAtr: 1,
   minimumEffectiveStopBps: 20,
@@ -73,6 +75,8 @@ function normalizeConfig(input = {}) {
   if (!(config.maxPreferredCostR > 0 && config.maxAllowedCostR >= config.maxPreferredCostR && config.minimumPotentialR > 0)) throw Error("V3 成本或空间过滤参数无效");
   if (!(config.reentryMinBars >= 1 && config.reentryMaxBars >= config.reentryMinBars)) throw Error("V3 再入场参数无效");
   if (!Number.isInteger(config.maxEntriesPerTrend) || config.maxEntriesPerTrend < 1) throw Error("V3 每趋势最大入场次数无效");
+  if (!Number.isInteger(config.swingStructureLookback) || config.swingStructureLookback < 24 || config.swingStructureLookback > 200) throw Error("V3 swingStructureLookback 必须为 24~200 根");
+  if (!Number.isInteger(config.continuationSetupValidBars) || config.continuationSetupValidBars < 1 || config.continuationSetupValidBars > 5) throw Error("V3 continuationSetupValidBars 必须为 1~5 根");
   return config;
 }
 

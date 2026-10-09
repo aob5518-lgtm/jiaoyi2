@@ -46,6 +46,7 @@ function tryOpenTrendOnlyPosition(account, signal, input) {
   const reentry = evaluateReentry(state, signal, { ...config, entryIntervalMs: V1.INTERVALS[config.entryTimeframe] });
   if (!reentry.allowed) return reject(reentry.reason, "execution", executionEvaluation, { setupState: reentry.state });
   const trendId = reentry.trendId;
+  // Commit the wave only after the order is filled (runtime reads this plan field).
   const entryPrice = Number(input.price || input.close), atr = Number(input.atr);
   const stop = calculateInitialStop({ side: signal.tradeDirection, entryMode: signal.entryMode, entryPrice, atr, signal, input, config });
   if (!stop.allowed) return reject(stop.reason, "risk", executionEvaluation, stop);
@@ -62,7 +63,7 @@ function tryOpenTrendOnlyPosition(account, signal, input) {
   const sizing = calculatePositionSize({ equity: account.equity, available: account.available ?? account.equity, entryPrice, stopDistance: stop.distance, riskPerTrade: config.riskPerTrade, riskMultiplier: costAdjustedRiskMultiplier, costRate: cost.roundTripCostRate, leverage: config.leverage, maxPositionRatio: config.maxPositionRatio, qtyStep: Number(input.qtyStep || 0.000001), minNotional: Number(input.minNotional || 10) });
   if (!sizing.allowed) return reject(sizing.reason, "risk", executionEvaluation, sizing);
   const costModel = buildTradeCostModel(account, signal.entryMode, { notional: sizing.positionValue, plannedRiskAmount: sizing.plannedRiskAmount });
-  Object.assign(executionEvaluation, { risk: "PASS", execution: "PASS", blocker: "" });
+  Object.assign(executionEvaluation, { risk: "PASS", execution: "PASS", blocker: "", trendWave: reentry.trendWave || null });
   return { allowed: true, side: signal.tradeDirection, qty: sizing.qty, entryPrice, positionValue: sizing.positionValue, riskAmount: sizing.initialEffectiveRiskU, plannedRiskAmount: sizing.riskBudgetU, riskBudgetU: sizing.riskBudgetU, initialPriceRiskU: sizing.initialPriceRiskU, initialEffectiveRiskU: sizing.initialEffectiveRiskU, effectiveRiskU: sizing.initialEffectiveRiskU, priceRiskU: sizing.priceRiskU, expectedCostU: sizing.expectedCostU, positionCapped: sizing.positionCapped, initialStopLossPrice: stop.stop, stopDistance: stop.distance, stopDistanceAtr: stop.distanceAtr, stopSource: stop.source, atrAtEntry: atr, signal, entryMode: signal.entryMode, grade: signal.grade, riskMultiplier: costAdjustedRiskMultiplier, costR, potentialR, rewardSpace, estimatedTradeCost: cost, costModel, equity: Number(account.equity), trendId, experimentId: config.experimentId, strategyVersion: "trend_only_v3", executionEvaluation, configHash: crypto.createHash("sha256").update(JSON.stringify(config)).digest("hex") };
 }
 
@@ -71,6 +72,7 @@ function positionFromFill(plan, fill, now, configInput) {
   position.config = config;
   position.strategyMode = "Trend Only V3";
   position.strategyVersion = "trend_only_v3";
+  position.strategyRevision = "V3_20261009_STRUCTURE";
   position.experimentId = plan.experimentId || config.experimentId;
   position.configHash = plan.configHash;
   position.trendScore = Number(plan.signal?.trendScore || 0);
@@ -167,8 +169,8 @@ function updateTrendContext(state, signal, input) {
 }
 
 function appendShadowSignal(state, accountId, signal, input, finalAction = "") {
-  const appended = V2.appendShadowSignal(state, accountId, signal, input, finalAction);
-  if (appended) Object.assign(state.signalJournal.at(-1), { strategyVersion: "trend_only_v3", trendScore: signal.trendScore, entryScore: signal.entryQualityScore, grade: signal.grade, setupState: signal.setupState });
+  const appended = V2.appendShadowSignal(state, accountId, signal, input, finalAction, 14 * 24);
+  if (appended) Object.assign(state.signalJournal.at(-1), { strategyVersion: "trend_only_v3", strategyRevision: "V3_20261009_STRUCTURE", trendScore: signal.trendScore, entryScore: signal.entryQualityScore, grade: signal.grade, setupState: signal.setupState, entryDirection: input.entryDirection, atr: input.atr, entryCandidates: signal.entryCandidates || [] });
   return appended;
 }
 
@@ -177,7 +179,7 @@ module.exports = {
   isWeekendBlocked: V1.isWeekendBlocked, weekendProtection: V1.weekendProtection,
   indicatorsFor, directionOf, detectSwings, detectMarketRegime, initialState,
   tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose,
-  updateTrendContext, appendShadowSignal, journalRetentionBars: V2.journalRetentionBars,
+  updateTrendContext, appendShadowSignal, journalRetentionBars: (timeframe, hours = 14 * 24) => V2.journalRetentionBars(timeframe, hours),
   signalStats: V2.signalStats, buildDecisionFunnel, buildTradeCostModel,
   compareV2Shadow, registerMissedCandidate, updateMissedOpportunities, buildCandidateSetup, updatePostExitAnalytics,
   calculateRewardSpace, transition

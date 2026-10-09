@@ -13,6 +13,7 @@ const { buildStrategyAnalytics } = require("../strategy/trend_v3/analytics");
 const { updatePostExitAnalytics } = require("../strategy/trend_v3/post_exit");
 const { buildDecisionFunnel } = require("../strategy/trend_v3/diagnostics");
 const { transition } = require("../strategy/trend_v3/state_machine");
+require("./trend_v3_review.test");
 
 function config(extra = {}) { return V3.normalizeConfig({ allowWeekendOpen: true, ...extra }); }
 function input(extra = {}) {
@@ -20,7 +21,7 @@ function input(extra = {}) {
     config: config(), signalTime: 1000, close: 101, open: 100.5, price: 101, atr: 1, chop: 44,
     emaFast: 100, emaMid: 99, diPlus: 35, diMinus: 15, adx: 32, adxHistory: [27, 30, 32],
     trendDirection: "long", higherDirection: "none", entryDirection: "long", structureLow: 99, structureHigh: 105,
-    microHigh: 100.5, microLow: 99.5, pullbackLow: 99.2, pullbackHigh: 101, pullbackTouchedLong: true,
+    microHigh: 100.5, microLow: 99.5, pullbackLow: 99.4, pullbackHigh: 101, pullbackTouchedLong: true,
     pullbackTouchedShort: false, breakoutHigh: 102, breakoutLow: 98, swingContinuationLong: false,
     swingContinuationShort: false, compression: false, expansion: false, roundTripCostRate: 0.001,
     trendIndicators: { structureDirection: "long", emaFast: 100, emaMid: 99, emaFastSlope: 0.5, close: 101, adx: 32, adxHistory: [27, 30, 32], diPlus: 35, diMinus: 15, latestSwingHigh: 106, latestSwingLow: 97, swings: { highs: [{ price: 106 }], lows: [{ price: 97 }] } },

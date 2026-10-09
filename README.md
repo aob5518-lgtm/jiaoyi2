@@ -1,5 +1,13 @@
 # jiaoyi2
 
+## 2026-10-09 复盘与结构诊断修复
+
+完整复盘见 [ETH 十天复盘](docs/ETH_REVIEW_20261009.md)。本轮不放宽 CHOP/ADX、等级、成本、空间或账户风险阈值，V3 仍仅 Paper。
+V3 使用独立 48 根已确认 swing 结构窗口；微结构窗口不变。压缩形态最多保留 3 根等待释放，候选按质量及止损有效性选择，突破远离 EMA 不再否决独立有效的回踩。
+同方向新波段必须双结构同向更新且完全冷却，才解除旧波段次数限制，每波段仍最多 2 次。诊断保留 14 天，每次 status 仍仅发送最近 50 条；旧记录不能补造。
+离线复盘：`node scripts/fetch_review_candles.js FROM_ISO TO_ISO > market.json`，然后 `node scripts/review_trend_v3.js market.json sanitized-account.json`。账户输入为 `{ "account": { "platform": "extended", "simulationSlippageBps": 0, "trendOnlyConfig": { ... } } }`，不要输入或上传密钥。
+回放使用收盘信号、下一根开盘、旧止损优先、估算手续费；不复制逐秒成交，不代表真实收益。事后 MFE/MAE 不参与实时下单。
+
 多账户交易策略服务，包含经典策略、智能趋势策略、兼容版 **Trend Only V1**、稳定对照版 **Trend Only V2** 和 Paper 实验版 **Trend Only V3**。
 
 Trend Only V3 将趋势识别、入场质量、成本、风险和执行状态解耦，通过评分、分层状态机与统一净收益口径减少错误过滤。V3 默认且强制使用 Paper；V2 保持稳定对照，V1 保留供旧账户兼容，三个版本都不会被自动删除。
