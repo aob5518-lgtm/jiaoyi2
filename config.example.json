@@ -34,7 +34,7 @@
         "experimentId": "V3_STD_20260930_B",
         "enabled": true,
         "leverage": 10,
-        "allowWeekendOpen": false,
+        "allowWeekendOpen": true,
         "weekendMode": "no_new_position",
         "weekendExitHourUTC": 20,
         "riskPerTrade": 0.01,

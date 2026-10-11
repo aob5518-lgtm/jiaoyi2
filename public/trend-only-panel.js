@@ -3,7 +3,7 @@
   const mount = document.getElementById("trendOnlyBlock");
   if (!mount) return;
   const DEFAULTS = {
-    enabled: true, leverage: 10, allowWeekendOpen: false, weekendMode: "no_new_position", weekendExitHourUTC: 20,
+    enabled: true, leverage: 10, allowWeekendOpen: true, weekendMode: "no_new_position", weekendExitHourUTC: 20,
     riskPerTrade: 0.01, maxPositionRatio: 0.1, maxDailyLossRatio: 0.03, maxConsecutiveLosses: 2,
     cooldownHoursAfterLossLimit: 12, atrPeriod: 14, adxPeriod: 14, chopPeriod: 14, emaFast: 20,
     emaMid: 50, emaSlow: 200, minAdxToTrade: 25, stopLossAtrMultiplier: 1.5,
@@ -75,7 +75,7 @@
   };
   mount.innerHTML = `
     <div class="block-head">
-      <div><div class="block-title" id="trendOnlyPanelTitle">Trend Only 参数</div><div class="config-section-note">趋势过滤单仓 · 无 DCA · UTC 周末默认禁开</div></div>
+      <div><div class="block-title" id="trendOnlyPanelTitle">Trend Only 参数</div><div class="config-section-note">趋势过滤单仓 · 无 DCA · 默认全天候按策略标准交易</div></div>
       <div><button class="ghost" id="trendRestoreDefaults" type="button">恢复推荐参数</button></div>
     </div>
     <div class="strategy-context" id="trendV1Warning" style="margin-bottom:12px;">

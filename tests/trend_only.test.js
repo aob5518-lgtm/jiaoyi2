@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const T = require('../trend_only');
 const now = Date.parse('2026-09-14T12:00:00Z');
 function fixture(side='long') {
-  const s=T.initialState(), c=T.normalizeConfig({});
+  const s=T.initialState(), c=T.normalizeConfig({allowWeekendOpen:false});
   const a={id:'test',name:'测试',platform:'hyperliquid',symbol:'ETH',quoteAsset:'USDC',paper:true,equity:10000,available:10000,trendOnlyState:s,trendOnlyConfig:c};
   const i={now,config:c,price:100,close:100,atr:2,chop:35,adx:32,adxHistory:[28,30,32],emaFast:98,emaMid:95,emaSlope:1,diPlus:30,diMinus:10,breakoutHigh:99,breakoutLow:90,trendDirection:side,higherDirection:side,signalTime:now-900000};
   if(side==='short')Object.assign(i,{close:100,emaFast:102,emaMid:105,emaSlope:-1,diPlus:10,diMinus:30,breakoutHigh:110,breakoutLow:101});
@@ -25,7 +25,20 @@ for(const side of ['long','short']) {
   test(`${side} 结构止损`,()=>{const f=opened(side);assert.equal(T.manageTrendOnlyPosition(f.a,{price:100,now},{...f.i,signalTime:now,close:side==='long'?98:102}).reason,'structure_sl');});
 }
 test('周末已有仓位仍执行止损和移动止盈',()=>{const f=opened(),sat=Date.parse('2026-09-19T12:00:00Z');assert.equal(T.manageTrendOnlyPosition(f.a,{price:96,now:sat},f.i).reason,'hard_sl');T.manageTrendOnlyPosition(f.a,{price:112,now:sat},f.i);assert.equal(f.s.position.trailingActive,true);});
-test('默认周末不执行结构、时间或普通衰减退出',()=>{const f=opened(),sat=Date.parse('2026-09-19T12:00:00Z'),i={...f.i,signalTime:now+20*900000,close:98,adxHistory:[35,32,28],chop:60,higherDirection:'none'};assert.equal(T.manageTrendOnlyPosition(f.a,{price:101,now:sat},i).reason,'');});
+test('显式周末禁开配置不执行结构、时间或普通衰减退出',()=>{const f=opened(),sat=Date.parse('2026-09-19T12:00:00Z'),i={...f.i,signalTime:now+20*900000,close:98,adxHistory:[35,32,28],chop:60,higherDirection:'none'};assert.equal(T.manageTrendOnlyPosition(f.a,{price:101,now:sat},i).reason,'');});
+
+test('V1/V2/V3 默认全天候允许交易，仍可显式启用周末过滤',()=>{
+ for(const engine of [T,require('../trend_only_v2'),require('../trend_only_v3')]) for(const date of ['2026-10-16T22:00:00Z','2026-10-17T12:00:00Z','2026-10-18T12:00:00Z']) {
+  const c=engine.normalizeConfig({});assert.equal(c.allowWeekendOpen,true);assert.equal(engine.isWeekendBlocked(Date.parse(date),c),false);assert.equal(engine.weekendProtection(Date.parse(date),c),false);
+  if(new Date(date).getUTCDay()!==5) assert.equal(engine.isWeekendBlocked(Date.parse(date),engine.normalizeConfig({allowWeekendOpen:false})),true);
+ }
+});
+test('取消周末过滤后可按同一信号开仓，但待确认订单仍禁止开仓',()=>{
+ const f=fixture();f.a.trendOnlyConfig=T.normalizeConfig({});f.i.config=f.a.trendOnlyConfig;
+ const i={...f.i,now:Date.parse('2026-10-17T12:00:00Z')};
+ assert.equal(T.tryOpenTrendOnlyPosition(f.a,f.signal,i).allowed,true);
+ f.s.pendingOrder={status:'submitted'};assert.equal(T.tryOpenTrendOnlyPosition(f.a,f.signal,i).allowed,false);
+});
 for(const [name,change] of [['CHOP 过高',{chop:68}],['ADX 过低',{adx:19}],['ADX 未连续上升',{adxHistory:[32,31,32]}],['多周期不一致',{higherDirection:'short'}],['方向冲突不默认做多',{diPlus:10,diMinus:10}],['缺少指标',{atr:NaN}],['无突破',{close:99}]])test(name,()=>{const f=fixture();const signal=T.detectMarketRegime([],{...f.i,...change});assert.equal(signal.direction,'none');assert.notEqual(signal.regime,'trend');});
 test('V1 CHOP=52.8、ADX=17.65 返回标准化未通过诊断',()=>{const f=fixture();const signal=T.detectMarketRegime([],{...f.i,chop:52.8,adx:17.65});assert.equal(signal.diagnostics.chop.passed,false);assert.equal(signal.diagnostics.adx.passed,false);assert.equal(signal.diagnostics.chop.value,52.8);assert.equal(signal.diagnostics.adx.value,17.65);assert.ok(signal.diagnostics.finalBlockers.length>=2);});
 test('时间止损',()=>{const f=opened();assert.equal(T.manageTrendOnlyPosition(f.a,{price:100.5,now:now+8*900000},{...f.i,signalTime:now+8*900000}).reason,'time_stop');});

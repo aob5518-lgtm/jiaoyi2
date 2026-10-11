@@ -3,7 +3,7 @@
 const { getEstimatedTradeCost } = require("./trade_cost");
 
 const DEFAULTS = Object.freeze({
-  enabled: true, leverage: 10, allowWeekendOpen: false, weekendMode: "no_new_position",
+  enabled: true, leverage: 10, allowWeekendOpen: true, weekendMode: "no_new_position",
   weekendExitHourUTC: 20, riskPerTrade: 0.01, maxPositionRatio: 0.1,
   maxDailyLossRatio: 0.03, maxConsecutiveLosses: 2, cooldownHoursAfterLossLimit: 12,
   atrPeriod: 14, adxPeriod: 14, chopPeriod: 14, emaFast: 20, emaMid: 50, emaSlow: 200,
