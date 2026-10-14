@@ -10,9 +10,16 @@ function evaluatePullback(direction, input, config = {}) {
   const microBreak = long ? Number(input.close) > Number(input.microHigh) : Number(input.close) < Number(input.microLow);
   const diRecovery = long ? Number(input.diPlus) > Number(input.diMinus) : Number(input.diMinus) > Number(input.diPlus);
   const reclaim = long ? Number(input.close) > Number(input.emaFast) : Number(input.close) < Number(input.emaFast);
+  const previous = input.candles?.at(-2);
+  const previousHigh = Number(input.previousHigh ?? previous?.high), previousLow = Number(input.previousLow ?? previous?.low);
+  const directionalClose = long ? Number(input.close) > Number(input.open) : Number(input.close) < Number(input.open);
+  const recoveryBreak = reclaim && directionalClose && (long ? Number.isFinite(previousHigh) && Number(input.close) > previousHigh : Number.isFinite(previousLow) && Number(input.close) < previousLow);
   const factors = [touched, structureHeld, microBreak, diRecovery, reclaim];
   const score = factors.filter(Boolean).length * 4;
-  return { type: "pullback_entry", triggered: !!touched && !!structureHeld && score >= 12, score, factors: { touched: !!touched, structureHeld, microBreak, diRecovery, reclaim } };
+  // Require a real closed-candle confirmation, but do not insist on a full
+  // five-bar break: directional EMA reclaim + previous-bar break is also valid.
+  const confirmation = microBreak || recoveryBreak;
+  return { type: "pullback_entry", triggered: !!touched && !!structureHeld && confirmation && diRecovery, score, factors: { touched: !!touched, structureHeld, microBreak, diRecovery, reclaim, recoveryBreak, confirmation } };
 }
 
 function evaluateBreakout(direction, input, config) {

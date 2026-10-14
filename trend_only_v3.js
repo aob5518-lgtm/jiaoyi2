@@ -8,7 +8,7 @@ const { indicatorsFor, directionOf, detectSwings } = require("./strategy/trend_v
 const { detectMarketRegime } = require("./strategy/trend_v3/regime");
 const { calculateInitialStop } = require("./strategy/trend_v3/stops");
 const { calculatePositionSize } = require("./strategy/trend_v3/position_sizing");
-const { buildTradeCostModel } = require("./strategy/trend_v3/costs");
+const { buildTradeCostModel, calculateNetBreakEvenStop } = require("./strategy/trend_v3/costs");
 const { evaluateExit } = require("./strategy/trend_v3/exits");
 const { buildDecisionFunnel } = require("./strategy/trend_v3/diagnostics");
 const { evaluateReentry, recordExitState } = require("./strategy/trend_v3/reentry");
@@ -63,6 +63,8 @@ function tryOpenTrendOnlyPosition(account, signal, input) {
   const sizing = calculatePositionSize({ equity: account.equity, available: account.available ?? account.equity, entryPrice, stopDistance: stop.distance, riskPerTrade: config.riskPerTrade, riskMultiplier: costAdjustedRiskMultiplier, costRate: cost.roundTripCostRate, leverage: config.leverage, maxPositionRatio: config.maxPositionRatio, qtyStep: Number(input.qtyStep || 0.000001), minNotional: Number(input.minNotional || 10) });
   if (!sizing.allowed) return reject(sizing.reason, "risk", executionEvaluation, sizing);
   const costModel = buildTradeCostModel(account, signal.entryMode, { notional: sizing.positionValue, plannedRiskAmount: sizing.plannedRiskAmount });
+  // Keep same-parameter, different-engine experiments separable in history.
+  config.strategyRevision = "V3_20261015_CONFIRM_COST";
   Object.assign(executionEvaluation, { risk: "PASS", execution: "PASS", blocker: "", trendWave: reentry.trendWave || null });
   return { allowed: true, side: signal.tradeDirection, qty: sizing.qty, entryPrice, positionValue: sizing.positionValue, riskAmount: sizing.initialEffectiveRiskU, plannedRiskAmount: sizing.riskBudgetU, riskBudgetU: sizing.riskBudgetU, initialPriceRiskU: sizing.initialPriceRiskU, initialEffectiveRiskU: sizing.initialEffectiveRiskU, effectiveRiskU: sizing.initialEffectiveRiskU, priceRiskU: sizing.priceRiskU, expectedCostU: sizing.expectedCostU, positionCapped: sizing.positionCapped, initialStopLossPrice: stop.stop, stopDistance: stop.distance, stopDistanceAtr: stop.distanceAtr, stopSource: stop.source, atrAtEntry: atr, signal, entryMode: signal.entryMode, grade: signal.grade, riskMultiplier: costAdjustedRiskMultiplier, costR, potentialR, rewardSpace, estimatedTradeCost: cost, costModel, equity: Number(account.equity), trendId, experimentId: config.experimentId, strategyVersion: "trend_only_v3", executionEvaluation, configHash: crypto.createHash("sha256").update(JSON.stringify(config)).digest("hex") };
 }
@@ -72,7 +74,8 @@ function positionFromFill(plan, fill, now, configInput) {
   position.config = config;
   position.strategyMode = "Trend Only V3";
   position.strategyVersion = "trend_only_v3";
-  position.strategyRevision = "V3_20261009_STRUCTURE";
+  position.strategyRevision = "V3_20261015_CONFIRM_COST";
+  position.paper = true; // V3 remains Paper-only.
   position.experimentId = plan.experimentId || config.experimentId;
   position.configHash = plan.configHash;
   position.trendScore = Number(plan.signal?.trendScore || 0);
@@ -97,7 +100,10 @@ function positionFromFill(plan, fill, now, configInput) {
   position.actualRiskRatio = Number(plan.equity) > 0 ? position.actualEffectiveRiskU / Number(plan.equity) : null;
   position.riskDeviationRatio = position.riskBudgetU > 0 ? position.actualEffectiveRiskU / position.riskBudgetU - 1 : Infinity;
   position.postFillRiskExceeded = !position.postFillRiskInvalid && position.riskBudgetU > 0 && position.actualEffectiveRiskU > position.riskBudgetU * (1 + config.maxPostFillRiskDeviation);
-  position.netBreakEvenPrice = position.entryPrice + (position.side === "long" ? 1 : -1) * expectedCostPerUnit;
+  const breakEven = calculateNetBreakEvenStop(position, config);
+  position.netBreakEvenPrice = breakEven?.trigger ?? position.entryPrice + (position.side === "long" ? 1 : -1) * expectedCostPerUnit;
+  position.netBreakEvenExecutionPrice = breakEven?.executionPrice ?? null;
+  position.netBreakEvenCostSource = breakEven?.source || "legacy_estimate";
   position.executionEvaluation = plan.executionEvaluation;
   position.signal = { structureHigh: plan.signal?.structureHigh, structureLow: plan.signal?.structureLow, states: plan.signal?.states };
   position.whyEntered = `${plan.signal?.setupState || "READY"}：Trend ${position.trendScore.toFixed(1)} / Entry ${position.entryScore.toFixed(1)} / Grade ${position.grade}`;
@@ -170,7 +176,7 @@ function updateTrendContext(state, signal, input) {
 
 function appendShadowSignal(state, accountId, signal, input, finalAction = "") {
   const appended = V2.appendShadowSignal(state, accountId, signal, input, finalAction, 14 * 24);
-  if (appended) Object.assign(state.signalJournal.at(-1), { strategyVersion: "trend_only_v3", strategyRevision: "V3_20261009_STRUCTURE", trendScore: signal.trendScore, entryScore: signal.entryQualityScore, grade: signal.grade, setupState: signal.setupState, entryDirection: input.entryDirection, atr: input.atr, entryCandidates: signal.entryCandidates || [] });
+  if (appended) Object.assign(state.signalJournal.at(-1), { strategyVersion: "trend_only_v3", strategyRevision: "V3_20261015_CONFIRM_COST", trendScore: signal.trendScore, entryScore: signal.entryQualityScore, grade: signal.grade, setupState: signal.setupState, entryDirection: input.entryDirection, atr: input.atr, entryCandidates: signal.entryCandidates || [] });
   return appended;
 }
 

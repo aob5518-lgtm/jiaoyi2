@@ -4018,6 +4018,7 @@
       ].join("");
       else {
         const factorNames = { touched:"触碰EMA", structureHeld:"结构未破", microBreak:"微结构突破", diRecovery:"DI恢复", reclaim:"重回EMA", broke:"突破结构", compression:"先有压缩", expansion:"波动释放", bodyQuality:"实体质量", extended:"远离EMA", structure:"延续结构", released:"确认释放" };
+        Object.assign(factorNames, { recoveryBreak: "收复EMA并突破上一根K线", confirmation: "收盘入场确认" });
         const candidateRows = (signal.entryCandidates || []).filter(item => item.enabled).map(item => {
           const missing = Object.entries(item.factors || {}).filter(([key, value]) => key === "extended" ? value : !value).map(([key]) => factorNames[key] || key);
           return row(v3ModeLabel(item.type), item.triggered ? `已触发 · ${item.score || 0} 分` : `还差：${missing.join("、") || "等待确认"}` , item.triggered ? "green" : "orange");
@@ -4026,6 +4027,7 @@
       }
       if (candidate) {
         const names = { touched:"触碰EMA", structureHeld:"结构未破", microBreak:"微结构突破", diRecovery:"DI恢复", reclaim:"重回EMA", broke:"突破结构", compression:"先有压缩", expansion:"波动释放", bodyQuality:"实体质量", extended:"追单风险", structure:"延续摆动结构", released:"确认释放" };
+        Object.assign(names, { recoveryBreak: "收复EMA并突破上一根K线", confirmation: "收盘入场确认" });
         $("v3CandidateRows").innerHTML += (signal.entryCandidates || []).filter(item => item.enabled).map(item => {
           const failed = Object.entries(item.factors || {}).filter(([key, value]) => key === "extended" ? value : !value).map(([key]) => names[key] || key);
           const message = item.stopAllowed === false ? `结构止损不合格：${item.stopReason}` : item.triggered ? `形态已触发 · ${item.score} 分；仍需通过评分、空间与执行校验` : `未触发：${failed.join("、") || "等待确认"}`;
@@ -4538,6 +4540,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
     const reasonLabel = reason => ({ hard_sl: "硬止损", structure_sl: "结构止损", trend_reversal: "趋势反转退出", trend_tp: "移动止盈/保护止盈", time_stop: "时间退出", weekend_exit: "周末退出", manual_close: "手动平仓", post_fill_risk_invalid: "成交后风险异常退出", exchange_sync_exit: "交易所外部退出" })[reason] || reason || "未记录";
     const modeLabel = mode => ({ breakout_entry: "突破", pullback_entry: "回踩", continuation_entry: "延续" })[mode] || mode || "未记录";
     const netPnlOf = item => Number.isFinite(Number(item.netPnl)) ? Number(item.netPnl) : Number(item.pnl || 0);
+    const historyReasonLabel = item => item.closeReason === "trend_tp" && netPnlOf(item) < 0 ? "保护退出（净亏损）" : reasonLabel(item.closeReason);
     const durationOf = item => {
       if (item.holdingDurationMs !== null && item.holdingDurationMs !== undefined && Number.isFinite(Number(item.holdingDurationMs))) return Number(item.holdingDurationMs);
       const start = Number(item.entryTime) || Date.parse(item.entryTime || ""), end = Number(item.exitTime) || Date.parse(item.exitTime || item.time || "");
@@ -4569,7 +4572,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       $("historyTotalPnl").textContent = total ? `${fmt(net, 2)} U` : "数据不足"; $("historyTotalPnl").className = `history-stat-v ${total ? signClass(net) : ""}`;
       $("historyWinRate").textContent = total ? `${fmt(wins / total * 100, 2)}%` : "数据不足";
       $("historyAvgR").textContent = rRows.length ? `${fmt(rRows.reduce((sum, item) => sum + rOf(item), 0) / rRows.length, 2)} R` : "数据不足";
-      $("historyProfitFactor").textContent = positive > 0 && negative > 0 ? fmt(positive / negative, 2) : "数据不足";
+      $("historyProfitFactor").textContent = negative > 0 ? fmt(positive / negative, 2) : "数据不足";
       $("historyTotalFee").textContent = rows.length && feeRows.length === rows.length ? `${fmt(feeRows.reduce((sum, item) => sum + Number(item.tradingFee), 0), 2)} U` : "数据不足";
       $("historyAvgDuration").textContent = durations.length ? durationLabel(durations.reduce((a, b) => a + b, 0) / durations.length) : "数据不足";
       $("historyMaxLossStreak").textContent = total ? `${maxStreak} 笔` : "数据不足";
@@ -4590,7 +4593,7 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
         $("historyEmptyReason").textContent = total ? `最近 72 小时已完成 ${total} 次判断，策略机会 ${opportunities} 次；主要阻断：${top[0]} ${Number(top[1] || 0)} 次。先看信号回放，不需要从一排“数据不足”里猜原因。` : "尚未积累足够的已收盘 K 线判断，请先确认趋势监控和行情链路正常。";
       }
       if (!filteredHistoryItems.length) { $("historyTableBody").innerHTML = `<tr><td colspan="9" class="muted" style="padding:16px;">当前筛选条件下暂无历史交易</td></tr>`; return; }
-      $("historyTableBody").innerHTML = filteredHistoryItems.map((item, idx) => { const side = String(item.side || "").toLowerCase() === "short" ? "short" : "long", timestamp = exitTimeOf(item), date = timestamp ? new Date(timestamp) : null, reason = reasonLabel(item.closeReason), reasonClass = item.closeReason === "trend_tp" ? "profit" : item.closeReason === "trend_reversal" ? "reversal" : ["hard_sl","structure_sl","post_fill_risk_invalid"].includes(item.closeReason) ? "loss" : "", legacy = legacyOf(item), net = netPnlOf(item); return `
+      $("historyTableBody").innerHTML = filteredHistoryItems.map((item, idx) => { const side = String(item.side || "").toLowerCase() === "short" ? "short" : "long", timestamp = exitTimeOf(item), date = timestamp ? new Date(timestamp) : null, reason = historyReasonLabel(item), reasonClass = item.closeReason === "trend_tp" ? (netPnlOf(item) < 0 ? "loss" : "profit") : item.closeReason === "trend_reversal" ? "reversal" : ["hard_sl","structure_sl","post_fill_risk_invalid"].includes(item.closeReason) ? "loss" : "", legacy = legacyOf(item), net = netPnlOf(item); return `
         <tr>
           <td><span class="history-time"><span>${date && Number.isFinite(date.getTime()) ? String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0") : "--"}</span><span>${date && Number.isFinite(date.getTime()) ? date.toLocaleTimeString("zh-CN",{hour12:false}) : "--"}</span></span></td>
           <td><span class="history-badge ${side}">${side === "long" ? "LONG / 多" : "SHORT / 空"}</span> <span class="history-badge">${safeText(modeLabel(item.entryMode))}</span>${legacy ? `<span class="history-badge legacy" title="该交易产生于复盘字段上线之前，部分指标当时未采集。">旧记录</span>` : ""}</td>
