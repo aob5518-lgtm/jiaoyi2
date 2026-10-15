@@ -27,7 +27,7 @@
   };
   const V3_DEFAULTS = {
     swingStructureLookback: 48, continuationSetupValidBars: 3,
-    experimentId: "V3_STD_20261015_C", strategyRevision: "V3_20261015_CONFIRM_COST", maxPortfolioRiskPct: 0.025, portfolioRiskKey: "", maxCrossVenueBasisBps: 25, maxCrossVenueBasisAtr: 0.25, gradeAThreshold: 82, gradeBThreshold: 74,
+    experimentId: "V3_STD_20261015_C", strategyRevision: "", maxPortfolioRiskPct: 0.025, portfolioRiskKey: "", maxCrossVenueBasisBps: 25, maxCrossVenueBasisAtr: 0.25, gradeAThreshold: 82, gradeBThreshold: 74,
     gradeARiskMultiplier: 1, gradeBRiskMultiplier: 0.5, htfStrongAdx: 30, htfMildPenalty: 5,
     highQualityPullbackScore: 15, breakoutCompressionBars: 6, continuationCompressionBars: 5,
     pullbackStopBuffer: 0.5, minimumEffectiveStopAtr: 1, minimumEffectiveStopBps: 20,

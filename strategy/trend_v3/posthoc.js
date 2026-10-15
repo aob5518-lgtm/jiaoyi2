@@ -1,5 +1,7 @@
 "use strict";
 const {scopeFor}=require("./scope");
+const {fullWindow}=require("./quality_audit");
+const {INTERVALS}=require("../../trend_only");
 
 function registerMissedCandidate(state, signal, input) {
   if (!signal.signalTime || signal.entryPermission === "allowed" || signal.directionRaw === "none") return false;
@@ -9,6 +11,7 @@ function registerMissedCandidate(state, signal, input) {
     postHocOnly: true,
     ...(input.config?scopeFor(input.config):{}),
     signalTime: signal.signalTime,
+    entryTimeframe: input.config?.entryTimeframe || "15m",
     direction: signal.directionRaw,
     entryPrice: Number(input.close),
     riskUnit: Math.max(Number(input.atr || 0), Math.abs(Number(input.close) - Number(signal.directionRaw === "long" ? signal.structureLow : signal.structureHigh)) || 0),
@@ -23,10 +26,12 @@ function registerMissedCandidate(state, signal, input) {
 function updateMissedOpportunities(state, closedCandles) {
   const candles = Array.isArray(closedCandles) ? closedCandles : [];
   for (const candidate of state.missedOpportunityJournal || []) {
-    const future = candles.filter(item => Number(item.time) > Number(candidate.signalTime));
+    const interval = INTERVALS[candidate.entryTimeframe] || 900000;
     for (const horizon of [8, 16, 32]) {
-      if (candidate.outcomes[horizon] || future.length < horizon) continue;
-      const rows = future.slice(0, horizon), sign = candidate.direction === "long" ? 1 : -1;
+      if (candidate.outcomes[horizon]) continue;
+      const rows = fullWindow(candles, Number(candidate.signalTime), horizon, interval, true);
+      if (!rows) continue;
+      const sign = candidate.direction === "long" ? 1 : -1;
       const favorable = Math.max(0, ...rows.map(item => sign > 0 ? Number(item.high) - candidate.entryPrice : candidate.entryPrice - Number(item.low)));
       const adverse = Math.max(0, ...rows.map(item => sign > 0 ? candidate.entryPrice - Number(item.low) : Number(item.high) - candidate.entryPrice));
       const risk = Number(candidate.riskUnit) > 0 ? Number(candidate.riskUnit) : 1;

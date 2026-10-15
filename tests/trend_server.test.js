@@ -131,7 +131,8 @@ test('V3 Post Exit 更新按凭证键合并，不会制造重复历史',async t=
 test('Forward Test API defaults exclude old revisions and preserve old history explicitly',async t=>{
  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
  vm.runInContext(`const forwardScope=v3Scope(TrendOnlyV3.normalizeConfig(config.accounts[0].trendOnlyConfig));stateMap.legacy.profitHistory=[{...forwardScope,entryMode:'pullback_entry',netPnl:2,netR:1},{...forwardScope,strategyRevision:'V3_20261009_STRUCTURE',netPnl:-5,netR:-2},{...forwardScope,strategyRevision:undefined,netPnl:-7,netR:-3}]`,f.ctx);
- const analysis=await f.call('/api/trend-only/analytics');assert.equal(analysis.code,200);assert.equal(analysis.data.summary.trades,1);assert.equal(analysis.data.strategyRevision,'V3_20261015_CONFIRM_COST');assert.equal(analysis.data.experimentId,'V3_STD_20261015_C');assert.equal(analysis.data.forward.modeFunnel.breakout_entry.Filled,0);
+ const analysis=await f.call('/api/trend-only/analytics');assert.equal(analysis.code,200);assert.equal(analysis.data.summary.trades,1);assert.equal(analysis.data.strategyRevision,require('../strategy/trend_v3/scope').REVISION);assert.equal(analysis.data.experimentId,'V3_STD_20261015_C');assert.equal(analysis.data.forward.modeFunnel.breakout_entry.Filled,0);
+ assert.equal(analysis.data.forward.independentShadows.V3_COST_TIGHT.initialized,false);assert.match(analysis.data.forward.independentShadows.V3_COST_TIGHT.message,/尚未形成有效样本/);
  const history=await f.call('/api/profit-history?id=legacy');assert.equal(history.data.items.length,1);
  const all=await f.call('/api/profit-history?id=legacy&strategyVersion=all&strategyRevision=all');assert.equal(all.data.items.length,3);
  assert.equal((await f.call('/api/trend-only/analytics',undefined,false)).code,401);

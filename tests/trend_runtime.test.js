@@ -19,6 +19,28 @@ function fixture(t,live=false){
 }
 function v2Position(){return{side:'long',entryPrice:100,initialStopLossPrice:98,currentStopLossPrice:98,positionSize:1,positionValue:100,leverage:10,config:V2.normalizeConfig({allowWeekendOpen:true}),signalTime:Date.now()-900000,highestPriceSinceEntry:100,lowestPriceSinceEntry:100};}
 
+test('V3 independent Shadow books are saved to runtime JSON and restored on restart',async t=>{
+ const f=fixture(t);f.acc.strategyType='trend_only_v3';f.acc.trendOnlyConfig=V3.normalizeConfig({allowWeekendOpen:true});
+ await f.r.tick(f.acc,f.st);
+ const hash=V3.scopeFor(f.acc.trendOnlyConfig).configHash,books=f.r.get(f.acc).shadowBooks[hash].books;
+ const disk=JSON.parse(fs.readFileSync(path.join(f.directory,'trend_only_runtime.json'),'utf8'));
+ for(const name of ['V3_COST_TIGHT','weekend_filter_shadow']){
+  assert.ok(disk.a.shadowBooks[hash].books[name]);assert.ok(disk.a.shadowBooks[hash].books[name].persistedAt>=books[name].startedAt);
+ }
+ const restarted=createTrendRuntime(f.d),restored=restarted.get(f.acc).shadowBooks[hash];
+ assert.deepEqual(restored.books,books);
+ const summary=require('../strategy/trend_v3/shadow_books').shadowSummary(restored,[],require('../strategy/trend_v3/analytics').summarizeRows);
+ assert.equal(summary.V3_COST_TIGHT.persistenceHealthy,true);assert.equal(summary.V3_COST_TIGHT.initialized,true);assert.ok(summary.V3_COST_TIGHT.barsObserved>0);
+});
+
+test('real unresolved pending order does not skip independent Shadow evaluation',async t=>{
+ const f=fixture(t);f.acc.strategyType='trend_only_v3';f.acc.trendOnlyConfig=V3.normalizeConfig({allowWeekendOpen:true});
+ f.r.get(f.acc).pendingOrder={kind:'open',status:'unknown_order_state',side:'long',qty:1,clientOrderId:'test'};
+ await f.r.tick(f.acc,f.st);
+ const hash=V3.scopeFor(f.acc.trendOnlyConfig).configHash;
+ assert.ok(f.r.get(f.acc).pendingOrder);assert.ok(f.r.get(f.acc).shadowBooks[hash].books.V3_COST_TIGHT.lastTickAt);assert.equal(f.orders(),0);
+});
+
 test('V3 concurrent shared-fund opens reserve portfolio risk before Paper settlement',async t=>{
  const f=fixture(t);f.acc.strategyType='trend_only_v3';f.acc.vault='synthetic-shared';f.acc.simulationSlippageBps=0;f.acc.trendOnlyConfig=V3.normalizeConfig({maxPortfolioRiskPct:.015});
  const b={...f.acc,id:'b',symbol:'TEST2'},other={...f.st};

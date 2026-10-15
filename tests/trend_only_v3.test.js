@@ -14,7 +14,6 @@ const { updatePostExitAnalytics } = require("../strategy/trend_v3/post_exit");
 const { buildDecisionFunnel } = require("../strategy/trend_v3/diagnostics");
 const { transition } = require("../strategy/trend_v3/state_machine");
 require("./trend_v3_review.test");
-require("./forward_test.test");
 
 function config(extra = {}) { return V3.normalizeConfig({ allowWeekendOpen: true, ...extra }); }
 function input(extra = {}) {
@@ -156,7 +155,7 @@ test("V2 Shadow 永远没有下单权限并保留 V2/V3 决策对照", () => {
 test("错过机会分析仅使用信号之后的 K 线且不修改实时信号", () => {
   const state = {}, signal = { signalTime: 1000, entryPermission: "wait_pullback", directionRaw: "long", setupState: "WAIT_PULLBACK", structureLow: 99, blockers: ["等待回踩"] };
   assert.equal(registerMissedCandidate(state, signal, { close: 100, atr: 1 }), true);
-  const before = JSON.stringify(signal), candles = [{ time: 900, high: 999, low: 1 }, ...Array.from({ length: 8 }, (_, idx) => ({ time: 1001 + idx, high: 100 + idx * .4, low: 99.8 }))];
+  const before = JSON.stringify(signal), candles = [{ time: 0, high: 999, low: 1 }, ...Array.from({ length: 8 }, (_, idx) => ({ time: (idx + 1) * 900000, high: 100 + idx * .4, low: 99.8 }))];
   updateMissedOpportunities(state, candles);
   assert.equal(JSON.stringify(signal), before);
   assert.equal(state.missedOpportunityJournal[0].postHocOnly, true);
@@ -178,7 +177,7 @@ test("V3 分析按版本、实验、配置隔离并统一使用 netPnl/netR", ()
 
 test("Post Exit Analytics 仅使用退出后的 K 线并标记为事后数据", () => {
   const voucher = { strategyVersion: "trend_only_v3", exitTime: 1000, exitPrice: 100, side: "long", plannedRiskAmount: 10, positionSize: 10 };
-  const candles = [{ time: 999, high: 999, low: 1 }, ...Array.from({ length: 32 }, (_, index) => ({ time: 1001 + index, high: 100 + index * .1, low: 99.5 }))];
+  const candles = [{ time: 0, high: 999, low: 1 }, ...Array.from({ length: 32 }, (_, index) => ({ time: (index + 1) * 900000, high: 100 + index * .1, low: 99.5 }))];
   assert.equal(updatePostExitAnalytics([voucher], candles), true);
   assert.equal(voucher.postExitAnalyticsPostHocOnly, true);
   assert.ok(voucher.PostExitMFE_8 < 1);

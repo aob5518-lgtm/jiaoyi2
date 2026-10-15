@@ -3,7 +3,7 @@ const {test}=require("node:test"),assert=require("node:assert/strict"),fs=requir
 const V3=require("../trend_only_v3"),{scopeFor,REVISION,EXPERIMENT,matches}=require("../strategy/trend_v3/scope");
 const {updateQualityAudit,classify}=require("../strategy/trend_v3/quality_audit"),{buildStrategyAnalytics,summarizeRows}=require("../strategy/trend_v3/analytics");
 const {enrich,distribution}=require("../strategy/trend_v3/forward_analytics"),{portfolioRiskKey,snapshot}=require("../strategy/trend_v3/portfolio");
-const {describePullback,auditModes,buildShadows,metadata}=require("../strategy/trend_v3/telemetry"),{tickShadowBooks,shadowSummary}=require("../strategy/trend_v3/shadow_books");
+const {describePullback,auditModes,buildShadows,metadata}=require("../strategy/trend_v3/telemetry"),{tickShadowBooks,shadowSummary,shadowPortfolioSnapshot}=require("../strategy/trend_v3/shadow_books");
 const c=V3.normalizeConfig({allowWeekendOpen:true,maxStopDistanceAtr:3}),scope=scopeFor(c),ms=900000;
 function input(){return{config:c,signalTime:ms,decisionTime:Date.parse("2026-10-19T12:00Z"),close:101,open:100.5,price:101,atr:1,chop:44,emaFast:100,emaMid:99,diPlus:35,diMinus:15,adx:32,adxHistory:[27,30,32],trendDirection:"long",higherDirection:"none",entryDirection:"long",structureLow:99,structureHigh:105,microHigh:100.5,microLow:99.5,pullbackLow:99.4,pullbackHigh:101,pullbackTouchedLong:true,pullbackTouchedShort:false,pullbackTouchSources:["EMA20"],breakoutHigh:103,breakoutLow:98,roundTripCostRate:.0015,trendIndicators:{structureDirection:"long",emaFast:100,emaMid:99,emaFastSlope:.5,close:101,adx:32,adxHistory:[27,30,32],diPlus:35,diMinus:15,latestSwingHigh:110,latestSwingLow:95},higherIndicators:{structureDirection:"none",adx:18,latestSwingHigh:120,latestSwingLow:90}};}
 function account(){return{id:"synthetic",platform:"extended",symbol:"TEST",paper:true,equity:10000,available:10000,simulationSlippageBps:0,trendOnlyConfig:c,trendOnlyState:V3.initialState()};}
@@ -100,4 +100,73 @@ test("all main HTML inline scripts parse and Forward workbench defaults to curre
  const html=fs.readFileSync(path.join(__dirname,"../public/index.html"),"utf8");
  for(const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);
  assert.match(html,/historyRevisionFilter.*当前修订/);assert.match(html,/Forward Test 策略诊断工作台/);assert.match(html,/strategyVersion=all&strategyRevision=all/);assert.match(html,/if\(includeAllVersions\)await loadAnalytics/);
+});
+
+// Deterministic virtual fills isolate ledger lifecycle from market eligibility.
+function shadowEngine(){return{
+ initialState:()=>({...V3.initialState(),trendEntryCounts:{}}),normalizeConfig:V3.normalizeConfig,
+ detectMarketRegime:(_,i)=>({signalTime:i.signalTime}),updateTrendContext:()=>{},
+ tryOpenTrendOnlyPosition:(a,s)=>({allowed:true,side:"long",qty:1,signal:s,trendId:"test",initialEffectiveRiskU:10}),
+ positionFromFill:(p,f)=>({side:p.side,positionSize:f.qty,signalTime:p.signal.signalTime,currentStopLossPrice:98,initialEffectiveRiskU:10}),
+ manageTrendOnlyPosition:(_,__,i)=>i.testExit?{reason:"manual_close"}:{},
+ recordClose:(a,_,reason)=>{const v={netPnl:-10,closeReason:reason,signalTime:a.trendOnlyState.position.signalTime};a.trendOnlyState.journal.push(v);a.trendOnlyState.position=null;return v;}
+};}
+test("shadow cohort and books persist across ticks, trades and serialization",()=>{
+ const T=shadowEngine(),state={},a=account(),i=input();
+ tickShadowBooks(T,state,a,i);assert.ok(state.shadowBooks[scope.configHash]);
+ const cohort=state.shadowBooks[scope.configHash],b=cohort.books.V3_COST_TIGHT,position=b.state.position,startedAt=b.startedAt;
+ assert.ok(b);assert.ok(position);assert.ok(cohort.books.weekend_filter_shadow.state.position);
+ tickShadowBooks(T,state,a,{...i,decisionTime:i.decisionTime+1});
+ assert.equal(cohort.books.V3_COST_TIGHT,b);assert.equal(b.state.position,position);assert.equal(b.startedAt,startedAt);assert.equal(b.barsObserved,1);
+ tickShadowBooks(T,state,a,{...i,testExit:true,signalTime:i.signalTime+ms,decisionTime:i.decisionTime+ms});
+ assert.equal(b.equity,9990);assert.equal(b.state.journal.length,1);
+ const restored=JSON.parse(JSON.stringify(state));tickShadowBooks(T,restored,{...a,equity:999999},{...i,signalTime:i.signalTime+2*ms,decisionTime:i.decisionTime+2*ms});
+ const saved=restored.shadowBooks[scope.configHash].books.V3_COST_TIGHT;
+ assert.equal(saved.equity,9990);assert.equal(saved.startedAt,startedAt);assert.equal(saved.state.journal.length,1);assert.ok(saved.state.position);assert.equal(saved.orderPermission,false);
+});
+test("real risk locks, pending orders and exchange orders do not block independent shadows",()=>{
+ for(const temporary of [{riskLock:true},{pendingOrder:{status:"unknown_order_state"}},{conflictingAccount:true,exchangeOpenOrders:[{id:"real"}]}]){
+  const state={...temporary};tickShadowBooks(shadowEngine(),state,account(),input());
+  for(const b of Object.values(state.shadowBooks[scope.configHash].books)){assert.ok(b.state.position);assert.equal(b.orderPermission,false);}
+ }
+});
+test("each shadow honors its own risk lock, pending state, daily loss and cooldown",()=>{
+ for(const block of [{riskLock:true},{pendingOrder:{}},{pauseUntil:input().decisionTime+ms},{dailyDate:"2026-10-19",dayStartEquity:10000,dailyLoss:1000}]){
+  const T=shadowEngine(),state={};tickShadowBooks(T,state,account(),input(),false);
+  Object.assign(state.shadowBooks[scope.configHash].books.V3_COST_TIGHT.state,block);
+  tickShadowBooks(T,state,account(),input());assert.equal(state.shadowBooks[scope.configHash].books.V3_COST_TIGHT.state.position,null);assert.ok(state.shadowBooks[scope.configHash].books.weekend_filter_shadow.state.position);
+ }
+});
+test("shadow portfolio uses only same named books and reports incomplete coverage",()=>{
+ const a={...account(),vault:"shared"},b={...a,id:"other"},missing={...a,id:"missing"};
+ const book=(risk,equity)=>({equity,state:{position:risk?{side:"long",positionSize:1,initialEffectiveRiskU:risk}:null}});
+ const entries=[{account:a,equity:1,state:{shadowBooks:{[scope.configHash]:{books:{V3_COST_TIGHT:book(0,10000),weekend_filter_shadow:book(0,5000)}}}}},{account:b,equity:999999,state:{position:{initialEffectiveRiskU:999999},shadowBooks:{[scope.configHash]:{books:{V3_COST_TIGHT:book(200,10000),weekend_filter_shadow:book(0,5000)}}}}}];
+ const tight=shadowPortfolioSnapshot(V3,a,entries,"V3_COST_TIGHT","long",60),weekend=shadowPortfolioSnapshot(V3,a,entries,"weekend_filter_shadow","long",60);
+ assert.equal(tight.allowed,false);assert.equal(tight.openEffectiveRiskU,200);assert.equal(tight.equityBasis,10000);assert.equal(weekend.allowed,true);assert.equal(weekend.openEffectiveRiskU,0);assert.equal(weekend.equityBasis,5000);
+ const partial=shadowPortfolioSnapshot(V3,a,[...entries,{account:missing,equity:999999,state:{}}],"V3_COST_TIGHT","long",0);
+ assert.equal(partial.portfolioShadowCoverage.status,"PARTIAL");assert.deepEqual(partial.portfolioShadowCoverage.missingAccountIds,["missing"]);assert.equal(partial.equityBasis,10000);
+});
+test("uninitialized shadow reports insufficient samples, not zero historical trades",()=>{
+ const summary=shadowSummary(null,[],summarizeRows).V3_COST_TIGHT;
+ assert.equal(summary.initialized,false);assert.equal(summary.trades,null);assert.equal(summary.persistenceHealthy,false);assert.match(summary.message,/尚未形成有效样本/);
+});
+test("breakout and continuation do not require pullback-specific metadata",()=>{
+ for(const entryMode of ["breakout_entry","continuation_entry"]){assert.equal(buildStrategyAnalytics([voucher({entryMode,signalMarketDataSource:"binance_futures"})],scope).forward.missingFields,0);}
+ assert.equal(buildStrategyAnalytics([voucher({entryMode:"pullback_entry",signalMarketDataSource:"binance_futures"})],scope).forward.missingFields,1);
+});
+test("PostExit and missed-opportunity maturity require complete contiguous closed windows",()=>{
+ const {updatePostExitAnalytics}=require("../strategy/trend_v3/post_exit"),{registerMissedCandidate,updateMissedOpportunities}=require("../strategy/trend_v3/posthoc");
+ const bars=Array.from({length:33},(_,n)=>({time:n*ms,high:102,low:99}));
+ for(const data of [bars.filter(b=>b.time!==3*ms),bars.slice(0,7)]){
+  const v=voucher({exitTime:ms+1}),state={};updatePostExitAnalytics([v],data);assert.equal(v.PostExitMFE_8,undefined);assert.equal(v.PostExitMFE_16,undefined);assert.equal(v.PostExitMFE_32,undefined);
+  registerMissedCandidate(state,{signalTime:ms,directionRaw:"long",entryPermission:"wait_pullback",structureLow:99},{...input(),close:100});updateMissedOpportunities(state,data);assert.deepEqual(state.missedOpportunityJournal[0].outcomes,{});
+ }
+ const {fullWindow}=require("../strategy/trend_v3/quality_audit");assert.equal(fullWindow(bars,ms,8,ms,false,8*ms),null);
+});
+test("canonical revision reaches journal, missed candidates, fills and explicit npm test",()=>{
+ const state=V3.initialState(),i=input(),s=V3.detectMarketRegime([],i);
+ V3.appendShadowSignal(state,"synthetic",s,i);assert.equal(state.signalJournal[0].strategyRevision,REVISION);assert.equal(state.signalJournal[0].configHash,scope.configHash);
+ const {registerMissedCandidate}=require("../strategy/trend_v3/posthoc");registerMissedCandidate(state,{...s,signalTime:2*ms,entryPermission:"wait_pullback",directionRaw:"long"},i);assert.equal(state.missedOpportunityJournal[0].strategyRevision,REVISION);
+ const previous=voucher({strategyRevision:"V3_20261015_CONFIRM_COST"});assert.equal(buildStrategyAnalytics([previous],scope).summary.trades,0);assert.equal(previous.strategyRevision,"V3_20261015_CONFIRM_COST");
+ assert.match(require("../package.json").scripts.test,/node --test[^&]*tests\/forward_test\.test\.js/);
 });

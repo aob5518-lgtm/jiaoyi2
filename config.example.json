@@ -32,7 +32,7 @@
       "trendOnlyConfig": {
         "version": "v3",
         "experimentId": "V3_STD_20261015_C",
-        "strategyRevision": "V3_20261015_CONFIRM_COST",
+        "strategyRevision": "V3_20261015_FORWARD_PORTFOLIO",
         "maxPortfolioRiskPct": 0.025,
         "portfolioRiskKey": "",
         "maxCrossVenueBasisBps": 25,

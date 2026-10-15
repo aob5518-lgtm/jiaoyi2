@@ -2,7 +2,7 @@
 
 ## 实验隔离
 
-默认范围为 strategyVersion、experimentId、strategyRevision、configHash 四项同时匹配。当前实验为 `V3_STD_20261015_C`，修订为 `V3_20261015_CONFIRM_COST`。旧成交不重标、不重算；缺失修订显示 unknown，不根据日期猜测。跨范围比较必须显式选择，不能拿旧实验样本评价新配置。
+默认范围为 strategyVersion、experimentId、strategyRevision、configHash 四项同时匹配。当前实验为 `V3_STD_20261015_C`，修订为 `V3_20261015_FORWARD_PORTFOLIO`。唯一运行时修订来源为 scope.js；组合风险保护会改变开仓许可，因此不沿用 CONFIRM_COST 修订。旧成交不重标、不重算；缺失修订显示 unknown，不根据日期猜测。跨范围比较必须显式选择，不能拿旧实验样本评价新配置。
 
 ## 止损后与入场后观察
 
@@ -25,6 +25,10 @@ Candidate → Triggered → StopPassed → ScorePassed → CostPassed → Potent
 总成本包含手续费、显式独立滑点成本并扣除资金费收益。已体现在成交价格中的止损滑点不再次扣减。成本分档为重叠阈值，不能相加作为总数；真实费用优先，估算来源单独标识。
 
 cost-tight 与 weekday/weekend Shadow 使用独立模拟账本、权益、仓位和冷却，无交易所下单或真实成交写入权限。cost-tight 只改变成本门槛，周末对照按 UTC 判断新开仓；不改变主策略参数。它们使用采样报价和估算成本，不复制逐笔盘口、资金费或真实成交。
+
+Shadow 按配置哈希保存于 trend_only_runtime.json，重启后恢复，不在每次 tick 重新创建。风险锁、日亏损、连亏冷却、仓位及待确认模拟状态均读取自己的 b.state，不继承真实策略 riskLock、pendingOrder 或交易所挂单；真实执行路径提前返回也继续独立评估。行情获取失败仍禁止模拟。每个 Shadow 的组合风险只计算其他账户的同名账本；未初始化者不回退到真实权益或仓位，portfolioShadowCoverage 明确标记 PARTIAL 和缺失账户。
+
+independentShadows 显示 initialized、startedAt、lastTickAt、barsObserved、trades、hasOpenPosition、persistenceHealthy。barsObserved 只统计实际观察到的不同信号 K 线，不补造停机期间样本；未初始化时 trades=null，并显示“Shadow 尚未形成有效样本”。persistenceHealthy 表示该账本已有成功原子保存记录，不是实时磁盘健康检测。
 
 独立 Shadow 从启动后积累；同笔成交的门槛筛选统计仅是 matched-trade 对照，不是完整反事实回测。未平虚拟仓位不能标记为错过收益。配置切换后旧账本保留但不继续推进，未平部分视为未完成样本。
 

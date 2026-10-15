@@ -186,7 +186,7 @@ function updateTrendContext(state, signal, input) {
 
 function appendShadowSignal(state, accountId, signal, input, finalAction = "") {
   const appended = V2.appendShadowSignal(state, accountId, signal, input, finalAction, 14 * 24);
-  if (appended) Object.assign(state.signalJournal.at(-1), { strategyVersion: "trend_only_v3", strategyRevision: "V3_20261015_CONFIRM_COST", trendScore: signal.trendScore, entryScore: signal.entryQualityScore, grade: signal.grade, setupState: signal.setupState, entryDirection: input.entryDirection, atr: input.atr, entryCandidates: signal.entryCandidates || [] });
+  if (appended) Object.assign(state.signalJournal.at(-1), { strategyVersion: "trend_only_v3", strategyRevision: REVISION, trendScore: signal.trendScore, entryScore: signal.entryQualityScore, grade: signal.grade, setupState: signal.setupState, entryDirection: input.entryDirection, atr: input.atr, entryCandidates: signal.entryCandidates || [] });
   if(appended){const candidate=signal.entryCandidates?.find(c=>c.type===signal.entryMode);Object.assign(state.signalJournal.at(-1),metadata(input),{pullbackSubtype:candidate?.pullbackSubtype||null,confirmationType:candidate?.confirmationType||null,modeAudit:input.modeAudit||null,shadows:input.shadows||null});}
   return appended;
 }

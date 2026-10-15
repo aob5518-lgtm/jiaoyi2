@@ -41,10 +41,15 @@ function createTrendRuntime(d) {
     return state;
   }
   function save() {
+    const books=Object.values(states).flatMap(s=>Object.values(s.shadowBooks||{}).flatMap(c=>Object.values(c.books||{})));
+    const previous=books.map(b=>b.persistedAt);
+    for(const b of books)b.persistedAt=Date.now();
     const tmp = file + ".tmp";
-    const fd = fs.openSync(tmp, "w", 0o600);
-    try { fs.writeFileSync(fd, JSON.stringify(states)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-    fs.renameSync(tmp, file);
+    try {
+      const fd = fs.openSync(tmp, "w", 0o600);
+      try { fs.writeFileSync(fd, JSON.stringify(states)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      fs.renameSync(tmp, file);
+    } catch(error) { books.forEach((b,index)=>{b.persistedAt=previous[index];});throw error; }
   }
   function paper(acc) { return d.isPaper(acc); }
   function account(acc, st) { return { ...acc, paper: paper(acc), equity: Number(st.balance), available: Number(st.available), trendOnlyState: get(acc) }; }
@@ -523,11 +528,21 @@ function createTrendRuntime(d) {
     }
   }
   function configHash(acc) { const T = engine(acc); return crypto.createHash("sha256").update(JSON.stringify([acc.id, acc.platform, acc.symbol, acc.tradeMode, acc.simulationEnabled, T.normalizeConfig(acc.trendOnlyConfig)])).digest("hex"); }
+  function advanceIndependentShadows(acc,st,i){
+    const T=engine(acc),s=get(acc),c=T.normalizeConfig(acc.trendOnlyConfig);
+    require("./strategy/trend_v3/shadow_books").tickShadowBooks(T,s,account(acc,st),i,!!st.running,(name,plan)=>{
+      if(!d.portfolioAccounts)return true;
+      const entries=d.portfolioAccounts().map(e=>({account:e.account,state:get(e.account)}));
+      return require("./strategy/trend_v3/shadow_books").shadowPortfolioSnapshot(T,{...acc,paper:true,trendOnlyConfig:c},entries,name,plan.side,Number(plan.initialEffectiveRiskU));
+    });
+  }
   async function tick(acc, st, action) {
     const T = engine(acc), s = get(acc), c = T.normalizeConfig(acc.trendOnlyConfig);
+    let shadowEvaluated=false,priceRead=false;
     try {
       const previousMarketPrice = Number(s.lastMarketPrice);
       st.currentPrice = await d.price(acc);
+      priceRead=true;
       s.previousMarketPrice = Number.isFinite(previousMarketPrice) && previousMarketPrice > 0 ? previousMarketPrice : null;
       s.lastMarketPrice = Number(st.currentPrice);
       publish(acc, st); flushJournal(acc);
@@ -590,11 +605,8 @@ function createTrendRuntime(d) {
           }catch(e){s.forwardTestError="mode_or_shadow_diagnostic_unavailable";}
           s.signal.forwardShadows=i.shadows;
           i.decisionTime=Date.now();
-          try{require("./strategy/trend_v3/shadow_books").tickShadowBooks(T,s,account(acc,st),i,!!st.running,(name,plan)=>{
-            if(!d.portfolioAccounts)return true;
-            const entries=d.portfolioAccounts().map(e=>{const own=T.normalizeConfig(e.account.trendOnlyConfig),book=get(e.account).shadowBooks?.[T.scopeFor(own).configHash]?.books[name];return{account:e.account,equity:book?.equity??e.equity,state:book?.state||{}};});
-            return portfolioSnapshot({...acc,paper:true,trendOnlyConfig:c},entries,plan.side,Number(plan.initialEffectiveRiskU)).allowed;
-          });}catch(e){s.forwardTestError="shadow_book_diagnostic_unavailable";}
+          shadowEvaluated=true;
+          try{advanceIndependentShadows(acc,st,i);}catch(e){s.forwardTestError="shadow_book_diagnostic_unavailable";}
         }
         if (!s.position) moveStrategyState(acc, s.signal.setupState || "SCANNING", "signal_evaluated");
         if (isV2(acc)) {
@@ -668,7 +680,21 @@ function createTrendRuntime(d) {
       if (!plan.allowed) { const decision = s.signal.entryPermission === "allowed" ? decisionFromBlocker(plan.reason) : decisionFromSignal(s.signal); if (isV3(acc) && plan.setupState) moveStrategyState(acc, plan.setupState, "execution_evaluated"); annotateSignal(acc, plan.reason, plan.reason, decision); log(acc, st, plan.reason); return; }
       setDecision(acc, "READY_TO_OPEN", "全部执行条件通过", { executionPermission: "allowed", finalAction: paper(acc) ? "Paper 准备开仓" : "Live 信号已确认，准备开仓" });
       await submit(acc, st, "open", plan);
-    } finally { publish(acc, st); save(); }
+    } finally {
+      // Real pending/conflict/exit paths may return before signal evaluation.
+      // They must not stop an independent virtual ledger; bad market data still does.
+      if(isV3(acc)&&priceRead&&!shadowEvaluated){
+        try{
+          const tfs=[c.entryTimeframe,c.trendTimeframe,c.higherTimeframe];
+          const sets=await Promise.all(tfs.map(tf=>d.candles(acc.symbol,tf,300,acc.platform)));
+          const values=sets.map((x,n)=>T.indicatorsFor(x.candles,c,tfs[n]));
+          const cost=T.buildTradeCostModel(account(acc,st),"candidate");
+          const input={...values[0],config:c,entryDirection:T.directionOf(values[0],"entry"),trendDirection:T.directionOf(values[1],"trend"),higherDirection:T.directionOf(values[2],"higher"),entryIndicators:values[0],trendIndicators:values[1],higherIndicators:values[2],price:Number(st.currentPrice),roundTripCostRate:cost.roundTripCostRate,decisionTime:Date.now()};
+          advanceIndependentShadows(acc,st,input);
+        }catch(error){s.forwardTestError="shadow_book_market_data_unavailable";}
+      }
+      publish(acc, st); save();
+    }
   }
   function confirm(acc, body) {
     const s = get(acc), p = s.preview;
