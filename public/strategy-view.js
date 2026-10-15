@@ -92,6 +92,7 @@
     const pending = trend.pendingOrder;
     const position = trend.position;
     const executionActions = { MONITOR_STOPPED: "启动趋势监控后再判断", ACCOUNT_CONFLICT: "解除同账户合约冲突", OPEN_ORDER_BLOCK: "等待交易所挂单结束", REENTRY_COOLDOWN: "等待再入场冷却结束", WAIT_LIVE_CONFIRM: "等待本次 Live 开仓确认", WAIT_ENTRY_ALIGNMENT: "等待 15m 入场周期重新确认", RISK_LOCK: "解除风控锁定后再开仓", POST_FILL_RISK_LOCK: "成交后实际风险超限，已锁定新开仓", PLATFORM_UNSUPPORTED: "切换 Paper 或 Hyperliquid/Binance", READY_TO_OPEN: "执行条件已通过，准备开仓", ORDER_SUBMITTED: "订单已提交，等待交易所确认", ORDER_FILLED: "订单已成交，进入持仓保护", POSITION_MANAGED: "管理现有仓位与止损" };
+    if(trend.executionState==="PORTFOLIO_RISK_BLOCK")return "等待组合风险释放，不增加仓位";
     if (executionActions[trend.executionState]) return executionActions[trend.executionState];
     if (pending?.status === "unknown_order_state") return "订单结果未知，禁止重复下单";
     if (pending) return "订单处理中，等待交易所确认";
@@ -116,6 +117,7 @@
       WAIT_LIVE_CONFIRM: "等待 Live 确认", WAIT_ENTRY_ALIGNMENT: "等待 15m 重新确认", RISK_LOCK: "风控禁止", POST_FILL_RISK_LOCK: "成交后风险锁定", PLATFORM_UNSUPPORTED: "平台暂不支持", ORDER_SUBMITTED: "订单已提交",
       ORDER_FILLED: "订单已成交", POSITION_MANAGED: "持仓保护中", READY_TO_OPEN: "可执行开仓"
     };
+    if(trend.executionState==="PORTFOLIO_RISK_BLOCK")return "组合风险禁止";
     if (executionLabels[trend.executionState]) return executionLabels[trend.executionState];
     if (trend.riskLock || trend.pendingOrder || trend.weekendBlocked || Number(trend.pauseUntil) > Date.now() || trend.dailyLossLimitReached) return "风控禁止";
     if (signal.entryPermission === "allowed" || signal.regime === "trend") return "可开仓";

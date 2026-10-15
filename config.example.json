@@ -31,7 +31,12 @@
       "running": false,
       "trendOnlyConfig": {
         "version": "v3",
-        "experimentId": "V3_STD_20260930_B",
+        "experimentId": "V3_STD_20261015_C",
+        "strategyRevision": "V3_20261015_CONFIRM_COST",
+        "maxPortfolioRiskPct": 0.025,
+        "portfolioRiskKey": "",
+        "maxCrossVenueBasisBps": 25,
+        "maxCrossVenueBasisAtr": 0.25,
         "enabled": true,
         "leverage": 10,
         "allowWeekendOpen": true,

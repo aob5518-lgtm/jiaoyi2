@@ -1,5 +1,6 @@
 "use strict";
 const { calculateInitialStop } = require("./stops");
+const { describePullback } = require("./telemetry");
 
 function evaluatePullback(direction, input, config = {}) {
   const long = direction === "long";
@@ -19,7 +20,7 @@ function evaluatePullback(direction, input, config = {}) {
   // Require a real closed-candle confirmation, but do not insist on a full
   // five-bar break: directional EMA reclaim + previous-bar break is also valid.
   const confirmation = microBreak || recoveryBreak;
-  return { type: "pullback_entry", triggered: !!touched && !!structureHeld && confirmation && diRecovery, score, factors: { touched: !!touched, structureHeld, microBreak, diRecovery, reclaim, recoveryBreak, confirmation } };
+  return { type: "pullback_entry", triggered: !!touched && !!structureHeld && confirmation && diRecovery, score, ...describePullback(input,direction,config),confirmationType:microBreak?"MICRO_BREAK":recoveryBreak?"EMA_RECLAIM_PREV_BAR_BREAK":null,diRecovery,factors: { touched: !!touched, structureHeld, microBreak, diRecovery, reclaim, recoveryBreak, confirmation } };
 }
 
 function evaluateBreakout(direction, input, config) {

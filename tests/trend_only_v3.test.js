@@ -14,6 +14,7 @@ const { updatePostExitAnalytics } = require("../strategy/trend_v3/post_exit");
 const { buildDecisionFunnel } = require("../strategy/trend_v3/diagnostics");
 const { transition } = require("../strategy/trend_v3/state_machine");
 require("./trend_v3_review.test");
+require("./forward_test.test");
 
 function config(extra = {}) { return V3.normalizeConfig({ allowWeekendOpen: true, ...extra }); }
 function input(extra = {}) {
@@ -52,7 +53,7 @@ test("旧版 0.15R 单阈值迁移为优选线，0.35R 仍是硬上限", () => {
   const migrated = V3.normalizeConfig({ maxAllowedCostR: 0.15 });
   assert.equal(migrated.maxPreferredCostR, 0.15);
   assert.equal(migrated.maxAllowedCostR, 0.35);
-  assert.equal(V3.normalizeConfig({ experimentId: "V3_STD_20260922_A" }).experimentId, "V3_STD_20260930_B");
+  assert.equal(V3.normalizeConfig({ experimentId: "V3_STD_20260922_A" }).experimentId, "V3_STD_20261015_C");
 });
 
 test("1H 强趋势、4H neutral、15m alignment 可达到可交易分数", () => {
@@ -107,7 +108,7 @@ test("Effective Risk sizing 与成交凭证统一 gross/net R", () => {
   assert.equal(voucher.netPnl, voucher.grossPnl - voucher.tradingFee + voucher.fundingPnl - voucher.slippageCost);
   assert.equal(voucher.grossR, voucher.grossPnl / voucher.initialEffectiveRiskU);
   assert.equal(voucher.netR, voucher.netPnl / voucher.initialEffectiveRiskU);
-  assert.equal(voucher.strategyVersion, "trend_only_v3"); assert.equal(voucher.experimentId, "V3_STD_20260930_B"); assert.match(voucher.configHash, /^[a-f0-9]{64}$/);
+  assert.equal(voucher.strategyVersion, "trend_only_v3"); assert.equal(voucher.experimentId, "V3_STD_20261015_C"); assert.match(voucher.configHash, /^[a-f0-9]{64}$/);
 });
 
 test("V3 盈利保护：未到 1R 不保本，1.5R 才净保本，单个弱信号不退出", () => {

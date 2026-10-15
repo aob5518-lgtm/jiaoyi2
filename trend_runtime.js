@@ -20,6 +20,7 @@ function paperStopFill({ side, stopPrice, currentPrice, previousPrice, slippageB
 }
 
 function createTrendRuntime(d) {
+  const {auditModes,buildShadows}=require("./strategy/trend_v3/telemetry"),{snapshot:portfolioSnapshot}=require("./strategy/trend_v3/portfolio");
   const file = path.join(d.directory, "trend_only_runtime.json");
   let states = {};
   if (fs.existsSync(file)) states = JSON.parse(fs.readFileSync(file, "utf8")); // Fail closed on corrupted state.
@@ -87,6 +88,7 @@ function createTrendRuntime(d) {
     item.finalAction = options.finalAction || executionReason || item.finalAction;
     if (options.orderSubmitted) item.orderSubmitted = true;
     if (options.orderFilled) { item.orderSubmitted = true; item.orderFilled = true; }
+    if(options.orderSubmitted||options.orderFilled){const mode=item.modeAudit?.[item.entryMode];if(mode){for(const key of ["Candidate","Triggered","StopPassed","ScorePassed","CostPassed","PotentialRPassed","RiskPassed","ExecutionReady"])mode[key]=true;mode.blocker="";}}
     if (executionReason && item.executionPermission !== "allowed" && !(item.blockers || []).includes(executionReason)) item.blockers = [...(item.blockers || []), executionReason];
   }
   function annotateSignal(acc, reason, finalAction, finalDecision = "NO_SIGNAL") {
@@ -116,6 +118,7 @@ function createTrendRuntime(d) {
     if (s.engineVersion !== configuredVersion(acc)) return { state: "STRATEGY_VERSION_MISMATCH", reason: "配置策略与实际运行引擎不一致，已禁止新开仓。" };
     if (s.pendingOrder) return { state: s.pendingOrder.status === "unknown_order_state" ? "UNKNOWN_ORDER" : "PENDING_ORDER", reason: s.pendingOrder.status === "unknown_order_state" ? "订单状态尚未确认，禁止重复下单" : "订单已提交，等待交易所确认" };
     if (s.riskLock) return { state: s.riskLockType === "POST_FILL_RISK_LOCK" ? "POST_FILL_RISK_LOCK" : "RISK_LOCK", reason: s.riskLockReason || "保护止损单未确认" };
+    if(s.executionState==="PORTFOLIO_RISK_BLOCK")return{state:"PORTFOLIO_RISK_BLOCK",reason:s.executionReason};
     if (d.conflictingAccount?.(acc) || s.conflictingAccount) return { state: "ACCOUNT_CONFLICT", reason: "同一交易账户与合约已被其他策略占用" };
     if (s.exchangeOpenOrders) return { state: "OPEN_ORDER_BLOCK", reason: "交易所存在挂单" };
     if (!paper(acc) && acc.strategyType === "trend_only_v3") return { state: "PLATFORM_UNSUPPORTED", reason: "Trend Only V3 当前仅开放 Paper" };
@@ -135,6 +138,7 @@ function createTrendRuntime(d) {
   function publish(acc, st) {
     const s = get(acc), p = s.position;
     const T = engine(acc), config = T.normalizeConfig(acc.trendOnlyConfig), weekendBlocked = T.isWeekendBlocked(Date.now(), config);
+    if(isV3(acc)&&d.portfolioAccounts){s.portfolioRisk=portfolioSnapshot({...acc,paper:paper(acc),trendOnlyConfig:config},d.portfolioAccounts().map(e=>({...e,state:get(e.account)})),p?.side||s.signal?.directionRaw||"none");}
     const rawStopOrderPrice = s.stopOrderPrice ?? s.stopSyncedPrice;
     const stopOrderPrice = rawStopOrderPrice === null || rawStopOrderPrice === undefined || rawStopOrderPrice === "" ? null : Number(rawStopOrderPrice);
     const signal = s.signal || {
@@ -182,6 +186,8 @@ function createTrendRuntime(d) {
       executionEvaluation,
       decisionFunnel: typeof T.buildDecisionFunnel === "function" ? T.buildDecisionFunnel(signal, { executionEvaluation }) : null,
       candidateSetup: s.candidateSetup || null,
+      portfolioRisk: s.portfolioRisk || null,
+      analyticsScope: isV3(acc)?T.scopeFor(config):null,
       shadowComparison: isV3(acc) ? (s.shadowComparisons || []).at(-1) || null : null,
       shadowStats: isV3(acc) ? s.shadowStats || null : null,
       missedOpportunityStats: isV3(acc) ? s.missedOpportunityStats || null : null,
@@ -462,6 +468,12 @@ function createTrendRuntime(d) {
     const T = engine(acc);
     const s = get(acc);
     if (s.pendingOrder) throw Error("已有 pendingOrder，禁止提交");
+    if(kind==="open"&&isV3(acc)&&d.portfolioAccounts){
+      const entries=d.portfolioAccounts().map(e=>({...e,state:get(e.account)}));
+      const portfolio=portfolioSnapshot({...acc,paper:paper(acc),trendOnlyConfig:T.normalizeConfig(acc.trendOnlyConfig)},entries,plan.side,Number(plan.initialEffectiveRiskU));
+      s.portfolioRisk=portfolio;
+      if(!portfolio.allowed){setDecision(acc,"PORTFOLIO_RISK_BLOCK",portfolio.reason);save();return;}
+    }
     const c = T.normalizeConfig(acc.trendOnlyConfig), id = "0x" + crypto.randomBytes(16).toString("hex");
     const p = s.position, side = kind === "open" ? plan.side : p.side, qty = kind === "open" ? plan.qty : p.positionSize;
     if (!paper(acc) && kind === "open") {
@@ -478,6 +490,7 @@ function createTrendRuntime(d) {
     if (s.submittedIds.includes(id)) throw Error("clientOrderId 已提交");
     s.submittedIds.push(id); s.pendingOrder = o;
     if (kind === "open") s.lastEntrySignalTime = plan.signal.signalTime;
+    if(kind==="open"){const item=journalItem(s,plan.signal.signalTime);if(item)Object.assign(item,{entryMode:plan.entryMode,pullbackSubtype:plan.signal.pullbackSubtype||null,confirmationType:plan.signal.confirmationType||null,...(plan.signal.forwardShadows?{shadows:plan.signal.forwardShadows}:{})});}
     if (kind === "open") setDecision(acc, "ORDER_SUBMITTED", "开仓订单已提交", { signalTime: plan.signal.signalTime, executionPermission: "allowed", orderSubmitted: true, finalAction: "提交订单" });
     if (paper(acc)) {
       const sign = (side === "long" ? 1 : -1) * (kind === "open" ? 1 : -1);
@@ -561,7 +574,28 @@ function createTrendRuntime(d) {
         const values = sets.map((x, n) => T.indicatorsFor(x.candles, c, [c.entryTimeframe, c.trendTimeframe, c.higherTimeframe][n]));
         const estimatedCost = isV3(acc) ? T.buildTradeCostModel(account(acc, st), "candidate") : null;
         i = { ...values[0], config: c, entryDirection: T.directionOf(values[0], "entry"), trendDirection: T.directionOf(values[1], "trend"), higherDirection: T.directionOf(values[2], "higher"), entryIndicators: values[0], trendIndicators: values[1], higherIndicators: values[2], price: Number(st.currentPrice), roundTripCostRate: estimatedCost?.roundTripCostRate };
+        if(isV3(acc)&&s.trendContext?.lastBreakoutDirection===i.trendDirection&&Number(s.trendContext.lastBreakoutSignalTime)<Number(i.signalTime))Object.assign(i,{trendContextBreakoutHigh:i.trendDirection==="long"?s.trendContext.lastBreakoutLevel:null,trendContextBreakoutLow:i.trendDirection==="short"?s.trendContext.lastBreakoutLevel:null});
         s.signal = T.detectMarketRegime(i.candles, i);
+        if(isV3(acc)){
+          const source=sets[0]?.source;
+          Object.assign(i,{signalMarketDataSource:source==="futures"?"binance_futures":source==="spot"?"binance_spot":source||"unknown",executionVenue:acc.platform,referenceSymbol:["futures","spot"].includes(source)?`${acc.symbol}USDT`:acc.symbol});
+          if(acc.platform!=="binance"&&source==="futures"&&d.referencePrice&&(s.lastJournalSignalTime!==i.signalTime||(!s.position&&s.signal.entryPermission==="allowed"))){
+            try{const [rawReference,rawExecution]=await Promise.all([d.referencePrice(acc),d.price(acc)]),reference=Number(rawReference),execution=Number(rawExecution);if(reference>0&&execution>0){i.referencePrice=reference;i.basisExecutionPrice=execution;i.basisBps=Math.abs(execution-reference)/reference*10000;i.basisAtr=i.atr>0?Math.abs(execution-reference)/i.atr:null;i.basisObservedAt=Date.now();}}catch(e){i.basisObservationError="reference_quote_unavailable";}
+          }
+          i.decisionTime=Date.now();
+          Object.assign(s.signal,require("./strategy/trend_v3/telemetry").metadata(i));
+          try{
+          if(s.lastJournalSignalTime!==i.signalTime)i.modeAudit=auditModes(T,account(acc,st),i);
+          if(s.lastJournalSignalTime!==i.signalTime||(!s.position&&s.signal.entryPermission==="allowed"))i.shadows=buildShadows(T,account(acc,st),s.signal,i);
+          }catch(e){s.forwardTestError="mode_or_shadow_diagnostic_unavailable";}
+          s.signal.forwardShadows=i.shadows;
+          i.decisionTime=Date.now();
+          try{require("./strategy/trend_v3/shadow_books").tickShadowBooks(T,s,account(acc,st),i,!!st.running,(name,plan)=>{
+            if(!d.portfolioAccounts)return true;
+            const entries=d.portfolioAccounts().map(e=>{const own=T.normalizeConfig(e.account.trendOnlyConfig),book=get(e.account).shadowBooks?.[T.scopeFor(own).configHash]?.books[name];return{account:e.account,equity:book?.equity??e.equity,state:book?.state||{}};});
+            return portfolioSnapshot({...acc,paper:true,trendOnlyConfig:c},entries,plan.side,Number(plan.initialEffectiveRiskU)).allowed;
+          });}catch(e){s.forwardTestError="shadow_book_diagnostic_unavailable";}
+        }
         if (!s.position) moveStrategyState(acc, s.signal.setupState || "SCANNING", "signal_evaluated");
         if (isV2(acc)) {
           Object.assign(i, {

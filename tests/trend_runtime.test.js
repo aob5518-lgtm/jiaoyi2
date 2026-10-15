@@ -18,6 +18,19 @@ function fixture(t,live=false){
   return {acc,st,d,history,directory,r:createTrendRuntime(d),orders:()=>orders};
 }
 function v2Position(){return{side:'long',entryPrice:100,initialStopLossPrice:98,currentStopLossPrice:98,positionSize:1,positionValue:100,leverage:10,config:V2.normalizeConfig({allowWeekendOpen:true}),signalTime:Date.now()-900000,highestPriceSinceEntry:100,lowestPriceSinceEntry:100};}
+
+test('V3 concurrent shared-fund opens reserve portfolio risk before Paper settlement',async t=>{
+ const f=fixture(t);f.acc.strategyType='trend_only_v3';f.acc.vault='synthetic-shared';f.acc.simulationSlippageBps=0;f.acc.trendOnlyConfig=V3.normalizeConfig({maxPortfolioRiskPct:.015});
+ const b={...f.acc,id:'b',symbol:'TEST2'},other={...f.st};
+ f.d.price=async()=>100;
+ f.d.portfolioAccounts=()=>[{account:{...f.acc,paper:true},equity:10000},{account:{...b,paper:true},equity:10000}];
+ const detect=V3.detectMarketRegime,plan=V3.tryOpenTrendOnlyPosition;
+ t.after(()=>{V3.detectMarketRegime=detect;V3.tryOpenTrendOnlyPosition=plan;});
+ V3.detectMarketRegime=()=>({signalTime:Math.floor(Date.now()/900000)*900000,directionRaw:'long',tradeDirection:'long',entryPermission:'allowed',entryMode:'pullback_entry',grade:'A',riskMultiplier:1,trendScore:90,entryQualityScore:20,blockers:[],states:{pullback:true},entryCandidates:[]});
+ V3.tryOpenTrendOnlyPosition=(a,s)=>({allowed:true,side:'long',qty:40,entryPrice:100,positionValue:4000,riskAmount:100,plannedRiskAmount:100,riskBudgetU:100,initialEffectiveRiskU:100,initialStopLossPrice:98,stopDistance:2,atrAtEntry:1,equity:10000,entryMode:'pullback_entry',grade:'A',riskMultiplier:1,signal:s,trendId:'synthetic',executionEvaluation:{risk:'PASS',execution:'PASS'}});
+ await Promise.all([f.r.tick(f.acc,f.st),f.r.tick(b,other)]);
+ const states=[f.r.get(f.acc),f.r.get(b)];assert.equal(states.filter(s=>s.position).length,1);assert.equal(states.filter(s=>s.executionState==='PORTFOLIO_RISK_BLOCK').length,1);assert.equal(f.orders(),0);
+});
 test('Paper 完整开仓、止损和历史写入，重启不重复凭证',async t=>{
   const f=fixture(t);await f.r.tick(f.acc,f.st);assert.ok(f.r.get(f.acc).position, f.st.lastAction);
   f.d.price=async()=>50;f.r=createTrendRuntime(f.d);await f.r.tick(f.acc,f.st);assert.equal(f.r.get(f.acc).position,null);assert.equal(f.history.length,1);assert.equal(f.history[0].closeReason,'hard_sl');

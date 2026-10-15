@@ -4,6 +4,10 @@ const V2 = require("../../trend_only_v2");
 
 function indicatorsFor(candles, config, interval, now) {
   const result = V2.indicatorsFor(candles, config, interval, now);
+  const closes=result.candles.map(c=>Number(c.close));
+  const ema=period=>{let value=closes[0];return closes.map(x=>value+=(x-value)*2/(period+1));};
+  const sources=[], fast=ema(config.emaFast),mid=ema(config.emaMid),start=Math.max(0,result.candles.length-config.pullbackConfirmLookback-1);
+  for(let n=start;n<result.candles.length-1;n++){const c=result.candles[n],band=result.atr*config.pullbackEmaBandAtr;if(c.low<=fast[n]+band&&c.high>=fast[n]-band)sources.push("EMA20");if(c.low<=mid[n]+band&&c.high>=mid[n]-band)sources.push("EMA50");}
   // Three confirmed pivots cannot reliably fit inside the V2 micro window.
   // Separate trend structure from the unchanged micro-entry confirmation window.
   const swings = V2.detectSwings(result.candles.slice(0, -1), config.swingStructureLookback || 48);
@@ -34,6 +38,7 @@ function indicatorsFor(candles, config, interval, now) {
   };
   return {
     ...result,
+    pullbackTouchSources:[...new Set(sources)],
     swings,
     structureHigh: highs.at(-1)?.price,
     structureLow: lows.at(-1)?.price,

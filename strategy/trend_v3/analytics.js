@@ -1,4 +1,6 @@
 "use strict";
+const { matches } = require("./scope");
+const { buildForwardAnalytics } = require("./forward_analytics");
 
 function netPnl(item) { return Number(item.netPnl ?? item.pnl ?? 0); }
 function netR(item) { return Number(item.netR ?? item.rMultiple); }
@@ -17,7 +19,7 @@ function summarizeRows(rows) {
     netPnl: items.reduce((sum, item) => sum + netPnl(item), 0),
     winRate,
     avgNetR: rRows.length ? rRows.reduce((sum, item) => sum + netR(item), 0) / rRows.length : null,
-    expectancyR: winRate !== null && avgWinR !== null && avgLossR !== null ? winRate * avgWinR - (1 - winRate) * avgLossR : null,
+    expectancyR: rRows.length ? rRows.reduce((sum, item) => sum + netR(item), 0) / rRows.length : null,
     profitFactor: grossLoss > 0 ? grossProfit / grossLoss : null,
     totalTradingFee,
     feeDrag: totalGrossProfit > 0 ? totalTradingFee / Math.abs(totalGrossProfit) : null,
@@ -28,11 +30,12 @@ function summarizeRows(rows) {
   };
 }
 
-function buildStrategyAnalytics(history, { strategyVersion = "trend_only_v3", experimentId = "", configHash = "" } = {}) {
-  const rows = (Array.isArray(history) ? history : []).filter(item => item.strategyVersion === strategyVersion && (!experimentId || item.experimentId === experimentId) && (!configHash || item.configHash === configHash));
+function buildStrategyAnalytics(history, { strategyVersion = "trend_only_v3", strategyRevision = "", experimentId = "", configHash = "" } = {}, signals = []) {
+  const scope={strategyVersion,strategyRevision,experimentId,configHash};
+  const rows = (Array.isArray(history) ? history : []).filter(item => matches(item,scope));
   const modes = {};
   for (const mode of ["breakout_entry", "pullback_entry", "continuation_entry"]) modes[mode] = summarizeRows(rows.filter(item => item.entryMode === mode));
-  return { strategyVersion, experimentId: experimentId || null, configHash: configHash || null, summary: summarizeRows(rows), modes };
+  return { strategyVersion, strategyRevision:strategyRevision||null, experimentId: experimentId || null, configHash: configHash || null, summary: summarizeRows(rows), modes, forward:buildForwardAnalytics(history||[],signals,scope,summarizeRows) };
 }
 
 module.exports = { summarizeRows, buildStrategyAnalytics };

@@ -1,4 +1,5 @@
 "use strict";
+const { updateQualityAudit } = require("./quality_audit");
 
 function updatePostExitAnalytics(vouchers, closedCandles) {
   const rows = Array.isArray(vouchers) ? vouchers : [], candles = Array.isArray(closedCandles) ? closedCandles : [];
@@ -23,7 +24,7 @@ function updatePostExitAnalytics(vouchers, closedCandles) {
       changed = true;
     }
   }
-  return changed;
+  return updateQualityAudit(vouchers, closedCandles) || changed;
 }
 
 module.exports = { updatePostExitAnalytics };

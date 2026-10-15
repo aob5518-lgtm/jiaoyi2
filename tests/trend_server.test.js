@@ -119,13 +119,23 @@ test('V3 策略分析接口按版本、实验与配置隔离并使用净值统�
   {strategyVersion:'trend_only_v3',experimentId:'B',configHash:'h2',entryMode:'breakout_entry',exitTime:3,netPnl:99,netR:9},
   {strategyVersion:'trend_only_v2',experimentId:'A',configHash:'h1',entryMode:'pullback_entry',exitTime:4,netPnl:99,rMultiple:9}
  ]`,f.ctx);
- const r=await f.call('/api/trend-only/analytics?id=legacy&experimentId=A&configHash=h1');assert.equal(r.code,200,JSON.stringify(r.data));
+ const r=await f.call('/api/trend-only/analytics?id=legacy&experimentId=A&configHash=h1&strategyRevision=all');assert.equal(r.code,200,JSON.stringify(r.data));
  assert.equal(r.data.summary.trades,2);assert.equal(r.data.summary.netPnl,5);assert.equal(r.data.summary.avgNetR,.25);assert.equal(r.data.modes.pullback_entry.trades,2);assert.equal(r.data.modes.breakout_entry.trades,0);
  assert.equal((await f.call('/api/trend-only/analytics?id=legacy',undefined,false)).code,401);
 });
 test('V3 Post Exit 更新按凭证键合并，不会制造重复历史',async t=>{
  const f=setup(t);vm.runInContext(`addProfitHistory('legacy',{dedupeKey:'v3-1',strategyVersion:'trend_only_v3',exitTime:1000,netPnl:1});addProfitHistory('legacy',{dedupeKey:'v3-1',strategyVersion:'trend_only_v3',exitTime:1000,netPnl:1,PostExitMFE_8:2,postExitAnalyticsPostHocOnly:true})`,f.ctx);
  const r=await f.call('/api/profit-history?id=legacy');assert.equal(r.code,200);assert.equal(r.data.items.length,1);assert.equal(r.data.items[0].PostExitMFE_8,2);assert.equal(r.data.items[0].postExitAnalyticsPostHocOnly,true);
+});
+
+test('Forward Test API defaults exclude old revisions and preserve old history explicitly',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
+ vm.runInContext(`const forwardScope=v3Scope(TrendOnlyV3.normalizeConfig(config.accounts[0].trendOnlyConfig));stateMap.legacy.profitHistory=[{...forwardScope,entryMode:'pullback_entry',netPnl:2,netR:1},{...forwardScope,strategyRevision:'V3_20261009_STRUCTURE',netPnl:-5,netR:-2},{...forwardScope,strategyRevision:undefined,netPnl:-7,netR:-3}]`,f.ctx);
+ const analysis=await f.call('/api/trend-only/analytics');assert.equal(analysis.code,200);assert.equal(analysis.data.summary.trades,1);assert.equal(analysis.data.strategyRevision,'V3_20261015_CONFIRM_COST');assert.equal(analysis.data.experimentId,'V3_STD_20261015_C');assert.equal(analysis.data.forward.modeFunnel.breakout_entry.Filled,0);
+ const history=await f.call('/api/profit-history?id=legacy');assert.equal(history.data.items.length,1);
+ const all=await f.call('/api/profit-history?id=legacy&strategyVersion=all&strategyRevision=all');assert.equal(all.data.items.length,3);
+ assert.equal((await f.call('/api/trend-only/analytics',undefined,false)).code,401);
+ const publicStatus=JSON.stringify((await f.call('/api/public/status',undefined,false)).data);for(const key of ['modeAudit','shadowBooks','portfolioRiskKey','PostStopMFE','signalJournal'])assert.equal(publicStatus.includes('"'+key+'"'),false);
 });
 
 test('停止后切换 V2 到 V3 会强制 Paper、发布真实引擎并清除瞬时状态',async t=>{

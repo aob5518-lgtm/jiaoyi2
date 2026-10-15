@@ -7,6 +7,8 @@ const TrendOnly = require("./trend_only");
 const TrendOnlyV2 = require("./trend_only_v2");
 const TrendOnlyV3 = require("./trend_only_v3");
 const { buildStrategyAnalytics } = require("./strategy/trend_v3/analytics");
+const { scopeFor: v3Scope, matches: v3Matches } = require("./strategy/trend_v3/scope");
+const { enrich: enrichV3Voucher } = require("./strategy/trend_v3/forward_analytics");
 const { createTrendRuntime } = require("./trend_runtime");
 const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2", "trend_only_v3"]);
 function getStrategyType(acc = {}) {
@@ -716,6 +718,8 @@ let simulationOrdersMap = loadSimulationOrdersMap();
 let smartRuntimeMap = loadSmartRuntimeMap();
 const trendRuntime = createTrendRuntime({
   directory: __dirname, isPaper: isSimulationAccount, log: addLog, history: addProfitHistory,
+  portfolioAccounts: () => config.accounts.filter(a=>getStrategyType(a)==="trend_only_v3").map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:stateMap[a.id]?.balance})),
+  referencePrice: a => getBinanceFuturesPrice(a.symbol),
   conflictingAccount: acc => !isSimulationAccount(acc) && config.accounts.some(other => other.id !== acc.id && !isSimulationAccount(other) && other.platform === acc.platform && other.symbol === acc.symbol &&
     (acc.platform === "hyperliquid" ? String(other.address).toLowerCase() === String(acc.address).toLowerCase() : other.apiKey === acc.apiKey) &&
     (stateMap[other.id]?.running || Number(stateMap[other.id]?.positionQty) > 0 || (isTrendOnly(other) && trendRuntime.busy(other)))),
@@ -4329,7 +4333,7 @@ function sanitizeAccountForDashboard(acc = {}, st = {}) {
     maxAdds: acc.maxAdds,
     interval: acc.interval,
     smartStrategy: acc.smartStrategy,
-    trendOnlyConfig: acc.trendOnlyConfig,
+    trendOnlyConfig: strategyType === "trend_only_v3" ? TrendOnlyV3.normalizeConfig(acc.trendOnlyConfig || {}) : acc.trendOnlyConfig,
     hasPrivateKey: hasConfiguredSecret(acc.privateKey),
     hasApiKey: hasConfiguredSecret(acc.apiKey),
     hasApiSecret: hasConfiguredSecret(acc.apiSecret),
@@ -4791,13 +4795,23 @@ const server = http.createServer((req, res) => {
       if (!target) return jsonRes(res, 404, { ok: false, error: "账户不存在" });
       const targetState = stateMap[target.id], normalized = (targetState?.profitHistory || []).map(item => normalizeProfitVoucher(item, target.id));
       const normalizedConfig = TrendOnlyV3.normalizeConfig(target.trendOnlyConfig || {});
-      const currentHash = crypto.createHash("sha256").update(JSON.stringify(normalizedConfig)).digest("hex");
+      const currentHash = v3Scope(normalizedConfig).configHash;
       const analytics = buildStrategyAnalytics(normalized, {
         strategyVersion: String(parsed.query.strategyVersion || "trend_only_v3"),
+        strategyRevision: String(parsed.query.strategyRevision || normalizedConfig.strategyRevision),
         experimentId: String(parsed.query.experimentId || normalizedConfig.experimentId),
         configHash: String(parsed.query.configHash || currentHash)
-      });
-      return jsonRes(res, 200, { ok: true, accountId: target.id, ...analytics });
+      }, trendRuntime.get(target).signalJournal || []);
+      const missed=(trendRuntime.get(target).missedOpportunityJournal||[]).filter(v=>v3Matches(v,analytics.forward.scope)&&v.outcomes?.[32]);
+      analytics.forward.missed={mature:missed.length,rate:missed.length?missed.filter(v=>v.outcomes[32].classification==="MISSED_TREND").length/missed.length:null,overlappingBarsNotIndependentTrades:true};
+      const exactCurrent=Object.entries(v3Scope(normalizedConfig)).every(([k,v])=>analytics.forward.scope[k]===v);
+      const shadowCohort=exactCurrent?trendRuntime.get(target).shadowBooks?.[currentHash]:null;
+      analytics.forward.independentShadows=require("./strategy/trend_v3/shadow_books").shadowSummary(shadowCohort,normalized.filter(v=>v3Matches(v,analytics.forward.scope)),require("./strategy/trend_v3/analytics").summarizeRows);
+      const portfolios=config.accounts.filter(a=>getStrategyType(a)==="trend_only_v3").map(a=>{const scope=v3Scope(TrendOnlyV3.normalizeConfig(a.trendOnlyConfig||{})),all=(stateMap[a.id]?.profitHistory||[]).map(v=>normalizeProfitVoucher(v,a.id));return{accountId:a.id,symbol:a.symbol,scope,...buildStrategyAnalytics(all,scope).summary,modes:buildStrategyAnalytics(all,scope).modes};});
+      const entries=config.accounts.filter(a=>getStrategyType(a)==="trend_only_v3").map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:stateMap[a.id]?.balance,state:trendRuntime.get(a)}));
+      const portfolioRisk=require("./strategy/trend_v3/portfolio").snapshot({...target,paper:isSimulationAccount(target),trendOnlyConfig:normalizedConfig},entries,trendRuntime.get(target).position?.side||trendRuntime.get(target).signal?.directionRaw||"none");
+      const candidateRanking=entries.map(e=>({accountId:e.account.id,symbol:e.account.symbol,...e.state.candidateSetup})).sort((a,b)=>Number(b.trendScore||0)-Number(a.trendScore||0)||Number(b.entryScore||0)-Number(a.entryScore||0)||Number(b.potentialR||0)-Number(a.potentialR||0)||Number(a.costR||0)-Number(b.costR||0));
+      return jsonRes(res, 200, { ok: true, accountId: target.id, ...analytics, portfolios, portfolioTotalNetR:portfolios.reduce((s,a)=>s+(a.avgNetR||0)*a.trades,0),portfolioRisk,candidateRanking,portfolioComparability:"按各账户当前实验/修订/配置分别统计；Net R 总和不是资金收益率" });
     }
     if (req.method === "GET" && pathname === "/api/trend-only/signal-journal") {
       const target = getAccountById(parsed.query.id || acc.id);
@@ -5509,6 +5523,13 @@ const server = http.createServer((req, res) => {
 
     const account = getAccountById(accountId);
     let items = (st.profitHistory || []).map(item => normalizeProfitVoucher(item, accountId));
+    if(getStrategyType(account)==="trend_only_v3"){
+      const scope=v3Scope(TrendOnlyV3.normalizeConfig(account.trendOnlyConfig||{}));
+      const revision=parsed.query.strategyRevision||scope.strategyRevision;
+      if(revision!=="all") items=items.filter(v=>v.strategyRevision===revision);
+      if(revision===scope.strategyRevision&&parsed.query.strategyVersion!=="all"&&!parsed.query.experimentId&&!parsed.query.configHash)items=items.filter(v=>v3Matches(v,scope));
+      items=items.map(enrichV3Voucher);
+    }
     if (parsed.query.strategyVersion !== "all" && getStrategyType(account) === "trend_only_v3") items = items.filter(item => item.strategyVersion === "trend_only_v3");
     if (parsed.query.experimentId) items = items.filter(item => item.experimentId === parsed.query.experimentId);
     if (parsed.query.configHash) items = items.filter(item => item.configHash === parsed.query.configHash);

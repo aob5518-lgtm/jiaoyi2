@@ -1,4 +1,5 @@
 "use strict";
+const {scopeFor}=require("./scope");
 
 function registerMissedCandidate(state, signal, input) {
   if (!signal.signalTime || signal.entryPermission === "allowed" || signal.directionRaw === "none") return false;
@@ -6,6 +7,7 @@ function registerMissedCandidate(state, signal, input) {
   if (state.missedOpportunityJournal.some(item => item.signalTime === signal.signalTime)) return false;
   state.missedOpportunityJournal.push({
     postHocOnly: true,
+    ...(input.config?scopeFor(input.config):{}),
     signalTime: signal.signalTime,
     direction: signal.directionRaw,
     entryPrice: Number(input.close),

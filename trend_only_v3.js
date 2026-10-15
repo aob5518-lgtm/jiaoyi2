@@ -18,6 +18,9 @@ const { buildCandidateSetup } = require("./strategy/trend_v3/candidate");
 const { updatePostExitAnalytics } = require("./strategy/trend_v3/post_exit");
 const { calculateRewardSpace } = require("./strategy/trend_v3/reward_space");
 const { transition } = require("./strategy/trend_v3/state_machine");
+const { REVISION, scopeFor, configHash } = require("./strategy/trend_v3/scope");
+const { metadata } = require("./strategy/trend_v3/telemetry");
+const { enrich } = require("./strategy/trend_v3/forward_analytics");
 
 function initialState(equity, now) {
   return { ...V2.initialState(equity, now), strategyVersion: "trend_only_v3", strategyState: "SCANNING", stateTransitionLog: [], reentryState: {}, trendEntryCounts: {}, shadowComparisons: [], missedOpportunityJournal: [] };
@@ -63,8 +66,11 @@ function tryOpenTrendOnlyPosition(account, signal, input) {
   const sizing = calculatePositionSize({ equity: account.equity, available: account.available ?? account.equity, entryPrice, stopDistance: stop.distance, riskPerTrade: config.riskPerTrade, riskMultiplier: costAdjustedRiskMultiplier, costRate: cost.roundTripCostRate, leverage: config.leverage, maxPositionRatio: config.maxPositionRatio, qtyStep: Number(input.qtyStep || 0.000001), minNotional: Number(input.minNotional || 10) });
   if (!sizing.allowed) return reject(sizing.reason, "risk", executionEvaluation, sizing);
   const costModel = buildTradeCostModel(account, signal.entryMode, { notional: sizing.positionValue, plannedRiskAmount: sizing.plannedRiskAmount });
+  Object.assign(signal,metadata(input));
+  const candidate=signal.entryCandidates?.find(c=>c.type===signal.entryMode);
+  if(candidate)Object.assign(signal,{pullbackSubtype:candidate.pullbackSubtype,pullbackTouchSource:candidate.pullbackTouchSource,confirmationType:candidate.confirmationType,diRecovery:candidate.diRecovery});
   // Keep same-parameter, different-engine experiments separable in history.
-  config.strategyRevision = "V3_20261015_CONFIRM_COST";
+  config.strategyRevision = REVISION;
   Object.assign(executionEvaluation, { risk: "PASS", execution: "PASS", blocker: "", trendWave: reentry.trendWave || null });
   return { allowed: true, side: signal.tradeDirection, qty: sizing.qty, entryPrice, positionValue: sizing.positionValue, riskAmount: sizing.initialEffectiveRiskU, plannedRiskAmount: sizing.riskBudgetU, riskBudgetU: sizing.riskBudgetU, initialPriceRiskU: sizing.initialPriceRiskU, initialEffectiveRiskU: sizing.initialEffectiveRiskU, effectiveRiskU: sizing.initialEffectiveRiskU, priceRiskU: sizing.priceRiskU, expectedCostU: sizing.expectedCostU, positionCapped: sizing.positionCapped, initialStopLossPrice: stop.stop, stopDistance: stop.distance, stopDistanceAtr: stop.distanceAtr, stopSource: stop.source, atrAtEntry: atr, signal, entryMode: signal.entryMode, grade: signal.grade, riskMultiplier: costAdjustedRiskMultiplier, costR, potentialR, rewardSpace, estimatedTradeCost: cost, costModel, equity: Number(account.equity), trendId, experimentId: config.experimentId, strategyVersion: "trend_only_v3", executionEvaluation, configHash: crypto.createHash("sha256").update(JSON.stringify(config)).digest("hex") };
 }
@@ -74,8 +80,10 @@ function positionFromFill(plan, fill, now, configInput) {
   position.config = config;
   position.strategyMode = "Trend Only V3";
   position.strategyVersion = "trend_only_v3";
-  position.strategyRevision = "V3_20261015_CONFIRM_COST";
+  position.strategyRevision = REVISION;
   position.paper = true; // V3 remains Paper-only.
+  Object.assign(position,Object.fromEntries(["entryTimeframe","pullbackSubtype","pullbackTouchSource","confirmationType","diRecovery","signalMarketDataSource","executionVenue","referenceSymbol","referencePrice","executionPrice","basisBps","basisAtr","basisObservedAt"].map(k=>[k,plan.signal?.[k]??null])));
+  position.basisExecutionPrice=plan.signal?.basisExecutionPrice??null;
   position.experimentId = plan.experimentId || config.experimentId;
   position.configHash = plan.configHash;
   position.trendScore = Number(plan.signal?.trendScore || 0);
@@ -157,6 +165,7 @@ function recordClose(account, fill, reason, now = Date.now()) {
     trendScore: position.trendScore, entryScore: position.entryScore, grade: position.grade, potentialR: position.potentialR,
     whyEntered: position.whyEntered || "", whyExited: reason, postExitAnalyticsPostHocOnly: true };
   delete voucher.config;
+  Object.assign(voucher,enrich(voucher));
   position.positionSize = Math.max(0, position.positionSize - qty);
   if (position.positionSize < 1e-10) {
     state.consecutiveLosses = position.realizedPnl < 0 ? Number(state.consecutiveLosses || 0) + 1 : 0;
@@ -170,6 +179,7 @@ function recordClose(account, fill, reason, now = Date.now()) {
 
 function updateTrendContext(state, signal, input) {
   const context = V2.updateTrendContext(state, signal, input);
+  if(context&&signal.entryCandidates?.some(c=>c.type==="breakout_entry"&&c.factors?.broke))Object.assign(context,{lastBreakoutLevel:signal.directionRaw==="long"?input.breakoutHigh:input.breakoutLow,lastBreakoutDirection:signal.directionRaw,lastBreakoutSignalTime:input.signalTime});
   if (context) context.strategyVersion = "trend_only_v3";
   return context;
 }
@@ -177,6 +187,7 @@ function updateTrendContext(state, signal, input) {
 function appendShadowSignal(state, accountId, signal, input, finalAction = "") {
   const appended = V2.appendShadowSignal(state, accountId, signal, input, finalAction, 14 * 24);
   if (appended) Object.assign(state.signalJournal.at(-1), { strategyVersion: "trend_only_v3", strategyRevision: "V3_20261015_CONFIRM_COST", trendScore: signal.trendScore, entryScore: signal.entryQualityScore, grade: signal.grade, setupState: signal.setupState, entryDirection: input.entryDirection, atr: input.atr, entryCandidates: signal.entryCandidates || [] });
+  if(appended){const candidate=signal.entryCandidates?.find(c=>c.type===signal.entryMode);Object.assign(state.signalJournal.at(-1),metadata(input),{pullbackSubtype:candidate?.pullbackSubtype||null,confirmationType:candidate?.confirmationType||null,modeAudit:input.modeAudit||null,shadows:input.shadows||null});}
   return appended;
 }
 
@@ -186,7 +197,7 @@ module.exports = {
   indicatorsFor, directionOf, detectSwings, detectMarketRegime, initialState,
   tryOpenTrendOnlyPosition, positionFromFill, manageTrendOnlyPosition, recordClose,
   updateTrendContext, appendShadowSignal, journalRetentionBars: (timeframe, hours = 14 * 24) => V2.journalRetentionBars(timeframe, hours),
-  signalStats: V2.signalStats, buildDecisionFunnel, buildTradeCostModel,
+  signalStats: V2.signalStats, buildDecisionFunnel, buildTradeCostModel, scopeFor, configHash,
   compareV2Shadow, registerMissedCandidate, updateMissedOpportunities, buildCandidateSetup, updatePostExitAnalytics,
   calculateRewardSpace, transition
 };

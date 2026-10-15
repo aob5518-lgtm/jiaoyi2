@@ -27,7 +27,7 @@
   };
   const V3_DEFAULTS = {
     swingStructureLookback: 48, continuationSetupValidBars: 3,
-    experimentId: "V3_STD_20260930_B", gradeAThreshold: 82, gradeBThreshold: 74,
+    experimentId: "V3_STD_20261015_C", strategyRevision: "V3_20261015_CONFIRM_COST", maxPortfolioRiskPct: 0.025, portfolioRiskKey: "", maxCrossVenueBasisBps: 25, maxCrossVenueBasisAtr: 0.25, gradeAThreshold: 82, gradeBThreshold: 74,
     gradeARiskMultiplier: 1, gradeBRiskMultiplier: 0.5, htfStrongAdx: 30, htfMildPenalty: 5,
     highQualityPullbackScore: 15, breakoutCompressionBars: 6, continuationCompressionBars: 5,
     pullbackStopBuffer: 0.5, minimumEffectiveStopAtr: 1, minimumEffectiveStopBps: 20,
@@ -52,6 +52,7 @@
   const labels = {
     swingStructureLookback: "已确认趋势结构观察 K 线", continuationSetupValidBars: "延续压缩形态有效 K 线",
     enabled: "启用趋势策略", leverage: "杠杆（最高 10）", allowWeekendOpen: "允许周末开新仓", weekendMode: "周末保护模式",
+    strategyRevision:"引擎修订（只读）",maxPortfolioRiskPct:"组合有效风险上限（比例）",portfolioRiskKey:"组合分组标签（可选）",maxCrossVenueBasisBps:"参考基差阈值 bps（仅诊断）",maxCrossVenueBasisAtr:"参考基差阈值 ATR（仅诊断）",
     weekendExitHourUTC: "周五保护开始（UTC 小时）", riskPerTrade: "单笔风险比例（0.01=1%）", maxPositionRatio: "最大保证金比例",
     maxDailyLossRatio: "日亏损限制比例", maxConsecutiveLosses: "连续亏损次数", cooldownHoursAfterLossLimit: "亏损暂停小时",
     atrPeriod: "ATR 周期", adxPeriod: "ADX 周期", chopPeriod: "CHOP 周期", emaFast: "EMA 快线", emaMid: "EMA 中线",
@@ -146,6 +147,7 @@
         input = document.createElement("input"); input.type = "text"; input.value = selectedV3 ? "Trend Only V3" : selectedV2 ? "Trend Only V2" : "Trend Only V1"; input.disabled = true;
       } else if (typeof fallback === "string" && key !== "weekendMode" && !key.endsWith("Timeframe")) {
         input = document.createElement("input"); input.type = "text"; input.value = merged[key];
+        if(key==="strategyRevision")input.readOnly=true;
       } else if (key === "weekendMode" || key.endsWith("Timeframe")) {
         input = document.createElement("select");
         const options = key === "weekendMode" ? ["no_new_position", "force_flat_before_weekend"] : ["1m", "5m", "15m", "1h", "4h", "1d"];

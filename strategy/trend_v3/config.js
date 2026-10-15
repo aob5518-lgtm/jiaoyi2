@@ -1,11 +1,17 @@
 "use strict";
 
 const V2 = require("../../trend_only_v2");
+const { REVISION, EXPERIMENT } = require("./scope");
 
 const DEFAULTS = Object.freeze({
   ...V2.DEFAULTS,
   version: "v3",
-  experimentId: "V3_STD_20260930_B",
+  experimentId: EXPERIMENT,
+  strategyRevision: REVISION,
+  maxPortfolioRiskPct: 0.025,
+  portfolioRiskKey: "",
+  maxCrossVenueBasisBps: 25,
+  maxCrossVenueBasisAtr: 0.25,
   gradeAThreshold: 82,
   gradeBThreshold: 74,
   gradeARiskMultiplier: 1,
@@ -49,7 +55,7 @@ function normalizeConfig(input = {}) {
   const base = V2.normalizeConfig(v2Input);
   const config = { ...DEFAULTS, ...base };
   const legacyCostLimit = input.maxPreferredCostR === undefined && Number(input.maxAllowedCostR) === 0.15;
-  const legacyExperiment = input.experimentId === undefined || input.experimentId === "V3_STD_20260922_A";
+  const legacyExperiment = input.experimentId === undefined || ["V3_STD_20260922_A", "V3_STD_20260930_B"].includes(input.experimentId);
   for (const [key, fallback] of Object.entries(DEFAULTS)) {
     if (input[key] === undefined) continue;
     if (typeof fallback === "number") {
@@ -61,12 +67,14 @@ function normalizeConfig(input = {}) {
     else config[key] = String(input[key]);
   }
   config.version = "v3";
+  config.strategyRevision = REVISION;
   // Migrate the original single 0.15R limit into a preferred + hard limit.
   // 0.15R remains the quality boundary; only 0.35R is a hard rejection.
   if (legacyCostLimit) { config.maxPreferredCostR = 0.15; config.maxAllowedCostR = 0.35; }
   else if (input.maxAllowedCostR !== undefined && input.maxPreferredCostR === undefined) config.maxPreferredCostR = Math.min(config.maxPreferredCostR, config.maxAllowedCostR);
   if (legacyExperiment) config.experimentId = DEFAULTS.experimentId;
   config.allowLive = false;
+  if (!(config.maxPortfolioRiskPct > 0 && config.maxPortfolioRiskPct <= 1)) throw Error("V3 maxPortfolioRiskPct 必须为 0~1 比例");
   if (!Array.isArray(config.entryModes) || !config.entryModes.length || config.entryModes.some(mode => !["breakout_entry", "pullback_entry", "continuation_entry"].includes(mode))) throw Error("V3 entryModes 无效");
   config.entryModes = [...new Set(config.entryModes)];
   if (!["strict_align", "not_against", "off"].includes(config.higherTimeframeMode)) throw Error("V3 higherTimeframeMode 无效");

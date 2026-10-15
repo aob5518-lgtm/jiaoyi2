@@ -3441,11 +3441,13 @@
                 <label class="history-filter">结果<select id="historyResultFilter"><option value="all">全部</option><option value="win">盈利</option><option value="loss">亏损</option></select></label>
                 <label class="history-filter">排序<select id="historySort"><option value="time">时间</option><option value="netPnl">净盈亏</option><option value="r">R</option><option value="duration">持仓时间</option></select></label>
                 <label class="history-filter">策略版本<select id="historyVersionFilter"><option value="current">当前版本</option><option value="trend_only_v3">V3</option><option value="trend_only_v2">V2</option><option value="trend_only_v1">V1</option><option value="all">全部（不混算）</option></select></label>
+                <label class="history-filter">策略修订<select id="historyRevisionFilter"><option value="current">当前修订</option><option value="V3_20261015_CONFIRM_COST">V3_20261015_CONFIRM_COST</option><option value="V3_20261009_STRUCTURE">V3_20261009_STRUCTURE</option><option value="unknown">未记录修订</option><option value="all">所有修订（历史对照）</option></select></label>
                 <label class="history-filter">实验<input id="historyExperimentFilter" type="text" placeholder="experimentId"></label>
                 <label class="history-filter">配置<input id="historyConfigFilter" type="text" placeholder="configHash 前缀"></label>
                 <button class="ghost" id="exportHistoryCsvBtn">导出 CSV</button>
               </div>
 
+              <div id="forwardWorkbench" class="block" hidden><div class="block-head"><span class="block-title">Forward Test 策略诊断工作台</span><select id="forwardView"><option value="trade">交易</option><option value="entry">入场质量</option><option value="stop">止损质量</option><option value="exit">退出质量</option><option value="cost">成本</option><option value="funnel">机会漏斗</option></select></div><div id="forwardScope" class="config-section-note"></div><div id="forwardCoreMetrics" class="analytics-grid"></div><div id="forwardDetail" class="data-list"></div></div>
               <div class="table-wrap">
                 <table class="history-table">
                   <thead>
@@ -4008,6 +4010,8 @@
       $("v3PositionCockpit").hidden = !position;
       if (candidate) $("v3CandidateRows").innerHTML = [
         row("方向 / Setup", `${candidate.direction === "long" ? "做多" : "做空"} · ${v3ModeLabel(candidate.setupType)}`),
+        row("信号行情 / 执行平台", `${signal.signalMarketDataSource || "未知"} / ${signal.executionVenue || "未知"}`),
+        row("跨平台基差（仅诊断）", signal.basisBps==null?"未采集同期参考报价":`${fmt(signal.basisBps,2)} bps / ${fmt(signal.basisAtr,3)} ATR`),
         row("趋势分 / 入场分", `${fmt(candidate.trendScore, 1)} / ${fmt(candidate.entryScore, 1)}`),
         row("等级 / 风险倍率", `${candidate.grade || "-"} / ${fmt(signal.riskMultiplier ?? 0, 2)}x`),
         row("触发区间", Array.isArray(candidate.triggerZone) ? `${fmt(candidate.triggerZone[0], 2)} - ${fmt(candidate.triggerZone[1], 2)}` : "-"),
@@ -4554,9 +4558,11 @@ row("保证金占比", `${st.marginRatio || 0}%`, Number(st.marginRatio || 0) >=
       const now = Date.now(), date = $("historyDateFilter").value, side = $("historySideFilter").value, entry = $("historyEntryFilter").value, exit = $("historyExitFilter").value, result = $("historyResultFilter").value;
       const requestedVersion = $("historyVersionFilter").value, currentVersion = latestStatusData?.config?.strategyType, version = requestedVersion === "current" ? currentVersion : requestedVersion;
       const experiment = $("historyExperimentFilter").value.trim(), hashPrefix = $("historyConfigFilter").value.trim();
+      const selectedRevision=$("historyRevisionFilter").value,scope=latestStatusData?.state?.trendOnly?.analyticsScope||{};
+      const revision=selectedRevision==="current"?scope.strategyRevision||"V3_20261015_CONFIRM_COST":selectedRevision;
       const cutoff = date === "24h" ? now - 86400000 : date === "7d" ? now - 7 * 86400000 : date === "30d" ? now - 30 * 86400000 : 0;
       const exitMatch = item => exit === "all" || (exit === "stop" ? ["hard_sl", "structure_sl", "post_fill_risk_invalid"].includes(item.closeReason) : item.closeReason === exit);
-      const rows = latestHistoryItems.filter(item => (!cutoff || exitTimeOf(item) >= cutoff) && (side === "all" || String(item.side).toLowerCase() === side) && (entry === "all" || item.entryMode === entry) && exitMatch(item) && (result === "all" || (result === "win" ? netPnlOf(item) > 0 : netPnlOf(item) < 0)) && (version === "all" || item.strategyVersion === version) && (!experiment || item.experimentId === experiment) && (!hashPrefix || String(item.configHash || "").startsWith(hashPrefix)));
+      const rows = latestHistoryItems.filter(item => (!cutoff || exitTimeOf(item) >= cutoff) && (side === "all" || String(item.side).toLowerCase() === side) && (entry === "all" || item.entryMode === entry) && exitMatch(item) && (result === "all" || (result === "win" ? netPnlOf(item) > 0 : netPnlOf(item) < 0)) && (version === "all" || item.strategyVersion === version) && (currentVersion!=="trend_only_v3"||revision==="all"||(revision==="unknown"?!item.strategyRevision:item.strategyRevision===revision)) && (currentVersion!=="trend_only_v3"||selectedRevision!=="current"||((!scope.experimentId||item.experimentId===scope.experimentId)&&(!scope.configHash||item.configHash===scope.configHash))) && (!experiment || item.experimentId === experiment) && (!hashPrefix || String(item.configHash || "").startsWith(hashPrefix)));
       const sort = $("historySort").value;
       const sortable = value => value !== null && value !== undefined && Number.isFinite(Number(value)) ? Number(value) : -Infinity;
       rows.sort((a, b) => sort === "netPnl" ? netPnlOf(b) - netPnlOf(a) : sort === "r" ? sortable(rOf(b)) - sortable(rOf(a)) : sort === "duration" ? sortable(durationOf(b)) - sortable(durationOf(a)) : exitTimeOf(b) - exitTimeOf(a));
@@ -4638,6 +4644,7 @@ function buildVoucherData(item) {
       "C. 行情表现": { "MAE": value(item.maximumAdverseExcursion), "MAE_R": value(item.MAE_R," R",3), "MFE": value(item.maximumFavorableExcursion), "MFE_R": value(item.MFE_R," R",3), "最高价": value(item.highestPriceSinceEntry), "最低价": value(item.lowestPriceSinceEntry) },
       "D. 审计信息": { "closeReason 中文": reasonLabel(item.closeReason), "原始 closeReason": item.closeReason || "未记录", "platform": item.platform || "未记录", "clientOrderId": item.clientOrderId || "未记录", "exchangeOrderId": item.exchangeOrderId || item.platformOrderId || "未记录", "platformTradeId": item.platformTradeId || "未记录", "txHash": item.txHash || "未记录", "explorerUrl": item.explorerUrl || "未记录", "costSource": accountingSource, "strategyVersion": item.strategyVersion || "未记录", "experimentId": item.experimentId || "未记录", "configHash": item.configHash || "未记录" },
       "E. 策略质量": { "Trend Score": value(item.trendScore,"",1), "Entry Score": value(item.entryScore,"",1), "Grade": item.grade || missing, "Potential R": value(item.potentialR," R",2), "Cost R": value(item.costR," R",3), "Gross R": value(item.grossR," R",3), "Net R": value(item.netR ?? item.rMultiple," R",3), "为什么开仓": item.whyEntered || missing, "为什么退出": item.whyExited || reasonLabel(item.closeReason), "PostExitMFE_8": value(item.PostExitMFE_R_8," R",3), "PostExitMFE_16": value(item.PostExitMFE_R_16," R",3), "PostExitMFE_32": value(item.PostExitMFE_R_32," R",3) }
+      ,"F. 诊断结论（事后统计）": {"修订":item.strategyRevision||missing,"Pullback subtype":item.pullbackSubtype||missing,"Touch Source":(item.pullbackTouchSource||[]).join(" / ")||missing,"Confirmation":item.confirmationType||missing,"DI recovery":item.diRecovery==null?missing:String(item.diRecovery),"Stop ATR":value(item.actualStopDistance/Number(item.atrAtEntry)," ATR"),"PostStopMFE 8/16/32": [8,16,32].map(n=>value(item[`PostStopMFE_R_${n}`]," R")).join(" / "),"PostStopMAE 8/16/32":[8,16,32].map(n=>value(item[`PostStopMAE_R_${n}`]," R")).join(" / "),"止损分类 16/32":[16,32].map(n=>item[`PostStopClassification_${n}`]||"待完整窗口").join(" / "),"Winner Capture":value(item.exitCaptureRatio),"Total Cost":value(item.totalCostU," U"),"Signal Venue":item.signalMarketDataSource||missing,"Execution Venue":item.executionVenue||missing,"Reference Symbol":item.referenceSymbol||missing,"Basis":`${value(item.basisBps," bps")} / ${value(item.basisAtr," ATR")}`,"用途":"仅基于已发生数据，不参与实时决策"}
     }
   };
 }
@@ -4678,9 +4685,23 @@ window.closeVoucherModal = function() {
   $("voucherModalMask").classList.remove("show");
 };
 
+    let forwardAnalyticsCache=null;
+    function renderForwardWorkbench(data){
+      forwardAnalyticsCache=data;
+      const panel=$("forwardWorkbench"),f=data?.forward;
+      panel.hidden=!f;if(!f)return;
+      const q=f.quality||{},s=data.summary||{},scope=f.scope||{};
+      $("forwardScope").textContent=`Experiment ${scope.experimentId||"-"} | Strategy Revision ${scope.strategyRevision||"-"} | Config Hash ${scope.configHash||"-"} · POST-HOC ONLY · ${f.missingFields||0} 笔有缺失字段 · all 表示显式历史对照，非当前策略成绩`;
+      const val=x=>x==null?"数据不足":fmt(x,3);
+      $("forwardCoreMetrics").innerHTML=[["Net Expectancy",val(s.expectancyR)],["Hard Stop Rate",percentage(q.hardStopRate)],["Avg Cost R",val(q.cost?.average)],["Winner Capture Ratio",val(q.avgCaptureRatio)],["Missed Trend Rate",percentage(f.missed?.rate)],["Stop Rebound Rate (32)",percentage(q.stopRebound?.[32]?.rate)],["Never Worked Rate",percentage(q.neverWorkedRate)],["Fee Drag",percentage(s.feeDrag)]].map(([k,v])=>`<div class="analytics-card"><span>${safeText(k)}</span><strong>${safeText(v)}</strong></div>`).join("");
+      const views={trade:{说明:"当前修订交易表在下方；选择旧修订只作历史对照",scope,portfolio:data.portfolios,portfolioTotalNetR:data.portfolioTotalNetR,portfolioRisk:data.portfolioRisk,candidateRanking:data.candidateRanking},entry:{入场分布:q.entryWindows,NeverWorkedRate:q.neverWorkedRate,WorkedThenFailedRate:q.workedThenFailedRate,Pullback分组:f.subtypes},stop:{HardStopCount:q.hardStopCount,HardStopRate:q.hardStopRate,AvgHardStopR:q.avgHardStopR,StopRebound:q.stopRebound},exit:{AvgWinnerMFE:q.avgWinnerMFE,AvgRealizedWinnerR:q.avgRealizedWinnerR,AvgCaptureRatio:q.avgCaptureRatio,退出分组:q.captureByExit},cost:{CostR分布:q.cost,TotalFee:s.totalTradingFee,FeeDrag:s.feeDrag,成本分组:f.quality?.costBands,独立Shadow:f.independentShadows,已成交配对Shadow:f.shadows,Weekday:f.weekday,Weekend:f.weekend,基差诊断:f.basis},funnel:f.modeFunnel};
+      function tree(value,depth=0){if(value===null||value===undefined)return "数据不足";if(typeof value!=="object")return safeText(String(value));if(depth>3)return `<pre style="white-space:pre-wrap">${safeText(JSON.stringify(value,null,2))}</pre>`;return Object.entries(value).map(([k,v])=>`<details ${depth===0?"open":""}><summary>${safeText(k)}</summary><div style="padding:8px 16px">${tree(v,depth+1)}</div></details>`).join("");}
+      $("forwardDetail").innerHTML=tree(views[$("forwardView").value]||views.trade);
+    }
     function renderAnalytics(data) {
       const summary = data?.summary || {}, cfg = latestStatusData?.config || {}, trend = latestStatusData?.state?.trendOnly || {};
-      $("analyticsScope").textContent = `版本 ${data?.strategyVersion || "trend_only_v3"} · 实验 ${data?.experimentId || cfg.trendOnlyConfig?.experimentId || "-"} · 配置 ${(data?.configHash || "-").slice(0, 12)}`;
+      $("analyticsScope").textContent = `Experiment ${data?.experimentId || "-"} · Strategy Revision ${data?.strategyRevision || "-"} · Config Hash ${(data?.configHash || "-").slice(0, 12)}`;
+      renderForwardWorkbench(data);
       const cards = [
         ["样本数", summary.trades ?? 0], ["净盈亏", summary.trades ? `${fmt(summary.netPnl, 2)} U` : "数据不足"],
         ["胜率", percentage(summary.winRate)], ["平均 netR", summary.avgNetR == null ? "数据不足" : `${fmt(summary.avgNetR, 2)} R`],
@@ -4702,13 +4723,17 @@ window.closeVoucherModal = function() {
       $("analyticsMissed").innerHTML = [row("诊断覆盖范围", coverageText), row("留存上限", `${coverage.retentionHours || 72} 小时（升级后逐步积累，不补造旧记录）`), row("逐根候选样本", missed.candidates || 0), row("成熟样本（32根）", missed.matureCandidates ?? "旧统计口径"), row("事后趋势候选", missed.missedTrends || 0), row("事后趋势候选占比", percentage(missed.missedTrendRate)), row("正确阻断候选", missed.goodBlocks || 0), row("用途", "仅用于事后分析；相邻K线可能属于同一行情，不等于错过交易数，不参与实时决策")].join("");
     }
 
+    let analyticsRequestNumber=0;
     async function loadAnalytics() {
       if (!currentAccountId) return;
       if (latestStatusData?.config?.strategyType !== "trend_only_v3") {
         renderAnalytics({ strategyVersion: latestStatusData?.config?.strategyType, summary: {}, modes: {} });
         return;
       }
-      const res = await api(`/api/trend-only/analytics?id=${encodeURIComponent(currentAccountId)}`);
+      const accountId=currentAccountId,requestNumber=++analyticsRequestNumber,requestedRevision=$("historyRevisionFilter").value,params=new URLSearchParams({id:accountId});
+      if(requestedRevision!=="current"){params.set("strategyRevision",requestedRevision);params.set("experimentId",$("historyExperimentFilter").value.trim()||"all");params.set("configHash",$("historyConfigFilter").value.trim()||"all");}
+      const res = await api(`/api/trend-only/analytics?${params}`);
+      if(accountId!==currentAccountId||requestNumber!==analyticsRequestNumber)return;
       if (res.ok) renderAnalytics(res);
       else showToast(res.error || "策略分析读取失败", "error");
     }
@@ -4716,9 +4741,10 @@ window.closeVoucherModal = function() {
     async function loadHistory() {
       if (!currentAccountId) return;
       const includeAllVersions = latestStatusData?.config?.strategyType === "trend_only_v3";
-      const res = await api(`/api/profit-history?id=${encodeURIComponent(currentAccountId)}${includeAllVersions ? "&strategyVersion=all" : ""}`);
+      const res = await api(`/api/profit-history?id=${encodeURIComponent(currentAccountId)}${includeAllVersions ? "&strategyVersion=all&strategyRevision=all" : ""}`);
       if (res.ok) {
         renderHistory(res.items || []);
+        if(includeAllVersions)await loadAnalytics();
       } else if (res.error) {
         showToast(res.error || "历史记录读取失败", "error");
       }
@@ -5136,6 +5162,8 @@ window.closeVoucherModal = function() {
     $("refreshAnalyticsBtn").addEventListener("click", async () => { await loadAnalytics(); showToast("策略分析已刷新", "info"); });
     ["historyDateFilter","historySideFilter","historyEntryFilter","historyExitFilter","historyResultFilter","historySort","historyVersionFilter"].forEach(id => $(id).addEventListener("change", renderHistoryView));
     ["historyExperimentFilter","historyConfigFilter"].forEach(id => $(id).addEventListener("input", renderHistoryView));
+    $("historyRevisionFilter").addEventListener("change",()=>{renderHistoryView();loadAnalytics();});
+    $("forwardView").addEventListener("change",()=>renderForwardWorkbench(forwardAnalyticsCache));
     $("exportHistoryCsvBtn").addEventListener("click", exportHistoryCsv);
     $("historyStatusBtn").addEventListener("click", () => document.body.classList.toggle("history-status-open"));
     $("historyStatusCloseBtn").addEventListener("click", () => document.body.classList.remove("history-status-open", "v3-status-open"));
