@@ -143,7 +143,7 @@ function createTrendRuntime(d) {
   function publish(acc, st) {
     const s = get(acc), p = s.position;
     const T = engine(acc), config = T.normalizeConfig(acc.trendOnlyConfig), weekendBlocked = T.isWeekendBlocked(Date.now(), config);
-    if(isV3(acc)&&d.portfolioAccounts){s.portfolioRisk=portfolioSnapshot({...acc,paper:paper(acc),trendOnlyConfig:config},d.portfolioAccounts().map(e=>({...e,state:get(e.account)})),p?.side||s.signal?.directionRaw||"none");}
+    if(isV3(acc)&&d.portfolioAccounts){s.portfolioRisk=portfolioSnapshot({...acc,paper:paper(acc),trendOnlyConfig:config},d.portfolioAccounts().map(e=>({...e,state:e.state||get(e.account)})),p?.side||s.signal?.directionRaw||"none");}
     const rawStopOrderPrice = s.stopOrderPrice ?? s.stopSyncedPrice;
     const stopOrderPrice = rawStopOrderPrice === null || rawStopOrderPrice === undefined || rawStopOrderPrice === "" ? null : Number(rawStopOrderPrice);
     const signal = s.signal || {
@@ -483,7 +483,7 @@ function createTrendRuntime(d) {
     const s = get(acc);
     if (s.pendingOrder) throw Error("已有 pendingOrder，禁止提交");
     if(kind==="open"&&isV3(acc)&&d.portfolioAccounts){
-      const entries=d.portfolioAccounts().map(e=>({...e,state:get(e.account)}));
+      const entries=d.portfolioAccounts().map(e=>({...e,state:e.state||get(e.account)}));
       const portfolio=portfolioSnapshot({...acc,paper:paper(acc),trendOnlyConfig:T.normalizeConfig(acc.trendOnlyConfig)},entries,plan.side,Number(plan.initialEffectiveRiskU));
       s.portfolioRisk=portfolio;
       if(!portfolio.allowed){setDecision(acc,"PORTFOLIO_RISK_BLOCK",portfolio.reason);save();return;}
@@ -541,7 +541,7 @@ function createTrendRuntime(d) {
     const T=engine(acc),s=get(acc),c=T.normalizeConfig(acc.trendOnlyConfig);
     require("./strategy/trend_v3/shadow_books").tickShadowBooks(T,s,account(acc,st),i,!!st.running,(name,plan)=>{
       if(!d.portfolioAccounts)return true;
-      const entries=d.portfolioAccounts().map(e=>({account:e.account,state:get(e.account)}));
+      const entries=d.portfolioAccounts().map(e=>({account:e.account,state:e.state||get(e.account)}));
       return require("./strategy/trend_v3/shadow_books").shadowPortfolioSnapshot(T,{...acc,paper:true,trendOnlyConfig:c},entries,name,plan.side,Number(plan.initialEffectiveRiskU));
     });
   }
@@ -563,7 +563,7 @@ function createTrendRuntime(d) {
       if(!d.portfolioAccounts)return{allowed:false,reason:"组合风险覆盖不可用"};
       const entries=[];
       for(const e of d.portfolioAccounts()){
-        const real=get(e.account),sc=S.normalizeConfig(e.account.shortTermConfig||{}),virtual=real.shortTermBooks?.[S.scopeFor(sc,e.account).configHash];
+        const real=e.state||get(e.account),sc=S.normalizeConfig(e.account.shortTermConfig||{}),virtual=real.shortTermBooks?.[S.scopeFor(sc,e.account).configHash];
         entries.push({...e,state:real});
         if(virtual)entries.push({account:e.account,equity:virtual.equity,state:{position:virtual.position,pendingOrder:virtual.pendingOrder}});
       }

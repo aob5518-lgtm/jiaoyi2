@@ -1,5 +1,11 @@
 # jiaoyi2
 
+## 4H Compound Reversal V1（研究 / Paper-only）
+
+新增独立4H策略工作台 `/compound.html`：1D背景、4H结构区域、1H确认，四层等额限价、有限补仓、成本风险预算、分段止盈及结算后复利。只能新建独立Paper账户，默认不启动，不复用旧策略账本。
+
+历史参考对照有效成交样本不足，尚未通过收益验证。实现细节、实际默认参数、风险案例、回测结果与局限见 [4H实现与验收报告](docs/COMPOUND_4H.md)，示例配置见 `config.compound.example.json`。V3与Short-Term核心参数不变。
+
 ## V3 + Short-Term 双引擎研究
 
 保留 V3 原实验 `V3_STD_20261015_C` 与 `V3_20261015_FORWARD_PORTFOLIO`，新增独立 `short_term_v1` Shadow 伴随引擎：5m 信号、15m 背景，动量突破/短线回踩/区间反转独立评分和账本。默认 0.25% 研究风险，强制无真实下单权限；不把 Shadow 理论记录混成 V3 Paper 成绩。

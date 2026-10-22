@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SUPER AGENT · 4H Compound</title><link rel="stylesheet" href="/compound.css"></head><body>
+<header><div><small>SUPER AGENT · PAPER RESEARCH</small><h1>4H Compound Reversal V1</h1><p>顺势区域 · 四层等额限价 · 结算后复利</p></div><a href="/">返回控制台</a></header>
+<main><p class="notice">强制 Paper-only，无真实下单权限。独立模拟账户，不复用 V3 / Short-Term 持仓。研究参数不代表已验证收益。历史对照有效成交样本不足，尚未通过收益验证；不要据此扩大风险。</p><p id="error" role="alert" hidden></p>
+<section><div class="toolbar"><label>4H Paper账户<select id="accounts"></select></label><button id="refresh">刷新</button><button id="createToggle">新建独立 Paper 账户</button></div>
+<form id="createForm" hidden><label>账户名称<input id="newName" value="4H ETH Paper" maxlength="80"></label><label>行情平台<select id="newPlatform"><option value="hyperliquid">Hyperliquid</option><option value="binance">Binance</option><option value="extended">Extended</option></select></label><label>交易对<input value="ETH / USDC · 模拟计价" disabled></label><label>模拟初始资金<input id="newEquity" type="number" min="100" max="10000000" value="10000"></label><button type="submit">创建（默认不启动）</button></form>
+<div class="toolbar"><strong id="running">未选择账户</strong><button id="start">启动 Paper</button><button id="stop">停止新开与补仓</button><button id="close" class="danger">退出当前 Paper 轮次</button></div></section>
+<div id="empty" class="notice">暂无4H账户。创建独立 Paper 账户不会影响现有策略。</div>
+<div id="workspace" hidden><section><h2>本轮摘要</h2><div id="summary" class="grid"></div><p id="reason" class="notice"></p></section>
+<section><h2>四层委托</h2><p>未触价不成交；单纯触价不保证成交；无订单簿时采用部分成交和保守费用。</p><div id="orders" class="grid"></div></section>
+<section><h2>轮次成绩</h2><p>仅本账户、本实验及当前配置哈希；已完成轮次净收益。未完成轮次不混入成绩。</p><div id="stats" class="grid"></div><details><summary>完整绩效与诊断漏斗</summary><pre id="fullStats"></pre></details></section>
+<section><div class="toolbar"><h2>完整轮次历史</h2><button id="csv">导出当前实验 CSV</button></div><div id="history"></div></section>
+<section><h2>配置与高级研究参数</h2><p>Standard：每轮最多0.5%风险，每层最多1%名义仓位，最多三次补仓，1x。所有数值均经后端校验；运行中或有轮次不能修改。</p><details><summary>高级设置（ATR、评分、四层规则、止盈、复利、风险）</summary><label for="config">JSON参数</label><textarea id="config" rows="22" spellcheck="false"></textarea><button id="save">保存参数</button><p>ROI_PERCENT 只预留，V1 不开放；固定本金模式按亏损后的较低权益封顶，不追亏。</p></details></section>
+<section><h2>策略分析：为什么没有接单？</h2><div id="diagnostics"></div></section></div></main>
+<dialog id="detail"><button id="detailClose">关闭</button><h2>轮次复盘与审计</h2><pre id="detailText"></pre></dialog><script src="/compound.js"></script></body></html>

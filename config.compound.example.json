@@ -1,0 +1,24 @@
+{
+  "strategyType": "compound_4h_v1",
+  "strategyMode": "4H Compound Reversal V1",
+  "platform": "hyperliquid",
+  "symbol": "ETH",
+  "quoteAsset": "USDC",
+  "tradeMode": "simulation",
+  "simulationEnabled": true,
+  "simulationBalance": 10000,
+  "running": false,
+  "leverage": 1,
+  "compoundConfig": {
+    "initialEquity": 10000,
+    "riskPerCycle": 0.005,
+    "layerNotionalPct": 0.01,
+    "maxAdds": 3,
+    "leverage": 1,
+    "gradeA": 82,
+    "gradeB": 74,
+    "compoundMode": "FULL_EQUITY",
+    "takeProfitMode": "R_MULTIPLE",
+    "allowLive": false
+  }
+}

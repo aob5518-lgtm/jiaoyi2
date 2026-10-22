@@ -35,6 +35,30 @@ test('Short-Term occupied Shadow book prevents market changes through ordinary c
  // The independent endpoint must also check historical occupied books, not only the current hash.
  assert.equal(blocked.code,400);
 });
+test('4H Compound creates an isolated stopped credential-free Paper account without touching old history',async t=>{
+ const f=setup(t),before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ assert.equal((await f.call('/api/compound/create',{},false)).code,401);
+ const r=await f.call('/api/compound/create',{name:'4H test',config:{allowLive:true}});assert.equal(r.code,200);const id=r.data.id;
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),before);
+ const status=await f.call('/api/compound/status?id='+id);assert.equal(status.code,200);assert.equal(status.data.account.strategyType,'compound_4h_v1');assert.equal(status.data.running,false);assert.equal(status.data.config.allowLive,false);assert.equal(status.data.book.equity,10000);assert.equal(status.data.history.length,0);assert.equal(status.data.account.hasPrivateKey,false);assert.equal(status.data.account.hasApiKey,false);assert.equal(status.data.statistics.netPnl,null);
+ assert.equal((await f.call('/api/compound/status?id='+id,undefined,false)).code,401);
+});
+test('4H generic start/manual/reset/config routes never fall through to classic execution',async t=>{
+ const f=setup(t),r=await f.call('/api/compound/create',{}),id=r.data.id;await f.call('/api/account/select',{id});
+ assert.equal((await f.call('/api/manual-order',{amountU:100})).code,400);assert.equal((await f.call('/api/reset',{})).code,400);
+ assert.equal((await f.call('/api/config',{tradeMode:'live'})).code,400);
+ assert.equal((await f.call('/api/trend-only/config',{accountId:id,strategyType:'trend_only_v3',config:{}})).code,400);
+ const start=await f.call('/api/start',{});assert.equal(start.code,200);assert.equal(start.data.strategyType,'compound_4h_v1');await f.call('/api/stop',{});
+ vm.runInContext(`config.accounts.find(a=>a.id==='${id}').tradeMode='live';config.accounts.find(a=>a.id==='${id}').simulationEnabled=false`,f.ctx);
+ assert.notEqual((await f.call('/api/start',{})).code,200);
+});
+test('4H cannot be enabled by reusing an old strategy account and risk/parameter bypasses fail closed',async t=>{
+ const f=setup(t);assert.equal((await f.call('/api/config',{strategyType:'compound_4h_v1'})).code,400);
+ assert.equal((await f.call('/api/compound/create',{config:{riskPerCycle:.5}})).code,400);
+ const id=(await f.call('/api/compound/create',{})).data.id;assert.equal((await f.call('/api/compound/config',{id,config:{initialEquity:20000}})).code,400);
+ await f.call('/api/compound/start',{id});assert.equal((await f.call('/api/compound/config',{id,config:{}})).code,400);await f.call('/api/compound/stop',{id});
+ assert.equal((await f.call('/api/compound/config',{id,config:{maxAdds:4}})).code,400);
+});
 test('analysis time filters exclude undated legacy rows only when an explicit window is requested',async t=>{
  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
  vm.runInContext(`const scopeForTime=v3Scope(TrendOnlyV3.normalizeConfig(config.accounts[0].trendOnlyConfig));stateMap.legacy.profitHistory=[{...scopeForTime,netPnl:2,netR:1,exitTime:Date.now()-1000},{...scopeForTime,netPnl:3,netR:1,exitTime:1000}]`,f.ctx);

@@ -7,6 +7,7 @@ profit_history.json
 simulation_orders.json
 smart_runtime.json
 trend_only_runtime.json
+compound_4h_runtime.json
 .trade-locks/
 backups/
 deploy-backups/

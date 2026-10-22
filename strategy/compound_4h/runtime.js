@@ -1,0 +1,28 @@
+"use strict";
+const fs=require("fs"),path=require("path"),C=require("./config"),B=require("./book"),S=require("./signal"),{metrics}=require("../short_term_v1/analytics");
+function createRuntime(d){
+ const file=path.join(d.directory,"compound_4h_runtime.json");let states={},loadFailure="";
+ try{states=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,"utf8")):{};if(!states||typeof states!=="object"||Array.isArray(states))throw Error("账本根节点无效");}catch(error){loadFailure="4H状态文件损坏，保留原文件并禁止交易："+error.message;states={};}
+ const locked=new Set();
+ const get=account=>states[account.id]||=({...B.initial(C.normalize(account.compoundConfig)),...(loadFailure?{equity:null,riskLock:true,riskLockReason:loadFailure}:{})});
+ function save(){if(loadFailure)throw Error(loadFailure);const tmp=file+".tmp",fd=fs.openSync(tmp,"w",0o600);try{fs.writeFileSync(fd,JSON.stringify(states));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(tmp,file);}
+ const busy=account=>!!states[account.id]?.cycle||locked.has(account.id);
+ function publish(account,st){const b=get(account),p=b.cycle,price=Number(st.currentPrice);st.compound={...C.scope(account.compoundConfig,account),sampleType:"paper",allowLive:false,orderPermission:false,cycle:p,bookEquity:b.equity,initialEquity:b.initialEquity,nextCompoundBase:C.baseEquity(b,C.normalize(account.compoundConfig)),riskLock:b.riskLock,latestDiagnostic:b.diagnostics.at(-1)||null,completedCycles:b.history.filter(v=>v.filledQty>0).length,lastPersistedAt:b.persistedAt||null};st.positionQty=p?.qty||0;st.entryPrice=p?.averagePrice||0;st.pnl=p?.qty&&price>0?B.netAt(p,price):0;st.balance=b.equity+(p?st.pnl:0);st.available=b.equity-(p?.plannedNotional||0);st.lastAction=p?p.phase:b.diagnostics.at(-1)?.primaryBlocker||"等待已收盘4H预测";}
+ async function tick(account,st,{manualClose=false}={}){
+  if(locked.has(account.id))throw Error("4H 正在撮合，请稍后");locked.add(account.id);const b=get(account);
+  try{
+   if(account.tradeMode!=="simulation"||account.simulationEnabled!==true)throw Error("4H Compound只允许独立Paper账户");
+   if(!st.running&&!b.cycle)return;
+   const price=Number(await d.price(account)),now=Date.now();st.currentPrice=price;
+   let signal={timestamp:Math.floor(now/14400000)*14400000-14400000,dataFreshness:"invalid",primaryBlocker:"行情读取失败",decision:"BLOCKED"},rules={};
+   try{const sets=await Promise.all(["1d","4h","1h"].map(tf=>d.candles(account.symbol,tf,300,account.platform)));if(sets.some(v=>v.stale))throw Error("行情缓存过期");signal=S.analyze({bars:Object.fromEntries(["1d","4h","1h"].map((tf,n)=>[tf,sets[n].candles])),account,config:account.compoundConfig,now});signal.signalSources=sets.map(v=>v.source||"unknown");rules=await d.constraints(account,price);}catch(error){signal.primaryBlocker=error.message;}
+   B.step(b,{event:{time:now,price},signal,config:account.compoundConfig,account,rules,running:!!st.running,manualClose,permit:(risk,side)=>d.permit(account,risk,side)});
+   b.persistedAt=Date.now();save();st.activeError="";st.updatedAt=new Date().toLocaleString("zh-CN");
+  }catch(error){st.activeError=st.lastError=error.message;st.lastErrorAt=Date.now();if(b.cycle){B.cancel(b.cycle,"异常冻结所有新成交");try{save();}catch(writeError){b.riskLock=true;}}throw error;}
+  finally{publish(account,st);locked.delete(account.id);}
+ }
+ function report(account){const b=get(account),rows=b.history.filter(v=>v.filledQty>0&&v.configHash===C.scope(account.compoundConfig,account).configHash),stats=metrics(rows),orders=b.history.filter(v=>v.configHash===C.scope(account.compoundConfig,account).configHash).flatMap(v=>v.orders),dgs=b.diagnostics.filter(v=>v.configHash===C.scope(account.compoundConfig,account).configHash);return{...C.scope(account.compoundConfig,account),config:C.normalize(account.compoundConfig),sampleType:"paper",allowLive:false,orderPermission:false,book:{initialEquity:b.initialEquity,equity:b.equity,realizedNetPnl:b.realizedNetPnl,nextCompoundBase:C.baseEquity(b,C.normalize(account.compoundConfig)),riskLock:b.riskLock},cycle:b.cycle,history:b.history.slice(-200),diagnostics:dgs.slice(-50),statistics:{...stats,actualPaperTrades:rows.length,shadowTrades:0,avgWinningCycle:rows.some(v=>v.netPnl>0)?rows.filter(v=>v.netPnl>0).reduce((a,v)=>a+v.netPnl,0)/rows.filter(v=>v.netPnl>0).length:null,avgLosingCycle:rows.some(v=>v.netPnl<0)?rows.filter(v=>v.netPnl<0).reduce((a,v)=>a+v.netPnl,0)/rows.filter(v=>v.netPnl<0).length:null,avgAdds:rows.length?rows.reduce((a,v)=>a+v.adds,0)/rows.length:null,worstCycle:rows.length?Math.min(...rows.map(v=>v.netPnl)):null,fees:rows.length?rows.reduce((a,v)=>a+v.tradingFee,0):null,stopSlippage:rows.length?rows.reduce((a,v)=>a+v.slippageLoss,0):null,equityCurve:rows.map(v=>({time:v.exitTime,equity:v.equityAfter})),incompleteCycles:b.cycle?1:0,entryFillRate:b.history.length?rows.length/b.history.length:null,limitFillRate:orders.length?orders.filter(v=>v.filledQty>0).length/orders.length:null,diagnosticFunnel:{evaluations:dgs.length,regions:dgs.filter(v=>v.reversalZone).length,scorePassed:dgs.filter(v=>["A","B"].includes(v.scoreGrade)).length,ordersCreated:dgs.filter(v=>v.decision==="ORDER_PENDING").length,expired:b.history.filter(v=>!v.filledQty&&v.orders.some(o=>o.cancelReason?.includes("过期"))).length,firstFills:rows.length,adds:rows.reduce((a,v)=>a+v.adds,0),hardStops:rows.filter(v=>v.closeReason==="hard_sl").length,tp1:rows.filter(v=>v.tpStage>=1).length,tp2:rows.filter(v=>v.tpStage>=2).length,trailingExits:rows.filter(v=>v.closeReason==="trend_tp").length}}};}
+ function stop(account){const b=get(account);B.reconcile(b);if(b.cycle){B.cancel(b.cycle,"停止新开与补仓");if(!b.cycle.qty)B.settle(b,Date.now());}save();}
+ return{get,busy,publish,tick,stop,report,save,exposure:account=>B.exposure(get(account))};
+}
+module.exports={createRuntime};
