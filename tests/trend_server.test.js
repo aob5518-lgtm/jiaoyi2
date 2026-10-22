@@ -18,6 +18,28 @@ function setup(t,env={}){
 }
 test('趋势状态接口不可改写旧策略持仓',async t=>{const f=setup(t);vm.runInContext('stateMap.legacy.positionQty=2;stateMap.legacy.entryPrice=100',f.ctx);const r=await f.call('/api/trend-only');assert.equal(r.code,200);assert.equal(r.data.active,false);assert.equal(vm.runInContext('stateMap.legacy.positionQty',f.ctx),2);});
 test('未登录不能读取或确认 Live',async t=>{const f=setup(t);assert.equal((await f.call('/api/trend-only',undefined,false)).code,401);assert.equal((await f.call('/api/trend-only/confirm',{confirmLive:true},false)).code,401);});
+
+test('Short-Term authenticated API is isolated Shadow and configuration cannot enable Live',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
+ assert.equal((await f.call('/api/trend-only/short-term',undefined,false)).code,401);
+ const save=await f.call('/api/trend-only/short-term/config',{id:'legacy',config:{enabled:true,allowLive:true,entryModes:['momentum_breakout'],riskPerTrade:.0025}});assert.equal(save.code,200);assert.equal(save.data.config.allowLive,false);assert.equal(save.data.orderPermission,false);
+ const status=await f.call('/api/trend-only/short-term');assert.equal(status.code,200);assert.equal(status.data.strategyVersion,'short_term_v1');assert.equal(status.data.sampleType,'shadow');assert.equal(status.data.summary.trades,0);
+ const publicText=JSON.stringify((await f.call('/api/public/status',undefined,false)).data);assert.equal(publicText.includes('shortTermBooks'),false);assert.equal(publicText.includes('shortTermConfig'),false);
+});
+
+test('Short-Term occupied Shadow book prevents market changes through ordinary config',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
+ vm.runInContext('trendRuntime.get(config.accounts[0]).shortTermBooks={occupied:{position:{positionSize:1}}}',f.ctx);
+ const changed=await f.call('/api/config',{symbol:'BTC'});assert.equal(changed.code,400);assert.match(changed.data.error,/Shadow/);assert.equal(vm.runInContext('config.accounts[0].symbol',f.ctx),'ETH');
+ const blocked=await f.call('/api/trend-only/short-term/config',{id:'legacy',config:{enabled:false}});
+ // The independent endpoint must also check historical occupied books, not only the current hash.
+ assert.equal(blocked.code,400);
+});
+test('analysis time filters exclude undated legacy rows only when an explicit window is requested',async t=>{
+ const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
+ vm.runInContext(`const scopeForTime=v3Scope(TrendOnlyV3.normalizeConfig(config.accounts[0].trendOnlyConfig));stateMap.legacy.profitHistory=[{...scopeForTime,netPnl:2,netR:1,exitTime:Date.now()-1000},{...scopeForTime,netPnl:3,netR:1,exitTime:1000}]`,f.ctx);
+ const r=await f.call('/api/trend-only/analytics?from='+String(Date.now()-5000));assert.equal(r.data.summary.trades,1);assert.equal(r.data.summary.netPnl,2);assert.equal((await f.call('/api/trend-only/analytics?from=bad')).code,400);
+});
 test('启用趋势默认推荐 V2、Paper 并保存 10 倍配置',async t=>{const f=setup(t);const r=await f.call('/api/trend-only/config',{accountId:'legacy',config:{}});assert.equal(r.code,200,JSON.stringify(r));assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v2');assert.equal(vm.runInContext('config.accounts[0].leverage',f.ctx),10);assert.equal(vm.runInContext('config.accounts[0].tradeMode',f.ctx),'simulation');});
 test('Trend Only V1 继续可用并可一键升级到 V2',async t=>{const f=setup(t);assert.equal((await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v1',config:{}})).code,200);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v1');const before=vm.runInContext('({platform:config.accounts[0].platform,symbol:config.accounts[0].symbol,balance:config.accounts[0].simulationBalance,key:config.accounts[0].privateKey})',f.ctx);assert.equal((await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{version:'v2',leverage:10}})).code,200);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v2');assert.equal(vm.runInContext('config.accounts[0].strategyMode',f.ctx),'Trend Only V2');assert.equal(vm.runInContext('config.accounts[0].trendOnlyConfig.version',f.ctx),'v2');assert.equal(vm.runInContext('config.accounts[0].maxAdds',f.ctx),0);assert.equal(vm.runInContext('config.accounts[0].leverage',f.ctx),10);assert.deepEqual(vm.runInContext('({platform:config.accounts[0].platform,symbol:config.accounts[0].symbol,balance:config.accounts[0].simulationBalance,key:config.accounts[0].privateKey})',f.ctx),before);});
 test('V2 chopTransitionMax=52 可正常保存且不依赖旧 maxChop',async t=>{const f=setup(t);const r=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{chopTransitionMax:52,maxChopToTrade:1}});assert.equal(r.code,200,JSON.stringify(r.data));assert.equal(vm.runInContext('config.accounts[0].trendOnlyConfig.chopTransitionMax',f.ctx),52);assert.equal(vm.runInContext('Object.hasOwn(config.accounts[0].trendOnlyConfig,"maxChopToTrade")',f.ctx),false);});

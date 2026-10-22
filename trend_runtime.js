@@ -154,6 +154,11 @@ function createTrendRuntime(d) {
     };
     const indicators = s.indicators || { atr: null, adx: null, chop: null, trendDirection: "none", higherDirection: "none" };
     const execution = executionSnapshot(acc, st, weekendBlocked);
+    if(isV3(acc)&&s.signal?.signalTime){
+      const D=require("./strategy/trend_v3/decision");
+      D.recordDecision(s,D.buildDecision({account:acc,config,state:s,execution,previous:s.unifiedDecision}));
+      if(p&&!p.diagnostic)p.diagnostic=s.unifiedDecision;
+    }
     const executionEvaluation = { ...(s.executionEvaluation || {}) };
     if (["SYSTEM_ERROR", "RISK_LOCK", "POST_FILL_RISK_LOCK"].includes(execution.state)) executionEvaluation.risk = "BLOCK";
     if (["SYSTEM_ERROR", "RISK_LOCK", "POST_FILL_RISK_LOCK", "UNKNOWN_ORDER", "PENDING_ORDER", "ACCOUNT_CONFLICT", "OPEN_ORDER_BLOCK", "PLATFORM_UNSUPPORTED", "REENTRY_COOLDOWN", "WAIT_LIVE_CONFIRM", "MONITOR_STOPPED"].includes(execution.state)) executionEvaluation.execution = "BLOCK";
@@ -164,6 +169,9 @@ function createTrendRuntime(d) {
       signal,
       executionState: execution.state,
       executionReason: execution.reason,
+      unifiedDecision: isV3(acc)?s.unifiedDecision||null:null,
+      decisionStats24h: isV3(acc)?require("./strategy/trend_v3/decision").decisionStats(s.decisionJournal,T.scopeFor(config),24):null,
+      decisionStats72h: isV3(acc)?require("./strategy/trend_v3/decision").decisionStats(s.decisionJournal,T.scopeFor(config),72):null,
       effectiveDecisionState: execution.state,
       effectiveDecisionReason: execution.reason,
       indicators,
@@ -193,6 +201,7 @@ function createTrendRuntime(d) {
       candidateSetup: s.candidateSetup || null,
       portfolioRisk: s.portfolioRisk || null,
       analyticsScope: isV3(acc)?T.scopeFor(config):null,
+      shortTerm: isV3(acc)?shortTermView(acc):null,
       shadowComparison: isV3(acc) ? (s.shadowComparisons || []).at(-1) || null : null,
       shadowStats: isV3(acc) ? s.shadowStats || null : null,
       missedOpportunityStats: isV3(acc) ? s.missedOpportunityStats || null : null,
@@ -536,6 +545,33 @@ function createTrendRuntime(d) {
       return require("./strategy/trend_v3/shadow_books").shadowPortfolioSnapshot(T,{...acc,paper:true,trendOnlyConfig:c},entries,name,plan.side,Number(plan.initialEffectiveRiskU));
     });
   }
+  function shortTermView(acc){
+    const S=require("./strategy/short_term_v1/engine"),c=S.normalizeConfig(acc.shortTermConfig||{}),scope=S.scopeFor(c,acc),book=get(acc).shortTermBooks?.[scope.configHash];
+    return{enabled:c.enabled,...scope,sampleType:"shadow",orderPermission:false,allowLive:false,initialized:!!book,lastTickAt:book?.lastTickAt||null,equity:book?.equity??null,position:book?.position||null,lastDecision:book?.signals?.at(-1)||null,trades:book?.journal?.length??null};
+  }
+  async function advanceShortTerm(acc,st){
+    const S=require("./strategy/short_term_v1/engine"),c=S.normalizeConfig(acc.shortTermConfig||{}),s=get(acc);
+    if(!c.enabled)return;
+    const scope=S.scopeFor(c,acc);s.shortTermBooks||={};
+    const book=s.shortTermBooks[scope.configHash]||=S.initialState(Number(acc.simulationBalance||st.balance));
+    const sets=await Promise.all(["5m","15m"].map(tf=>d.candles(acc.symbol,tf,300,acc.platform)));
+    if(sets.some(x=>x.stale))throw Error("Short-Term行情过期");
+    const signal=S.analyze({entryCandles:sets[0].candles,backgroundCandles:sets[1].candles,now:Date.now(),account:acc,config:c,price:Number(st.currentPrice),source:sets[0].source||"unknown"});
+    let bounds={};try{bounds=acc.platform==="extended"?await d.shortTermConstraints?.(acc):await constraints(acc);}catch(error){signal.executionWarning="交易所规格不可用，禁止模拟新入场";}
+    bounds||={};
+    S.tick(book,signal,{account:{...acc,equity:st.balance,available:st.available},config:c,price:Number(st.currentPrice),constraints:bounds,monitorRunning:!!st.running,realPosition:s.position,realPending:s.pendingOrder,v3Candidate:s.preview,portfolioAllowed:plan=>{
+      if(!d.portfolioAccounts)return{allowed:false,reason:"组合风险覆盖不可用"};
+      const entries=[];
+      for(const e of d.portfolioAccounts()){
+        const real=get(e.account),sc=S.normalizeConfig(e.account.shortTermConfig||{}),virtual=real.shortTermBooks?.[S.scopeFor(sc,e.account).configHash];
+        entries.push({...e,state:real});
+        if(virtual)entries.push({account:e.account,equity:virtual.equity,state:{position:virtual.position,pendingOrder:virtual.pendingOrder}});
+      }
+      return portfolioSnapshot({...acc,paper:true},entries,plan.side,plan.initialEffectiveRiskU);
+    }});
+    S.updatePostHoc(book,sets[0].candles);
+    s.shortTermError="";
+  }
   async function tick(acc, st, action) {
     const T = engine(acc), s = get(acc), c = T.normalizeConfig(acc.trendOnlyConfig);
     let shadowEvaluated=false,priceRead=false;
@@ -625,6 +661,7 @@ function createTrendRuntime(d) {
             s.candidateSetup = T.buildCandidateSetup(account(acc, st), s.signal, i, c);
             if (c.shadowComparison) {
               const comparison = T.compareV2Shadow(acc.id, i, s.signal);
+              Object.assign(comparison,T.scopeFor(c));
               s.shadowComparisons ||= [];
               if (!s.shadowComparisons.some(item => item.time === comparison.time)) s.shadowComparisons.push(comparison);
               if (s.shadowComparisons.length > T.journalRetentionBars(c.entryTimeframe)) s.shadowComparisons.splice(0, s.shadowComparisons.length - T.journalRetentionBars(c.entryTimeframe));
@@ -693,6 +730,7 @@ function createTrendRuntime(d) {
           advanceIndependentShadows(acc,st,input);
         }catch(error){s.forwardTestError="shadow_book_market_data_unavailable";}
       }
+      if(isV3(acc)&&priceRead){try{await advanceShortTerm(acc,st);}catch(error){s.shortTermError=error.message;}}
       publish(acc, st); save();
     }
   }

@@ -43,7 +43,7 @@ test("negative protection exit labels and zero-profit PF reflect actual net resu
  const label=vm.runInNewContext(snippets.join('\n')+'\nhistoryReasonLabel');
  assert.equal(label({closeReason:'trend_tp',netPnl:-10}),'保护退出（净亏损）');
  assert.equal(label({closeReason:'trend_tp',netPnl:100}),'移动止盈/保护止盈');
- assert.match(html,/negative > 0 \? fmt\(positive \/ negative, 2\)/);
+ const M=require('../public/history-model');assert.equal(M.summary([{netPnl:-1}]).profitFactor,0);assert.equal(M.summary([]).profitFactor,null);
 });
 test("higher-quality triggered mode is not swallowed by pullback priority", () => {
   assert.equal(chooseEntry("long", { ...input, microHigh:101.5 }, c).selected.type, "breakout_entry");

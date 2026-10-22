@@ -99,7 +99,7 @@ test("portfolio includes pending reserves, uses shared equity once and fails clo
 test("all main HTML inline scripts parse and Forward workbench defaults to current revision",()=>{
  const html=fs.readFileSync(path.join(__dirname,"../public/index.html"),"utf8");
  for(const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);
- assert.match(html,/historyRevisionFilter.*当前修订/);assert.match(html,/Forward Test 策略诊断工作台/);assert.match(html,/strategyVersion=all&strategyRevision=all/);assert.match(html,/if\(includeAllVersions\)await loadAnalytics/);
+ assert.match(html,/historyRevisionFilter.*当前修订/);assert.match(html,/Forward Test 策略诊断工作台/);assert.match(html,/strategyVersion=all&strategyRevision=all/);assert.match(html,/if\(includeAllVersions&&currentTab==="analytics"\)await loadAnalytics/);
 });
 
 // Deterministic virtual fills isolate ledger lifecycle from market eligibility.

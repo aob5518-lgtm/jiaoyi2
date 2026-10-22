@@ -172,7 +172,7 @@ test("历史交易主表保持 9 列，详细复盘字段进入四区 Modal", ()
   const html = read("public/index.html");
   const head = html.match(/<table class="history-table">[\s\S]*?<thead>([\s\S]*?)<\/thead>/)[1];
   assert.equal((head.match(/<th>/g) || []).length, 9);
-  assert.match(head, /时间.*方向 \/ 入场模式.*开仓 → 平仓.*平仓原因.*持仓时长.*R 倍数.*净盈亏.*手续费.*详情/s);
+  assert.match(head, /时间.*方向.*策略 \/ 形态.*开仓 → 平仓.*净盈亏.*Net R.*持仓时间.*平仓原因.*详情/s);
   for (const field of ["币种","方向","入场模式","开仓价","平仓价","持仓时长","R 倍数","毛盈亏","手续费","净盈亏","入场 ATR","初始止损","最终止损","计划风险","实际风险","MAE","MFE","原始 closeReason"]) assert.match(html, new RegExp(field));
   assert.match(html, /A\. 交易结果.*B\. 风控.*C\. 行情表现.*D\. 审计信息/s);
   assert.match(html, /查看复盘/);
@@ -190,13 +190,13 @@ test("历史复盘兼容旧记录，并按 netPnl 统计盈亏和胜率", () => 
   const html = read("public/index.html");
   assert.match(html, /legacyRecord/); assert.match(html, /该交易产生于复盘字段上线之前，部分指标当时未采集/);
   assert.match(html, /const netPnlOf = item => Number\.isFinite\(Number\(item\.netPnl\)\)/);
-  assert.match(html, /wins = rows\.filter\(item => netPnlOf\(item\) > 0\)/);
+  const model=require('../public/history-model');assert.equal(model.summary([{netPnl:-1,grossPnl:10},{netPnl:1,grossPnl:-2}]).winRate,.5);
   assert.match(html, /总净盈亏/);
 });
 
 test("历史方向、入场和平仓 Badge 样式完整", () => {
   const html = read("public/index.html");
-  assert.match(html, /\.history-badge\.long/); assert.match(html, /\.history-badge\.short/); assert.match(html, /LONG \/ 多.*SHORT \/ 空/s);
+  assert.match(html, /\.history-badge\.long/); assert.match(html, /\.history-badge\.short/); assert.match(html, /LONG \/ 多/);assert.match(html,/SHORT \/ 空/);
   assert.match(html, /breakout_entry: "突破".*pullback_entry: "回踩".*continuation_entry: "延续"/s);
   assert.match(html, /hard_sl: "硬止损".*trend_reversal: "趋势反转退出".*trend_tp: "移动止盈\/保护止盈"/s);
 });

@@ -29,6 +29,15 @@
       "maxAdds": 0,
       "interval": 15000,
       "running": false,
+      "shortTermConfig": {
+        "enabled": true,
+        "allowLive": false,
+        "sampleType": "shadow",
+        "entryTimeframe": "5m",
+        "backgroundTimeframe": "15m",
+        "riskPerTrade": 0.0025,
+        "entryModes": ["momentum_breakout", "pullback_continuation", "range_reversal"]
+      },
       "trendOnlyConfig": {
         "version": "v3",
         "experimentId": "V3_STD_20261015_C",

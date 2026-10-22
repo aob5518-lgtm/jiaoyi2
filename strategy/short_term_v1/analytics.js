@@ -1,0 +1,11 @@
+"use strict";
+const {summary,number}=require("../../public/history-model");
+function metrics(rows,signals=[]){
+ const s=summary(rows),avg=key=>{const values=rows.map(v=>number(v[key])).filter(v=>v!==null);return{samples:values.length,value:values.length?values.reduce((a,b)=>a+b,0)/values.length:null};};
+ const candidates=signals.flatMap(v=>(v.candidates||[]).filter(c=>c.triggered).map(c=>({...c,decision:v.finalDecision}))),mature=candidates.filter(c=>c.postHocOutcomes?.[32]);
+ const dates=rows.filter(v=>Number.isFinite(Number(v.entryTime))).map(v=>new Date(Number(v.entryTime)).toISOString().slice(0,10));
+ let streak=0,max=0;for(const v of rows.slice().sort((a,b)=>a.exitTime-b.exitTime)){streak=number(v.netPnl)!==null&&v.netPnl<0?streak+1:0;max=Math.max(max,streak);}
+ return{trades:rows.length,actualPaperTrades:0,shadowTrades:rows.length,validNetSamples:s.samples,validRSamples:s.rSamples,netPnl:s.netPnl,winRate:s.winRate,expectancyR:s.expectancy,avgNetR:s.expectancy,profitFactor:s.profitFactor,maxDrawdown:rows.length?s.maxDrawdown:null,maxConsecutiveLoss:rows.length?max:null,avgCostR:avg("costR").value,feeDrag:avg("feeDrag"),slippageDrag:avg("slippageDrag"),fundingDrag:avg("fundingDrag"),hardStopRate:rows.length?rows.filter(v=>v.closeReason==="hard_sl").length/rows.length:null,holdingDurationMs:avg("holdingDurationMs").value,holdingDurationDistribution:{under15m:rows.filter(v=>v.holdingDurationMs<900000).length,under1h:rows.filter(v=>v.holdingDurationMs>=900000&&v.holdingDurationMs<3600000).length,over1h:rows.filter(v=>v.holdingDurationMs>=3600000).length},dailyTrades:Object.fromEntries([...new Set(dates)].map(day=>[day,dates.filter(d=>d===day).length])),postExitMFE:{bars8:avg("PostExitMFE_R_8"),bars16:avg("PostExitMFE_R_16"),bars32:avg("PostExitMFE_R_32")},missedSignals:{matureSamples:mature.length,missedTrendRate:mature.length?mature.filter(c=>c.postHocOutcomes[32].missedTrend).length/mature.length:null,postHocOnly:true},evaluation:s.rSamples? s.expectancy<0?"NEGATIVE_EXPECTANCY":"UNVALIDATED_SAMPLE":"INSUFFICIENT_DATA"};
+}
+function breakdown(rows,key){return Object.fromEntries([...new Set(rows.map(v=>v[key]||"unknown"))].map(value=>[value,metrics(rows.filter(v=>(v[key]||"unknown")===value))]));}
+module.exports={metrics,breakdown};

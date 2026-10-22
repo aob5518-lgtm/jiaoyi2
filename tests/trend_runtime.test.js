@@ -19,6 +19,12 @@ function fixture(t,live=false){
 }
 function v2Position(){return{side:'long',entryPrice:100,initialStopLossPrice:98,currentStopLossPrice:98,positionSize:1,positionValue:100,leverage:10,config:V2.normalizeConfig({allowWeekendOpen:true}),signalTime:Date.now()-900000,highestPriceSinceEntry:100,lowestPriceSinceEntry:100};}
 
+test('V3 actual runtime invokes isolated short-term companion and restores it without real orders',async t=>{
+ const f=fixture(t),S=require('../strategy/short_term_v1/engine');f.acc.strategyType='trend_only_v3';f.acc.trendOnlyConfig=V3.normalizeConfig({allowWeekendOpen:true});await f.r.tick(f.acc,f.st);
+ const hash=S.scopeFor(S.normalizeConfig(),f.acc).configHash,book=f.r.get(f.acc).shortTermBooks[hash];assert.ok(book);assert.equal(book.orderPermission,false);book.equity=9990;
+ await f.r.tick(f.acc,f.st);const restarted=createTrendRuntime(f.d);assert.equal(restarted.get(f.acc).shortTermBooks[hash].equity,9990);assert.equal(f.orders(),0);assert.equal(f.st.trendOnly.shortTerm.sampleType,'shadow');
+});
+
 test('V3 independent Shadow books are saved to runtime JSON and restored on restart',async t=>{
  const f=fixture(t);f.acc.strategyType='trend_only_v3';f.acc.trendOnlyConfig=V3.normalizeConfig({allowWeekendOpen:true});
  await f.r.tick(f.acc,f.st);

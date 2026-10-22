@@ -43,9 +43,19 @@ function reject(reason, key, executionEvaluation, extra = {}) {
 
 function tryOpenTrendOnlyPosition(account, signal, input) {
   const config = normalizeConfig(account.trendOnlyConfig), state = account.trendOnlyState || {}, executionEvaluation = evaluation(signal);
-  if (signal.entryPermission !== "allowed" || !signal.tradeDirection) return reject((signal.blockers || []).join("；") || "当前没有可执行的 V3 setup", "setup", executionEvaluation);
+  if (signal.entryPermission !== "allowed" || !signal.tradeDirection) {
+    const reason=(signal.blockers||[]).join("；")||"当前没有可执行的 V3 setup";
+    if(String(signal.entryPermission).startsWith("wait_"))return{allowed:false,reason,executionEvaluation:{...executionEvaluation,setup:"WAITING",execution:"WAITING",blocker:reason}};
+    return reject(reason,"setup",executionEvaluation);
+  }
   if (!account.paper) return reject("Trend Only V3 当前仅开放 Paper；Live 须完成 Forward Test 后另行启用。", "execution", executionEvaluation);
   if (state.riskLock) return reject(`risk_lock：${state.riskLockReason || "安全锁定"}`, "risk", executionEvaluation);
+  const now=Number(input.now||Date.now()),today=new Date(now).toISOString().slice(0,10);
+  if(state.pendingOrder)return reject("pendingOrder：订单尚未确认","execution",executionEvaluation);
+  if(state.position)return reject("当前已有仓位，禁止重复开仓","execution",executionEvaluation);
+  if(now<Number(state.pauseUntil||0))return reject("风控暂停：连续亏损冷却中","risk",executionEvaluation);
+  if(state.dailyDate===today&&Number(state.dayStartEquity)>0&&Number(state.dailyLoss)>=Number(state.dayStartEquity)*config.maxDailyLossRatio)return reject("风控暂停：日亏损达到上限","risk",executionEvaluation);
+  if(V1.isWeekendBlocked(now,config)||V1.weekendProtection(now,config))return reject("周末过滤：只管理已有仓位，禁止新开仓","execution",executionEvaluation);
   const reentry = evaluateReentry(state, signal, { ...config, entryIntervalMs: V1.INTERVALS[config.entryTimeframe] });
   if (!reentry.allowed) return reject(reentry.reason, "execution", executionEvaluation, { setupState: reentry.state });
   const trendId = reentry.trendId;

@@ -1,5 +1,11 @@
 # jiaoyi2
 
+## V3 + Short-Term 双引擎研究
+
+保留 V3 原实验 `V3_STD_20261015_C` 与 `V3_20261015_FORWARD_PORTFOLIO`，新增独立 `short_term_v1` Shadow 伴随引擎：5m 信号、15m 背景，动量突破/短线回踩/区间反转独立评分和账本。默认 0.25% 研究风险，强制无真实下单权限；不把 Shadow 理论记录混成 V3 Paper 成绩。
+
+新增统一等待/阻断/成交诊断与 24/72 小时阶段漏斗，历史页四项核心统计、分页、手机卡片和独立策略分析。具体机制、安全边界与 API 见 [双引擎说明](docs/DUAL_ENGINE.md)。没有降低 V3 的 CHOP/ADX/Grade/Stop/Trailing 参数，也不自动部署或开启 Live。
+
 ## Forward Test 复盘工作台
 
 当前实验为 `V3_STD_20261015_C`，修订为 `V3_20261015_FORWARD_PORTFOLIO`（唯一运行时来源：`strategy/trend_v3/scope.js`）。默认统计同时匹配策略版本、实验、修订及当前配置哈希；旧成交保留原始归属，不回填为新实验。新增入场质量、止损后表现、成本、UTC 周末对照、跨场所基差及共享资金风险诊断。指标定义、成熟样本分母和 Shadow 局限见 [Forward Test 说明](docs/FORWARD_TEST.md)。

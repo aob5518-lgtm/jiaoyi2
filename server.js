@@ -720,6 +720,13 @@ const trendRuntime = createTrendRuntime({
   directory: __dirname, isPaper: isSimulationAccount, log: addLog, history: addProfitHistory,
   portfolioAccounts: () => config.accounts.filter(a=>getStrategyType(a)==="trend_only_v3").map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:stateMap[a.id]?.balance})),
   referencePrice: a => getBinanceFuturesPrice(a.symbol),
+  shortTermConstraints: async a=>{
+    if(a.platform!=="extended")return null;
+    const market=await getExtendedMarkets(a.symbol),tc=market.tradingConfig||{},price=Number(market.marketStats?.markPrice||market.marketStats?.lastPrice);
+    const qtyStep=Number(tc.minOrderSizeChange),minQty=Number(tc.minOrderSize),minNotional=Number(tc.minOrderValue)||minQty*price;
+    if(!(qtyStep>0&&minQty>0&&minNotional>0))throw Error("Extended规格数据不足");
+    return{qtyStep,minQty,minNotional,maxQty:Number(tc.maxOrderSize)||null};
+  },
   conflictingAccount: acc => !isSimulationAccount(acc) && config.accounts.some(other => other.id !== acc.id && !isSimulationAccount(other) && other.platform === acc.platform && other.symbol === acc.symbol &&
     (acc.platform === "hyperliquid" ? String(other.address).toLowerCase() === String(acc.address).toLowerCase() : other.apiKey === acc.apiKey) &&
     (stateMap[other.id]?.running || Number(stateMap[other.id]?.positionQty) > 0 || (isTrendOnly(other) && trendRuntime.busy(other)))),
@@ -1710,6 +1717,7 @@ function validateAccountConfigPayload(next) {
     next.strategyType = modes[next.strategyMode];
   }
   if (next.trendOnlyConfig !== undefined) next.trendOnlyConfig = trendEngine(next.strategyType || next.strategyMode).normalizeConfig(next.trendOnlyConfig);
+  if(next.shortTermConfig!==undefined)next.shortTermConfig=require("./strategy/short_term_v1/engine").normalizeConfig(next.shortTermConfig);
   if (["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(next.strategyType)) {
     next.strategyMode = next.strategyType === "trend_only_v3" ? "Trend Only V3" : next.strategyType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
     if (next.trendOnlyConfig) next.leverage = next.trendOnlyConfig.leverage;
@@ -4334,6 +4342,7 @@ function sanitizeAccountForDashboard(acc = {}, st = {}) {
     interval: acc.interval,
     smartStrategy: acc.smartStrategy,
     trendOnlyConfig: strategyType === "trend_only_v3" ? TrendOnlyV3.normalizeConfig(acc.trendOnlyConfig || {}) : acc.trendOnlyConfig,
+    shortTermConfig: strategyType === "trend_only_v3" ? require("./strategy/short_term_v1/engine").normalizeConfig(acc.shortTermConfig||{}) : null,
     hasPrivateKey: hasConfiguredSecret(acc.privateKey),
     hasApiKey: hasConfiguredSecret(acc.apiKey),
     hasApiSecret: hasConfiguredSecret(acc.apiSecret),
@@ -4790,10 +4799,36 @@ const server = http.createServer((req, res) => {
   if (pathname.startsWith("/api/trend-only")) {
     if (!isAuthenticated(req)) return jsonRes(res, 401, { ok: false, error: "请先登录" });
     const acc = getCurrentAccount(), st = stateMap[acc.id];
+    if(pathname==="/api/trend-only/short-term"&&req.method==="GET"){
+      const target=getAccountById(parsed.query.id||acc.id);
+      if(!target)return jsonRes(res,404,{ok:false,error:"账户不存在"});
+      const S=require("./strategy/short_term_v1/engine"),c=S.normalizeConfig(target.shortTermConfig||{}),scope=S.scopeFor(c,target);
+      const hash=String(parsed.query.configHash||scope.configHash),book=trendRuntime.get(target).shortTermBooks?.[hash];
+      const from=parsed.query.from?Number(parsed.query.from):0,to=parsed.query.to?Number(parsed.query.to):Date.now();
+      if(!Number.isFinite(from)||!Number.isFinite(to)||from>to)return jsonRes(res,400,{ok:false,error:"时间范围无效"});
+      const scopeMatch=(!parsed.query.experimentId||parsed.query.experimentId===scope.experimentId)&&(!parsed.query.strategyRevision||parsed.query.strategyRevision===scope.strategyRevision)&&(!parsed.query.sampleType||parsed.query.sampleType==="shadow");
+      const items=(book?.journal||[]).filter(v=>scopeMatch&&v.exitTime>=from&&v.exitTime<=to),signals=(book?.signals||[]).filter(v=>scopeMatch&&v.timestamp>=from&&v.timestamp<=to);
+      const A=require("./strategy/short_term_v1/analytics"),details=(rows,source=signals)=>({...A.metrics(rows,source),byMarket:A.breakdown(rows,"marketRegime"),byAccount:A.breakdown(rows,"accountId"),byPlatform:A.breakdown(rows,"platform"),bySymbol:A.breakdown(rows,"symbol")});
+      return jsonRes(res,200,{ok:true,...scope,configHash:hash,config:c,sampleType:"shadow",allowLive:false,orderPermission:false,initialized:!!book,position:book?.position||null,summary:details(items),items,signals:signals.slice(-50),signalCount:signals.length,setups:Object.fromEntries(S.SETUPS.map(type=>[type,{...details(items.filter(v=>v.entryMode===type),signals.map(s=>({...s,candidates:(s.candidates||[]).filter(c=>c.type===type)}))),candidates:signals.filter(s=>s.candidates.some(v=>v.type===type)).length,triggered:signals.filter(s=>s.candidates.some(v=>v.type===type&&v.triggered)).length,scorePassed:signals.filter(s=>s.candidates.some(v=>v.type===type&&v.grade)).length}])),dataLimitations:["独立Shadow，不是真实Paper成交；估算费率和资金费预留","后验退出表现与错过机会需完整未来窗口，缺失时无记录"],lastTickAt:book?.lastTickAt||null,error:trendRuntime.get(target).shortTermError||null});
+    }
+    if(pathname==="/api/trend-only/short-term/config"&&req.method==="POST"){
+      let body="";req.on("data",chunk=>body+=chunk);req.on("end",()=>{try{
+        const input=JSON.parse(body||"{}"),cfg=loadConfig(),target=cfg.accounts.find(a=>a.id===(input.id||acc.id));
+        if(!target||getStrategyType(target)!=="trend_only_v3")throw Error("仅V3账户可配置短周期Shadow");
+        const S=require("./strategy/short_term_v1/engine"),old=S.scopeFor(S.normalizeConfig(target.shortTermConfig||{}),target),book=trendRuntime.get(target).shortTermBooks?.[old.configHash];
+        if(book?.position||book?.pendingOrder||Object.values(trendRuntime.get(target).shortTermBooks||{}).some(b=>b.position||b.pendingOrder))throw Error("短周期Shadow有仓位或待确认状态，暂不能更改实验配置");
+        target.shortTermConfig=S.normalizeConfig(input.config||{});saveConfig(cfg);config=cfg;
+        return jsonRes(res,200,{ok:true,config:target.shortTermConfig,orderPermission:false});
+      }catch(error){return jsonRes(res,400,{ok:false,error:error.message});}});return;
+    }
     if (req.method === "GET" && pathname === "/api/trend-only/analytics") {
       const target = getAccountById(parsed.query.id || acc.id);
       if (!target) return jsonRes(res, 404, { ok: false, error: "账户不存在" });
-      const targetState = stateMap[target.id], normalized = (targetState?.profitHistory || []).map(item => normalizeProfitVoucher(item, target.id));
+      const from=parsed.query.from?Number(parsed.query.from):0,to=parsed.query.to?Number(parsed.query.to):Date.now();
+      if(!Number.isFinite(from)||!Number.isFinite(to)||from>to)return jsonRes(res,400,{ok:false,error:"时间范围无效"});
+      const windowMatch=v=>{const raw=v.exitTime||v.time,numeric=Number(raw),timestamp=Number.isFinite(numeric)?numeric:Date.parse(raw);return(!parsed.query.from&&!parsed.query.to||timestamp>=from&&timestamp<=to)&&(!parsed.query.sampleType||parsed.query.sampleType==="paper");};
+      const signalWindow=v=>Number(v.time||v.timestamp)>=from&&Number(v.time||v.timestamp)<=to&&(!parsed.query.sampleType||parsed.query.sampleType==="paper");
+      const targetState = stateMap[target.id], normalized = (targetState?.profitHistory || []).map(item => normalizeProfitVoucher(item, target.id)).filter(windowMatch);
       const normalizedConfig = TrendOnlyV3.normalizeConfig(target.trendOnlyConfig || {});
       const currentHash = v3Scope(normalizedConfig).configHash;
       const analytics = buildStrategyAnalytics(normalized, {
@@ -4801,11 +4836,16 @@ const server = http.createServer((req, res) => {
         strategyRevision: String(parsed.query.strategyRevision || normalizedConfig.strategyRevision),
         experimentId: String(parsed.query.experimentId || normalizedConfig.experimentId),
         configHash: String(parsed.query.configHash || currentHash)
-      }, trendRuntime.get(target).signalJournal || []);
-      const missed=(trendRuntime.get(target).missedOpportunityJournal||[]).filter(v=>v3Matches(v,analytics.forward.scope)&&v.outcomes?.[32]);
+      }, (trendRuntime.get(target).signalJournal || []).filter(signalWindow));
+      const comparisons=(trendRuntime.get(target).shadowComparisons||[]).filter(v=>v3Matches(v,analytics.forward.scope)&&signalWindow(v));
+      analytics.v2Comparison={total:comparisons.length,v2Only:comparisons.filter(v=>v.v2Decision==="allowed"&&v.v3Decision!=="allowed").length,v3Only:comparisons.filter(v=>v.v3Decision==="allowed"&&v.v2Decision!=="allowed").length,both:comparisons.filter(v=>v.v2Decision==="allowed"&&v.v3Decision==="allowed").length};
+      analytics.decisions24h=require("./strategy/trend_v3/decision").decisionStats((trendRuntime.get(target).decisionJournal||[]).filter(signalWindow),analytics.forward.scope,24);
+      analytics.decisions72h=require("./strategy/trend_v3/decision").decisionStats((trendRuntime.get(target).decisionJournal||[]).filter(signalWindow),analytics.forward.scope,72);
+      const missed=(trendRuntime.get(target).missedOpportunityJournal||[]).filter(v=>v3Matches(v,analytics.forward.scope)&&Number(v.signalTime)>=from&&Number(v.signalTime)<=to&&v.outcomes?.[32]);
       analytics.forward.missed={mature:missed.length,rate:missed.length?missed.filter(v=>v.outcomes[32].classification==="MISSED_TREND").length/missed.length:null,overlappingBarsNotIndependentTrades:true};
       const exactCurrent=Object.entries(v3Scope(normalizedConfig)).every(([k,v])=>analytics.forward.scope[k]===v);
-      const shadowCohort=exactCurrent?trendRuntime.get(target).shadowBooks?.[currentHash]:null;
+      const rawCohort=exactCurrent?trendRuntime.get(target).shadowBooks?.[currentHash]:null;
+      const shadowCohort=rawCohort?{...rawCohort,books:Object.fromEntries(Object.entries(rawCohort.books).map(([name,b])=>[name,{...b,state:{...b.state,journal:b.state.journal.filter(v=>Number(v.exitTime)>=from&&Number(v.exitTime)<=to)}}]))}:null;
       analytics.forward.independentShadows=require("./strategy/trend_v3/shadow_books").shadowSummary(shadowCohort,normalized.filter(v=>v3Matches(v,analytics.forward.scope)),require("./strategy/trend_v3/analytics").summarizeRows);
       const portfolios=config.accounts.filter(a=>getStrategyType(a)==="trend_only_v3").map(a=>{const scope=v3Scope(TrendOnlyV3.normalizeConfig(a.trendOnlyConfig||{})),all=(stateMap[a.id]?.profitHistory||[]).map(v=>normalizeProfitVoucher(v,a.id));return{accountId:a.id,symbol:a.symbol,scope,...buildStrategyAnalytics(all,scope).summary,modes:buildStrategyAnalytics(all,scope).modes};});
       const entries=config.accounts.filter(a=>getStrategyType(a)==="trend_only_v3").map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:stateMap[a.id]?.balance,state:trendRuntime.get(a)}));
@@ -5042,6 +5082,10 @@ const server = http.createServer((req, res) => {
 
         const current = cfg.accounts[idx];
         const currentState = stateMap[current.id];
+        if(next.shortTermConfig||next.symbol&&next.symbol!==current.symbol||next.platform&&next.platform!==current.platform){
+          const S=require("./strategy/short_term_v1/engine");
+          if(S.scopeFor(next.shortTermConfig||current.shortTermConfig,{...current,...next}).configHash!==S.scopeFor(S.normalizeConfig(current.shortTermConfig||{}),current).configHash&&Object.values(trendRuntime.get(current).shortTermBooks||{}).some(b=>b.position||b.pendingOrder))throw Error("短周期Shadow仍有仓位或待确认状态，不能切换实验配置或标的");
+        }
         for (const key of ["privateKey", "apiKey", "apiSecret", "starkPrivateKey", "publicKey", "vault"]) {
           if (next[key] === undefined || next[key] === null || String(next[key]).trim() === "") {
             delete next[key];
