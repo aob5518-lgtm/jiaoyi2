@@ -55,10 +55,7 @@ test("P2 history scope, sample, dates and CSV use the same filtered rows",()=>{
 test("P2 empty/legacy history does not invent R, fees or risk values",()=>{
  const s=M.summary([]);assert.equal(s.netPnl,null);assert.equal(s.winRate,null);assert.equal(s.profitFactor,null);assert.equal(s.maxDrawdown,null);assert.equal(M.r({netR:null}),null);assert.equal(M.summary([{pnl:-5},{pnl:10}]).netPnl,5);
 });
-test("P2 history is structurally separated from analytics and supports pagination/mobile cards",()=>{
- const fs=require('fs'),path=require('path'),html=fs.readFileSync(path.join(__dirname,'../public/index.html'),'utf8');const history=html.slice(html.indexOf('id="tab-history"'),html.indexOf('id="tab-analytics"'));
- assert.ok(!history.includes('id="forwardWorkbench"'));assert.ok(history.includes('historyCoreStats'));assert.ok(history.includes('更多统计'));assert.ok(history.includes('historyAdvanced'));assert.ok(html.includes('const size=50'));assert.ok(html.includes('historyMobileCards'));assert.ok(html.includes('grid-template-columns:repeat(2,minmax(0,1fr))'));assert.ok(html.includes('无记录'));
-});
+test("P2 history is structurally separated from analytics and supports pagination/mobile cards",()=>{const fs=require("fs"),path=require("path"),html=fs.readFileSync(path.join(__dirname,"../public/index.html"),"utf8"),history=html.slice(html.indexOf('id="page-history"'),html.indexOf('id="page-analysis"'));assert.ok(!history.includes('id="analysisContent"'));assert.ok(history.includes("historyMetrics"));assert.ok(history.includes("高级范围筛选"));assert.ok(history.includes("historyMobile"));assert.ok(history.includes("historyNext"));assert.ok(html.includes("/terminal/history.js"));});
 test("P3 V3 daily loss, cooldown and pending orders are enforced by actual plan, not only UI",()=>{
  const config=V3.normalizeConfig({allowWeekendOpen:true}),base={equity:10000,paper:true,trendOnlyConfig:config};
  for(const state of [{pauseUntil:now+1000},{pendingOrder:{}},{position:{}},{dailyDate:new Date(now).toISOString().slice(0,10),dayStartEquity:10000,dailyLoss:10000}])assert.equal(V3.tryOpenTrendOnlyPosition({...base,trendOnlyState:state},{entryPermission:"allowed",tradeDirection:"long"},{now}).allowed,false);

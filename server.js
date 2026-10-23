@@ -10,12 +10,13 @@ const { buildStrategyAnalytics } = require("./strategy/trend_v3/analytics");
 const { scopeFor: v3Scope, matches: v3Matches } = require("./strategy/trend_v3/scope");
 const { enrich: enrichV3Voucher } = require("./strategy/trend_v3/forward_analytics");
 const { createTrendRuntime } = require("./trend_runtime");
+const TerminalPolicy=require("./terminal/policy");
 const Compound=require("./strategy/compound_4h/config");
 const isCompound=account=>getStrategyType(account)===Compound.ID;
 const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2", "trend_only_v3", "compound_4h_v1"]);
 function getStrategyType(acc = {}) {
   const explicit = String(acc?.strategyType || "").trim();
-  if (explicit) return STRATEGY_TYPES.has(explicit) ? explicit : "classic";
+  if (explicit) return explicit; // Unknown identifiers must never select ClassicDCA.
   const legacyMode = String(acc?.strategyMode || "").trim();
   if (legacyMode === "Trend Only V1") return "trend_only_v1";
   if (legacyMode === "Trend Only V2") return "trend_only_v2";
@@ -25,6 +26,7 @@ function getStrategyType(acc = {}) {
 }
 function getStrategyLabel(acc = {}) {
   const type = getStrategyType(acc);
+  if(!STRATEGY_TYPES.has(type))return "不支持的策略（已限制交易）";
   if(type===Compound.ID)return "4H Compound Reversal V1 · Paper";
   if (type === "trend_only_v1") return "Trend Only V1";
   if (type === "trend_only_v2") return "Trend Only V2（趋势过滤 + 回踩入场 + 延续入场）";
@@ -34,6 +36,7 @@ function getStrategyLabel(acc = {}) {
 }
 function getStrategyMode(acc = {}) {
   const type = getStrategyType(acc);
+  if(!STRATEGY_TYPES.has(type))return "UNSUPPORTED_STRATEGY";
   if(type===Compound.ID)return "4H Compound Reversal V1";
   return type === "trend_only_v3" ? "Trend Only V3" : type === "trend_only_v2" ? "Trend Only V2" : type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
 }
@@ -722,6 +725,7 @@ let simulationOrdersMap = loadSimulationOrdersMap();
 let smartRuntimeMap = loadSmartRuntimeMap();
 const trendRuntime = createTrendRuntime({
   directory: __dirname, isPaper: isSimulationAccount, log: addLog, history: addProfitHistory,
+  entryRestricted: acc=>TerminalPolicy.restricted(acc),
   portfolioAccounts: () => config.accounts.filter(a=>getStrategyType(a)==="trend_only_v3"||isCompound(a)).map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:stateMap[a.id]?.balance,...(isCompound(a)?{state:compoundRuntime.exposure(a)}:{})})),
   referencePrice: a => getBinanceFuturesPrice(a.symbol),
   shortTermConstraints: async a=>{
@@ -749,6 +753,19 @@ const compoundRuntime=require("./strategy/compound_4h/runtime").createRuntime({d
   const entries=config.accounts.map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:stateMap[a.id]?.balance,state:isCompound(a)?a.id===target.id?{}:compoundRuntime.exposure(a):isTrendOnly(a)?trendRuntime.get(a):{}}));
   return require("./strategy/trend_v3/portfolio").snapshot({...target,paper:true},entries,side,risk);
  }});
+async function verifyLegacyLiveFlat(a){
+  try{
+    if(a.platform==="hyperliquid"){
+      const [account,orders]=await Promise.all([getHyperAccount(a.address,a.symbol),fetchJsonWithRetry("https://api.hyperliquid.xyz/info",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"openOrders",user:a.address})},"迁移只读挂单核验",0,10000)]);
+      if(account.currentPos||!Array.isArray(orders)||orders.length)throw Error("有仓位或挂单");
+    }else if(a.platform==="binance"){
+      const account=await getBinanceAccount(a),query="timestamp="+Date.now(),signature=sign(query,a.apiSecret),r=await fetch("https://fapi.binance.com/fapi/v1/openOrders?"+query+"&signature="+signature,{headers:{"X-MBX-APIKEY":a.apiKey},signal:AbortSignal.timeout(10000)}),orders=await r.json();
+      if(!r.ok||!Array.isArray(orders)||orders.length||account.positions.some(p=>Number(p.positionAmt)!==0))throw Error("有仓位或挂单");
+    }else if(a.platform==="extended"){
+      const [account,orders]=await Promise.all([getExtendedAccount(a),getExtendedOpenOrders(a)]);if(account.currentPos||!Array.isArray(orders)||orders.length)throw Error("有仓位或挂单");
+    }else throw Error("平台不支持核验");
+  }catch(error){throw Error("无法确认Live原生持仓和挂单均为空，禁止迁移；请在交易所完成核对后重试");}
+}
 let stateMap = {};
 let historyRevision = 0;
 const historyWriter = createDebouncedAtomicWriter(HISTORY_PATH, () => historyMap, "profit history");
@@ -949,6 +966,7 @@ function normalizeDisplayOrderId(value) {
 }
 
 function buildSimulationOrder({ acc, side, size, price, reduceOnly }) {
+  TerminalPolicy.assertEntry(acc,reduceOnly);
   const id = "AGT-" + Date.now() + "-" + crypto.randomBytes(4).toString("hex");
   const order = {
     price: Number(price),
@@ -1090,6 +1108,7 @@ function normalizeExistingSimulationDefaults() {
   let changed = false;
 
   for (const acc of config.accounts || []) {
+    if(isCompound(acc)||!STRATEGY_TYPES.has(getStrategyType(acc)))continue; // No irrelevant V1 defaults or unknown-strategy migration.
     const migratedType = getStrategyType(acc);
     if (acc.strategyType !== migratedType) {
       acc.strategyType = migratedType;
@@ -1958,6 +1977,7 @@ async function placeHyperliquidOrder({
   clientOrderId
 }) {
   const { asset, meta } = await getHlAssetMeta(symbol);
+  TerminalPolicy.assertEntry(account,reduceOnly);
   const exchange = createHlExchangeClient(account.privateKey);
 
   const finalPrice = price || await getExecutablePrice(symbol, side, slippageBps);
@@ -2244,6 +2264,7 @@ async function getBinanceAccount(account) {
 }
 
 async function placeBinanceOrder({ account, side, qty, reduceOnly = false }) {
+  TerminalPolicy.assertEntry(account,reduceOnly);
   const timestamp = Date.now();
   const orderSide = side === "buy" ? "BUY" : "SELL";
   const positionSide = account.side === "long" ? "LONG" : "SHORT";
@@ -2433,6 +2454,7 @@ async function placeExtendedOrder({
   reduceOnly = false
 }) {
   if (!account.apiKey) throw new Error("Extended 缺少 apiKey");
+  TerminalPolicy.assertEntry(account,reduceOnly);
   if (!account.starkPrivateKey) throw new Error("Extended 缺少 starkPrivateKey");
   if (!account.publicKey) throw new Error("Extended 缺少 publicKey");
   if (account.vault === undefined || account.vault === null || account.vault === "") {
@@ -3093,6 +3115,7 @@ async function closeSmartPosition(acc, st, reason, closeSignalTime = 0) {
 }
 
 async function tickSmartStrategy(acc, st) {
+  if(TerminalPolicy.restricted(acc)&&Number(st.positionQty)<=0){st.lastAction="LEGACY_RESTRICTED：只管理已有仓位";return;}
   refreshSmartDailyRisk(st, acc);
   const decision = await evaluateSmartAccount(acc, st);
   const smart = decision.config;
@@ -3270,7 +3293,7 @@ async function tickSmartStrategy(acc, st) {
     return;
   }
 
-  if (st.addCount >= smart.maxAdds || !decision.addAllowed) {
+  if (TerminalPolicy.restricted(acc)||!st.running||st.addCount >= smart.maxAdds || !decision.addAllowed) {
     st.lastAction = `智能策略持仓管理，主动评分 ${decision.activeScore}`;
     return;
   }
@@ -3330,6 +3353,7 @@ async function tickSmartStrategy(acc, st) {
 async function tickAccount(acc) {
   const st = stateMap[acc.id];
   if (!st) return;
+  if(st.terminalMutating)return;
   if (st.tickRunning) return;
   const activeStrategyType = getStrategyType(acc);
   const tradeLock = activeStrategyType !== "classic" ? acquireAccountTradeLock(acc.id) : null;
@@ -3340,6 +3364,7 @@ async function tickAccount(acc) {
   try {
     // 每轮只清除“当前异常”；lastError 保留最近一次错误供排查。
     st.activeError = "";
+    if(!STRATEGY_TYPES.has(activeStrategyType)){st.lastAction="UNSUPPORTED_STRATEGY：禁止交易，请核对配置";return;}
     if(isCompound(acc)){await compoundRuntime.tick(acc,st);return;}
     if (["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(activeStrategyType)) { await trendRuntime.tick(acc, st); return; }
     st.symbol = acc.symbol;
@@ -3531,7 +3556,7 @@ async function tickAccount(acc) {
       return;
     }
 
-    if (!st.running) {
+    if (!st.running&&!(TerminalPolicy.LEGACY.has(activeStrategyType)&&Number(st.positionQty)>0)) {
       if (isSmartStrategy(acc)) updateSmartPositionMetrics(acc, st);
       else updateDerivedTargets(st, acc);
       return;
@@ -3543,6 +3568,7 @@ async function tickAccount(acc) {
     }
 
     if (st.positionQty === 0) {
+      if(TerminalPolicy.restricted(acc)||!st.running){st.lastAction="LEGACY_RESTRICTED：禁止新开仓";return;}
       const openCooldownMs = Math.max(30000, Number(acc.interval || 3000) * 3);
       if (Date.now() - (st.lastOrderTs || 0) < openCooldownMs) {
         st.lastAction = "刚下过开仓单，等待交易所同步";
@@ -3943,7 +3969,7 @@ async function tickAccount(acc) {
 
     let shouldAdd = false;
 
-    if (st.positionQty > 0 && st.addCount < acc.maxAdds) {
+    if (!TerminalPolicy.restricted(acc)&&st.running&&st.positionQty > 0 && st.addCount < acc.maxAdds) {
       const basePrice = st.lastActionPrice > 0 ? st.lastActionPrice : st.entryPrice;
 
       if (acc.side === "long") {
@@ -4780,10 +4806,15 @@ const server = http.createServer((req, res) => {
   const needsAuthPage =
     pathname === "/" ||
     pathname === "/index.html" ||
-    pathname === "/mobile.html";
+    pathname === "/mobile.html" || pathname === "/compound.html";
 
   if (needsAuthPage && !isAuthenticated(req)) {
     return redirect(res, `/login.html?next=${encodeURIComponent(pathname === "/index.html" ? "/" : pathname)}`);
+  }
+  if(pathname==="/compound.html"||pathname==="/mobile.html"){
+    const id=String(parsed.query.id||""),valid=id&&getAccountById(id);
+    const tab=pathname==="/compound.html"?"strategies":"overview";
+    return redirect(res,valid?`/?account=${encodeURIComponent(id)}#${tab}`:`/#${tab}`);
   }
 
   const protectedApiPrefixes = [
@@ -4812,6 +4843,10 @@ const server = http.createServer((req, res) => {
 
   if (protectedApiPrefixes.includes(pathname) && !isAuthenticated(req)) {
     return jsonRes(res, 401, { ok: false, error: "未登录或登录已过期" });
+  }
+  if(pathname.startsWith("/api/v4/")){
+    if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
+    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
   }
 
   if(pathname.startsWith("/api/compound")){
@@ -4916,10 +4951,12 @@ const server = http.createServer((req, res) => {
         if (!lock) throw new Error("账户交易锁繁忙");
         st.tickRunning = true;
         if (pathname === "/api/trend-only/config") {
+          if(data.strategyType!==undefined&&!["trend_only_v1","trend_only_v2","trend_only_v3"].includes(data.strategyType))throw Error("策略标识不支持");
           if (st.running || Number(st.positionQty) > 0 || trendRuntime.busy(acc)) throw new Error("请先停止开仓，并平仓或核对未确认订单后修改配置");
           const cfg = loadConfig(), target = cfg.accounts.find(a => a.id === acc.id);
           if(isCompound(target))throw Error("4H独立账本不可切换到趋势账户，请新建账户");
           const requestedType = ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(data.strategyType) ? data.strategyType : (isTrendOnly(acc) ? getStrategyType(acc) : "trend_only_v2");
+          const migration=await require("./terminal/migration-audit").prepare({directory:__dirname,account:acc,st,runtime:trendRuntime.get(acc),orders:simulationOrdersMap[acc.id]||[],nextType:requestedType,verifyLiveFlat:verifyLegacyLiveFlat});
           target.trendOnlyConfig = trendEngine(requestedType).normalizeConfig(data.config);
           target.strategyType = requestedType; target.strategyMode = requestedType === "trend_only_v3" ? "Trend Only V3" : requestedType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
           target.leverage = target.trendOnlyConfig.leverage;
@@ -4932,6 +4969,7 @@ const server = http.createServer((req, res) => {
           saveConfig(cfg);
           if (switchedVersion) trendRuntime.resetForStrategySwitch(acc, requestedType);
           config = cfg; trendRuntime.clearApproval(acc.id);
+          require("./terminal/migration-audit").complete(migration,trendRuntime.get(config.accounts.find(a=>a.id===acc.id)));if(migration)trendRuntime.save();
         } else {
           if (!isTrendOnly(acc)) throw new Error("当前账户未选择 Trend Only 策略");
           if (pathname === "/api/trend-only/confirm") { trendRuntime.confirm(acc, data); await trendRuntime.tick(acc, st); }
@@ -5111,7 +5149,8 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/config" && req.method === "POST") {
     let body = "";
     req.on("data", chunk => body += chunk);
-    req.on("end", () => {
+    req.on("end", async () => {
+      let configurationLock=null,configurationState=null;
       try {
         const next = validateAccountConfigPayload(JSON.parse(body || "{}"));
         const cfg = loadConfig();
@@ -5121,6 +5160,8 @@ const server = http.createServer((req, res) => {
 
         const current = cfg.accounts[idx];
         const currentState = stateMap[current.id];
+        if(currentState.tickRunning)throw Error("账户正在执行，请稍后重试");
+        configurationLock=acquireAccountTradeLock(current.id);if(!configurationLock)throw Error("账户交易锁繁忙");configurationState=currentState;currentState.terminalMutating=true;
         if(isCompound(current)||isCompound(next))throw Error("4H使用独立Paper账户，请前往4H工作台配置，不可复用旧策略账本");
         if(next.shortTermConfig||next.symbol&&next.symbol!==current.symbol||next.platform&&next.platform!==current.platform){
           const S=require("./strategy/short_term_v1/engine");
@@ -5136,6 +5177,7 @@ const server = http.createServer((req, res) => {
         if (isTrendOnly(next) && (!isTrendOnly(current) || next.strategyType === "trend_only_v3")) { next.tradeMode = "simulation"; next.simulationEnabled = true; }
         if (isTrendOnly(current) && !next.strategyType) next.leverage = (next.trendOnlyConfig || current.trendOnlyConfig).leverage;
         if (next.strategyType && !isTrendOnly(next)) next.strategyMode = next.strategyType === "classic" ? "DCA基础模式" : "智能V1";
+        const migration=await require("./terminal/migration-audit").prepare({directory:__dirname,account:current,st:currentState,runtime:trendRuntime.get(current),orders:simulationOrdersMap[current.id]||[],nextType:next.strategyType,verifyLiveFlat:verifyLegacyLiveFlat});
         trendRuntime.clearApproval(current.id);
         const changesPositionContract =
           (next.strategyType && next.strategyType !== (current.strategyType || "classic")) ||
@@ -5158,10 +5200,14 @@ const server = http.createServer((req, res) => {
         if (switchedTrendVersion) trendRuntime.resetForStrategySwitch(current, getStrategyType(cfg.accounts[idx]));
         config = cfg;
         ensureAccountStates();
+        require("./terminal/migration-audit").complete(migration,trendRuntime.get(cfg.accounts[idx]));if(migration)trendRuntime.save();
 
         return jsonRes(res, 200, { ok: true, config: sanitizeAccountForDashboard(cfg.accounts[idx], stateMap[cfg.accounts[idx].id]) });
       } catch (e) {
         return jsonRes(res, 400, { ok: false, error: e.message || "保存配置失败" });
+      } finally {
+        if(configurationState)configurationState.terminalMutating=false;
+        if(configurationLock)releaseAccountTradeLock(configurationLock);
       }
     });
     return;
@@ -5197,6 +5243,7 @@ const server = http.createServer((req, res) => {
       try {
         const data = JSON.parse(body || "{}");
         const id = "acc_" + Date.now();
+        if(data.strategyType&&data.strategyType!=="trend_only_v3")throw Error("普通账户仅允许创建Trend V3；4H请使用统一策略管理");
         const platform = data.platform || "hyperliquid";
         validateAccountConfigPayload({ platform });
 
@@ -5214,9 +5261,9 @@ const server = http.createServer((req, res) => {
           symbol: "ETH",
           quoteAsset: platform === "binance" ? "USDT" : (platform === "extended" ? "USD" : "USDC"),
           side: "long",
-          strategyType: "trend_only_v2",
-          strategyMode: "Trend Only V2",
-          trendOnlyConfig: TrendOnlyV2.normalizeConfig({}),
+          strategyType: "trend_only_v3",
+          strategyMode: "Trend Only V3",
+          trendOnlyConfig: TrendOnlyV3.normalizeConfig({}),
           smartStrategy: { ...SMART_STRATEGY_DEFAULTS },
           leverage: 10,
           baseAmount: 1000,
@@ -5284,7 +5331,7 @@ const server = http.createServer((req, res) => {
 
         await runWithConcurrency(cfg.accounts || [], ACCOUNT_START_SYNC_CONCURRENCY, async (current) => {
           try {
-            if (isTrendOnly(current)||isCompound(current)) { results.push({ id: current.id, name: current.name, ok: false, skipped: true, error: `${getStrategyMode(current)} 账户需要单独启动，避免 Live 信号确认被批量绕过。` }); return; }
+            if (isTrendOnly(current)||isCompound(current)||TerminalPolicy.restricted(current)) { results.push({ id: current.id, name: current.name, ok: false, skipped: true, error: `${getStrategyMode(current)} 账户需要单独启动；旧策略禁止新交易。` }); return; }
             validateAccountConfigPayload({
               platform: current.platform,
               strategyType: current.strategyType || "classic",
@@ -5386,6 +5433,7 @@ const server = http.createServer((req, res) => {
     (async () => {
       try {
         const current = getCurrentAccount();
+        if(TerminalPolicy.restricted(current)){const message=(getStrategyType(current)==="trend_only_v2"&&current.platform==="extended"&&!isSimulationAccount(current)?"Extended Live 趋势下单暂未开放；":"")+TerminalPolicy.classify(current,stateMap[current.id]).status+"：旧策略只允许持仓管理，未知策略不支持启动";return jsonRes(res,400,{ok:false,error:message,message});}
         if(isCompound(current)){if(current.tradeMode!=="simulation"||current.simulationEnabled!==true||compoundRuntime.get(current).riskLock)throw Error("4H仅Paper且不可处于风控锁定");stateMap[current.id].running=true;persistAccountRunning(current.id,true);return jsonRes(res,200,{ok:true,strategyType:Compound.ID,message:"4H Paper已启动"});}
         if (isTrendOnly(current)) {
           const runtime = trendRuntime.runtimeDiagnostic(current, stateMap[current.id].running);
@@ -5473,59 +5521,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/api/reset" && req.method === "POST") {
-    const current = getCurrentAccount();
-    const st = stateMap[current.id];
-    if (isTrendOnly(current)||isCompound(current)) return jsonRes(res, 400, { ok: false, error: "策略状态不可通过重置清除，请使用对应工作台平仓或核对订单" });
-
-    st.entryPrice = 0;
-    st.positionQty = 0;
-    st.positionValueU = 0;
-    st.marginUsedU = 0;
-    st.marginRatio = 0;
-    st.nextAddPrice = 0;
-    st.nextAddAmountU = Number((current.addAmount / current.leverage).toFixed(4));
-    st.nextTakeProfitPrice = 0;
-    st.nextTakeProfitTargetU = 0;
-    st.pnl = 0;
-    st.roi = 0;
-    st.addCount = 0;
-    st.cycleCount = 0;
-    st.lastAction = "已重置";
-    st.lastActionPrice = 0;
-    st.activeError = "";
-    st.lastError = "";
-    st.lastErrorAt = 0;
-    st.logs = [];
-    st.realEntryPrice = "-";
-    st.realUnrealizedPnl = "-";
-    st.realPositionSize = "-";
-    st.lastAddTs = 0;
-    st.placingOrder = false;
-    st.simInitialBalance = getSimulationInitialBalance(current);
-    st.simBalance = st.simInitialBalance;
-    st.simRealizedPnl = 0;
-    resetSmartPosition(st);
-    st.smartRegime = "WAITING";
-    st.smartScore = 0;
-    st.smartLongScore = 0;
-    st.smartShortScore = 0;
-    st.smartAtr = 0;
-    st.smartRiskOff = false;
-    st.smartReduceRisk = false;
-    st.smartPauseUntil = 0;
-    st.smartLastClosedSignalTime = 0;
-    st.smartOrderBackoffUntil = 0;
-    st.smartExitSignalTime = 0;
-    st.smartExitSignalCount = 0;
-    st.smartLossLockedUntil = 0;
-    st.smartDailyPnl = 0;
-    st.smartConsecutiveLosses = 0;
-    clearSmartRuntime(current.id);
-    if (isSimulationAccount(current)) {
-      syncSimulationAccountView(st, current);
-    }
-
-    return jsonRes(res, 200, { ok: true });
+    return jsonRes(res,400,{ok:false,error:"风险账本与历史不可通过重置清除，请核对订单并使用策略持仓管理"});
   }
 
   if (pathname === "/api/manual-order" && req.method === "POST") {
@@ -5536,6 +5532,7 @@ const server = http.createServer((req, res) => {
         const current = getCurrentAccount();
         const data = JSON.parse(body || "{}");
         if(isCompound(current))return jsonRes(res,400,{ok:false,error:"4H独立Paper策略禁止手动加仓，请使用4H工作台"});
+        if(data.reduceOnly&&data.confirm!==true)return jsonRes(res,400,{ok:false,error:"手动减仓必须明确确认"});
         if (isTrendOnly(current)) throw new Error("独立策略禁止手动加仓，请使用对应工作台平仓");
 
         const side = data.side || (current.side === "long" ? "buy" : "sell");

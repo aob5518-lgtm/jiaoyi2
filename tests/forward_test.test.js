@@ -96,13 +96,8 @@ test("portfolio includes pending reserves, uses shared equity once and fails clo
  assert.equal(snapshot(a,entries,"long",60).allowed,false);assert.equal(snapshot(a,entries,"long",50).allowed,true);assert.equal(snapshot(a,entries,"long",0).portfolioEffectiveRiskPct,.02);
  entries[1].state.pendingOrder.plan={};assert.equal(snapshot(a,entries,"long",1).unknownRisk,true);
 });
-test("all main HTML inline scripts parse and Forward workbench defaults to current revision",()=>{
- const html=fs.readFileSync(path.join(__dirname,"../public/index.html"),"utf8");
- for(const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);
- assert.match(html,/historyRevisionFilter.*当前修订/);assert.match(html,/Forward Test 策略诊断工作台/);assert.match(html,/strategyVersion=all&strategyRevision=all/);assert.match(html,/if\(includeAllVersions&&currentTab==="analytics"\)await loadAnalytics/);
-});
-
-// Deterministic virtual fills isolate ledger lifecycle from market eligibility.
+test("all modular terminal scripts parse and Forward workbench uses server experiment scope",()=>{const directory=path.join(__dirname,"../public/terminal");for(const f of fs.readdirSync(directory).filter(f=>f.endsWith(".js")))new vm.Script(fs.readFileSync(path.join(directory,f),"utf8"));const html=fs.readFileSync(path.join(__dirname,"../public/index.html"),"utf8"),analysis=fs.readFileSync(path.join(directory,"analysis.js"),"utf8");assert.match(html,/page-analysis/);assert.match(html,/name="revision"/);assert.match(analysis,/当前账户、当前实验/);assert.match(analysis,/decisions24h/);});
+// Shared deterministic fill fixture; retained unchanged from pre-V4 tests.
 function shadowEngine(){return{
  initialState:()=>({...V3.initialState(),trendEntryCounts:{}}),normalizeConfig:V3.normalizeConfig,
  detectMarketRegime:(_,i)=>({signalTime:i.signalTime}),updateTrendContext:()=>{},

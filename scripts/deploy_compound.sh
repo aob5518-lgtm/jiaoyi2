@@ -31,11 +31,17 @@ tar --exclude='./backups' --exclude='./deploy-backups' --exclude='./.git' --excl
 for f in config.json auth.json profit_history.json simulation_orders.json smart_runtime.json trend_only_runtime.json compound_4h_runtime.json; do if [[ -f "$f" ]]; then cp -a "$f" "$BACKUP/$f"; fi; done
 find "$STAGE" -type f -printf '%P\n' > "$BACKUP/code-files.list"
 while IFS= read -r f; do if [[ -f "$APP/$f" ]]; then printf '%s\n' "$f"; fi; done < "$BACKUP/code-files.list" > "$BACKUP/replaced-existing.list"
+# Explicit retired frontend resources only. Include them in rollback before removal.
+for f in public/trend-only-panel.js public/compound.js public/compound.css; do if [[ -f "$APP/$f" ]]; then printf '%s\n' "$f" >> "$BACKUP/replaced-existing.list"; fi; done
 tar -czf "$BACKUP/source-before.tgz" -C "$APP" -T "$BACKUP/replaced-existing.list"
 CONFIG_HASH=$(sha256sum config.json | cut -d' ' -f1)
 AUTH_HASH=$(sha256sum auth.json | cut -d' ' -f1)
 COPIED=1
 tar -xzf "$ARCHIVE" -C "$APP"
+for f in public/trend-only-panel.js public/compound.js public/compound.css; do
+  [[ "$(realpath -m "$APP/$f")" == "$APP/public/"* ]] || exit 2
+  if [[ -f "$APP/$f" ]]; then rm -- "$APP/$f"; fi
+done
 printf '%s\n' "$SHA" > "$APP/DEPLOY_COMMIT"
 for f in config.json auth.json profit_history.json simulation_orders.json smart_runtime.json trend_only_runtime.json compound_4h_runtime.json; do if [[ -f "$BACKUP/$f" ]]; then cmp "$BACKUP/$f" "$APP/$f"; fi; done
 pm2 restart hyper-safe-ui --update-env
@@ -45,6 +51,7 @@ sleep 5
 [[ "$(curl -sS -o "$BACKUP/public-status.json" -w '%{http_code}' http://127.0.0.1:3000/api/public/status)" == 200 ]]
 [[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/status)" == 401 ]]
 [[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/compound/status)" == 401 ]]
+[[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/v4/terminal)" == 401 ]]
 [[ "$(sha256sum config.json | cut -d' ' -f1)" == "$CONFIG_HASH" ]]
 [[ "$(sha256sum auth.json | cut -d' ' -f1)" == "$AUTH_HASH" ]]
 node -e 'const fs=require("fs"),C=require("./strategy/compound_4h/config"),V=require("./trend_only_v3");if(C.normalize({allowLive:true}).allowLive!==false||V.normalizeConfig({}).allowLive!==false)throw Error("Paper-only failed");const before=JSON.parse(fs.readFileSync(process.argv[1]+"/config.json")),after=JSON.parse(fs.readFileSync("config.json"));if(JSON.stringify(before)!==JSON.stringify(after))throw Error("Production account settings changed");const b=JSON.parse(fs.readFileSync(process.argv[1]+"/profit_history.json")),a=JSON.parse(fs.readFileSync("profit_history.json"));for(const [id,rows]of Object.entries(b)){const ids=new Set((a[id]||[]).map(v=>v.id));for(const v of rows)if(v.id&&!ids.has(v.id))throw Error("History lost");}console.log("Paper-only, production configuration and history preservation passed");' "$BACKUP"

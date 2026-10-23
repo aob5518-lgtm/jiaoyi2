@@ -1,0 +1,13 @@
+(function(A){"use strict";
+ for(const button of document.querySelectorAll("[data-tab]"))button.onclick=()=>A.tab(button.dataset.tab).catch(e=>A.error(e.message));
+ for(const id of ["accountSearch","accountStrategy","accountStatus"])A.$(id).oninput=A.renderAccounts;
+ A.$("accountSwitcher").onchange=e=>A.selectAccount(e.target.value).catch(error=>A.error(error.message));
+ A.$("toggleAccounts").onclick=()=>{if(matchMedia("(max-width: 800px)").matches)A.$("sidebar").classList.toggle("drawer-open");else document.body.classList.toggle("sidebar-collapsed");};
+ A.$("newAccount").onclick=A.newAccount;A.$("refresh").onclick=()=>A.load().catch(e=>A.error(e.message));
+ A.$("detailClose").onclick=()=>A.$("detail").close();A.$("createClose").onclick=()=>A.$("createAccount").close();
+ A.$("analysisHours").onchange=()=>A.renderAnalysis().catch(e=>A.error(e.message));
+ for(const id of ["analysisExperiment","analysisRevision","analysisHash","analysisSample"])A.$(id).onchange=()=>A.renderAnalysis().catch(e=>A.error(e.message));
+ A.$("researchView").onchange=async e=>{if(!A.guardDraft()){e.target.value=A.state.view;return;}A.state.dirty=false;A.state.view=e.target.value;for(const field of ["analysisExperiment","analysisRevision","analysisHash"])A.$(field).value="";A.$("analysisSample").value="";A.renderHeader();try{await A.renderPage();}catch(error){A.error(error.message);}};
+ A.setupCreation();A.setupHistory();A.tab(A.state.tab).catch(e=>A.error(e.message));A.load().catch(e=>A.error(e.message));
+ setInterval(()=>{if(document.visibilityState==="visible")A.load().catch(e=>A.error(e.message));},15000);
+})(window.SA);

@@ -36,15 +36,7 @@ test("V3 risk cost reserves protective stop slippage even with zero regular slip
  const cost=buildTradeCostModel({paper:true,platform:'extended',simulationSlippageBps:0,trendOnlyConfig:{paperStopSlippageBps:5}},'pullback_entry');
  assert.equal(cost.roundTripCostRate,0.0015);assert.equal(cost.estimatedEntrySlippage,0);assert.equal(cost.estimatedExitSlippage,0.0005);
 });
-test("negative protection exit labels and zero-profit PF reflect actual net result",()=>{
- const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
- const html=fs.readFileSync(path.join(__dirname,'../public/index.html'),'utf8');
- const snippets=['reasonLabel','netPnlOf','historyReasonLabel'].map(name=>html.match(new RegExp('const '+name+' = [^\\n]+'))[0]);
- const label=vm.runInNewContext(snippets.join('\n')+'\nhistoryReasonLabel');
- assert.equal(label({closeReason:'trend_tp',netPnl:-10}),'保护退出（净亏损）');
- assert.equal(label({closeReason:'trend_tp',netPnl:100}),'移动止盈/保护止盈');
- const M=require('../public/history-model');assert.equal(M.summary([{netPnl:-1}]).profitFactor,0);assert.equal(M.summary([]).profitFactor,null);
-});
+test("negative protection exit labels and zero-profit PF reflect actual net result",()=>{const fs=require("node:fs"),path=require("node:path"),vm=require("node:vm"),src=fs.readFileSync(path.join(__dirname,"../public/terminal/core.js"),"utf8");const line=src.match(/A.reason=item=>[^\n]+/)[0],label=vm.runInNewContext("const A={};"+line+";A.reason");assert.equal(label({closeReason:"trend_tp",netPnl:-10}),"保护退出（净亏损）");assert.equal(label({closeReason:"trend_tp",netPnl:100}),"移动止盈/保护止盈");const M=require("../public/history-model");assert.equal(M.summary([{netPnl:-1}]).profitFactor,0);assert.equal(M.summary([]).profitFactor,null);});
 test("higher-quality triggered mode is not swallowed by pullback priority", () => {
   assert.equal(chooseEntry("long", { ...input, microHigh:101.5 }, c).selected.type, "breakout_entry");
 });

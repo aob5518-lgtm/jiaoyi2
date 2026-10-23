@@ -479,6 +479,7 @@ function createTrendRuntime(d) {
     return true;
   }
   async function submit(acc, st, kind, plan, reason = "") {
+    if(kind==="open"&&d.entryRestricted?.(acc))throw Error("LEGACY_RESTRICTED：旧趋势策略禁止新开仓");
     const T = engine(acc);
     const s = get(acc);
     if (s.pendingOrder) throw Error("已有 pendingOrder，禁止提交");
@@ -700,6 +701,7 @@ function createTrendRuntime(d) {
         return;
       }
       if (s.engineVersion !== configuredVersion(acc)) { annotateSignal(acc, "配置策略与实际运行引擎不一致，已禁止新开仓。", "版本不一致，禁止新开仓", "STRATEGY_VERSION_MISMATCH"); log(acc, st, "配置策略与实际运行引擎不一致，已禁止新开仓。"); return; }
+      if(d.entryRestricted?.(acc)){annotateSignal(acc,"LEGACY_RESTRICTED：只管理已有趋势仓位","旧策略受限","LEGACY_RESTRICTED");return;}
       if (!st.running) { annotateSignal(acc, "趋势监控已停止，禁止新开仓", "监控已停止", "MONITOR_STOPPED"); log(acc, st, "趋势监控已停止，禁止新开仓"); return; }
       if (s.conflictingAccount) { annotateSignal(acc, "同一交易账户与合约已被其他策略占用", "风控暂停", "ACCOUNT_CONFLICT"); log(acc, st, "同一交易账户与合约已被其他策略占用，禁止新开仓"); return; }
       if (remote.openOrders.length) { annotateSignal(acc, "交易所存在挂单", "等待挂单完成", "OPEN_ORDER_BLOCK"); log(acc, st, "交易所存在挂单，禁止新开仓"); return; }

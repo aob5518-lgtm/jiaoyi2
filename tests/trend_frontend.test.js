@@ -1,47 +1,7 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("fs");
-const path = require("path");
-
-const base = path.resolve(__dirname, "..");
-const read = file => fs.readFileSync(path.join(base, file), "utf8");
-
-test("Trend Only V1 总览不渲染经典补仓字段", () => {
-  const html = read("public/index.html");
-  assert.match(html, /trendOnlyMode \? \[/);
-  assert.match(html, /策略视图模块加载失败，请刷新页面或检查静态资源。/);
-  const renderStart = html.indexOf("const strategyRows = trendOnlyMode ? [");
-  const renderEnd = html.indexOf("] : [", renderStart);
-  const trendBranch = html.slice(renderStart, renderEnd);
-  assert.doesNotMatch(trendBranch, /经典补仓策略/);
-  assert.doesNotMatch(trendBranch, /下次补仓价/);
-});
-
-test("Trend Only V1/V2 模式隐藏手动测试和重置按钮", () => {
-  const html = read("public/index.html");
-  assert.match(html, /button\.hidden = trendOnly/);
-  assert.match(html, /Trend Only 禁止手动加仓/);
-  assert.match(html, /趋势状态不可通过重置清除/);
-});
-
-test("Trend Only V2 展示阻断原因、信号回放且不显示 DCA 字段", () => {
-  const html = read("public/index.html");
-  const view = read("public/strategy-view.js");
-  assert.match(html, /id="signalReplayPanel"/);
-  assert.match(html, /signalJournal/);
-  assert.match(view, /当前阻断原因/);
-  assert.match(view, /原始趋势方向/);
-  assert.match(view, /交易方向/);
-  assert.match(read("public/trend-only-panel.js"), /一键升级到 Trend Only V2/);
-  assert.match(html, /id="signalReplayFilter"/);
-  assert.match(html, /策略机会.*最终可执行.*策略阻断.*执行阻断.*等待回踩.*等待突破.*等待延续.*Live确认.*账户冲突.*挂单阻断.*再入场冷却.*risk_lock.*平台不支持/s);
-  assert.match(html, /距 EMA20.*distanceFromEmaAtr/s);
-  assert.match(html, /function marketStatusClass/);
-  assert.match(view, /保护止损单状态|stopOrderId|stopOrderPrice|stopLastSyncAt/);
-  const renderStart = html.indexOf("const strategyRows = trendOnlyMode ? [");
-  const renderEnd = html.indexOf("] : [", renderStart);
-  assert.doesNotMatch(html.slice(renderStart, renderEnd), /下次补仓价|补仓次数/);
-});
+const test=require("node:test"),assert=require("node:assert/strict"),fs=require("fs"),path=require("path"),vm=require("vm");
+const base=path.resolve(__dirname,".."),read=file=>fs.readFileSync(path.join(base,file),"utf8");
+const html=read("public/index.html"),moduleText=fs.readdirSync(path.join(base,"public/terminal")).filter(f=>f.endsWith(".js")).map(f=>read("public/terminal/"+f)).join("\n"),css=read("public/terminal/terminal.css");
+function pure(){const window={};vm.runInNewContext(read("public/terminal/core.js"),{window,location:{search:"",hash:""},URLSearchParams,URL,Number});vm.runInNewContext(read("public/terminal/layout.js"),{window});return window.SA;}
 
 test("信号回放统计正确区分等待、追单、CHOP、高周期与风控阻断", () => {
   const view = require("../public/strategy-view.js");
@@ -96,34 +56,11 @@ test("截图场景明确说明是策略过滤而非系统故障", () => {
   assert.equal(view.opportunityStatus(trend), "无机会：ADX 弱");
 });
 
-test("V1 总览和配置页显示升级 V2 强提示", () => {
-  const html = read("public/index.html"), panel = read("public/trend-only-panel.js");
-  assert.match(html, /当前账户正在使用 Trend Only V1。V1 过滤更严格/);
-  assert.match(html, /id="overviewUpgradeV2Btn"/);
-  assert.match(panel, /当前账户正在使用 Trend Only V1。V1 过滤更严格/);
-  assert.match(panel, /一键升级到 Trend Only V2/);
-  assert.match(html, /当前有趋势仓位，平仓后才能升级/);
-  assert.match(html, /需要先停止趋势监控才能升级/);
-  assert.match(panel, /订单尚未确认，暂不能升级/);
-});
-
 test("机会状态优先采用 executionState，而不是信号 allowed", () => {
   const view = require("../public/strategy-view.js");
   assert.equal(view.opportunityStatus({ executionState: "MONITOR_STOPPED", signal: { entryPermission: "allowed" } }), "监控已停止");
   assert.equal(view.opportunityStatus({ executionState: "WAIT_LIVE_CONFIRM", signal: { entryPermission: "allowed" } }), "等待 Live 确认");
   assert.equal(view.opportunityStatus({ executionState: "ACCOUNT_CONFLICT", signal: { entryPermission: "allowed" } }), "账户冲突");
-});
-
-test("V2 运行时回填结构字段且 Extended Live 有明确提示", () => {
-  const runtime = read("trend_runtime.js");
-  const html = read("public/index.html");
-  const panel = read("public/trend-only-panel.js");
-  assert.match(runtime, /structureHigh: s\.signal\.structureHigh/);
-  assert.match(runtime, /entryDirection: T\.directionOf\(values\[0\], "entry"\)/);
-  assert.match(runtime, /distanceFromEmaAtr: s\.signal\.distanceFromEmaAtr/);
-  assert.match(html, /Extended Live 趋势下单暂未开放；请使用 Paper 测试或切换 Hyperliquid\/Binance/);
-  assert.match(html, /Extended 当前仅支持 Paper 趋势测试，Live 趋势下单未开放/);
-  assert.doesNotMatch(panel, /maxChopToTrade/);
 });
 
 test("README 与示例配置启用 Trend Only V3 Paper 并保留 V2 稳定对照", () => {
@@ -140,156 +77,30 @@ test("mobile_view.html 是公开只读页，不加载趋势管理面板", () => 
   assert.doesNotMatch(html, /保存参数|确认本次 Live 开仓|平掉趋势仓位|管理按钮/);
 });
 
-test("strategy-view.js 加载失败时页面不白屏", () => {
-  const html = read("public/index.html");
-  assert.match(html, /__strategyViewLoadFailed/);
-  assert.match(html, /fallbackTrendView/);
-  assert.match(html, /策略视图模块加载失败，请刷新页面或检查静态资源。/);
-});
-
-test("账户搜索和状态筛选控件存在并接入渲染", () => {
-  const html = read("public/index.html");
-  assert.match(html, /id="accountSearch"/);
-  assert.match(html, /id="accountFilter"/);
-  assert.match(html, /function accountMatchesFilter/);
-  assert.match(html, /hasPendingOrder/);
-  assert.match(html, /function tradingPair/);
-  assert.match(html, /raw\.endsWith\(quote\).*raw\.slice\(0, -quote\.length\)/s);
-});
-
-test("前端健康状态不再把历史 lastError 当作当前异常", () => {
-  const html = read("public/index.html"), view = read("public/strategy-view.js");
-  assert.match(html, /health\.status === "risk_locked" \? "风控锁定"/);
-  assert.match(html, /health\.activeError \|\| "-"/);
-  assert.match(html, /曾发生异常，当前已恢复/);
-  assert.match(html, /最近错误时间/);
-  assert.doesNotMatch(html, /st\.lastError \|\| protection\.riskLock/);
-  assert.doesNotMatch(html, /quick\("是否异常", st\.lastError/);
-  assert.match(view, /当前异常.*activeError/s);
-});
-
-test("历史交易主表保持 9 列，详细复盘字段进入四区 Modal", () => {
-  const html = read("public/index.html");
-  const head = html.match(/<table class="history-table">[\s\S]*?<thead>([\s\S]*?)<\/thead>/)[1];
-  assert.equal((head.match(/<th>/g) || []).length, 9);
-  assert.match(head, /时间.*方向.*策略 \/ 形态.*开仓 → 平仓.*净盈亏.*Net R.*持仓时间.*平仓原因.*详情/s);
-  for (const field of ["币种","方向","入场模式","开仓价","平仓价","持仓时长","R 倍数","毛盈亏","手续费","净盈亏","入场 ATR","初始止损","最终止损","计划风险","实际风险","MAE","MFE","原始 closeReason"]) assert.match(html, new RegExp(field));
-  assert.match(html, /A\. 交易结果.*B\. 风控.*C\. 行情表现.*D\. 审计信息/s);
-  assert.match(html, /查看复盘/);
-});
-
-test("历史 Tab 默认收起状态栏并支持专注模式", () => {
-  const html = read("public/index.html");
-  assert.match(html, /body\.history-active \.right-panel/);
-  assert.match(html, /if \(tab === "history"\) document\.body\.classList\.remove\("history-status-open"\)/);
-  assert.match(html, /historyStatusBtn.*history-status-open/s);
-  assert.match(html, /historyFocusBtn.*history-focus/s);
-});
-
-test("历史复盘兼容旧记录，并按 netPnl 统计盈亏和胜率", () => {
-  const html = read("public/index.html");
-  assert.match(html, /legacyRecord/); assert.match(html, /该交易产生于复盘字段上线之前，部分指标当时未采集/);
-  assert.match(html, /const netPnlOf = item => Number\.isFinite\(Number\(item\.netPnl\)\)/);
-  const model=require('../public/history-model');assert.equal(model.summary([{netPnl:-1,grossPnl:10},{netPnl:1,grossPnl:-2}]).winRate,.5);
-  assert.match(html, /总净盈亏/);
-});
-
-test("历史方向、入场和平仓 Badge 样式完整", () => {
-  const html = read("public/index.html");
-  assert.match(html, /\.history-badge\.long/); assert.match(html, /\.history-badge\.short/); assert.match(html, /LONG \/ 多/);assert.match(html,/SHORT \/ 空/);
-  assert.match(html, /breakout_entry: "突破".*pullback_entry: "回踩".*continuation_entry: "延续"/s);
-  assert.match(html, /hard_sl: "硬止损".*trend_reversal: "趋势反转退出".*trend_tp: "移动止盈\/保护止盈"/s);
-});
-
 test("移动端历史使用交易卡片和查看复盘，不渲染宽表", () => {
   const html = read("public/mobile_view.html");
   assert.match(html, /历史交易/); assert.match(html, /查看复盘/); assert.match(html, /净盈亏/);
   assert.doesNotMatch(html, /<table|初始 \/ 最终止损|17列/);
 });
 
-test("Trend Only V3 提供决策漏斗、候选机会、持仓驾驶舱与策略分析 Tab", () => {
-  const html = read("public/index.html");
-  assert.match(html, /data-tab="analytics">策略分析/);
-  assert.match(html, /id="v3DecisionFunnel"/);
-  assert.match(html, /id="v3CandidatePanel"/);
-  assert.match(html, /id="v3PositionCockpit"/);
-  assert.match(html, /id="analyticsSummary"/);
-  assert.match(html, /V2 Shadow 对照/);
-  assert.match(html, /错过机会事后分析/);
-  assert.match(html, /Shadow 永久禁用/);
-  assert.match(html, /item\.netR \?\? item\.rMultiple/);
-  assert.match(html, /当前决策.*趋势.*Setup.*账户风险/s);
-  assert.match(html, /systemHealth.*strategyState.*riskState.*executionState/s);
-  assert.match(html, /font-size:clamp\(22px,2vw,34px\).*overflow-wrap:anywhere/);
-});
-
-test("Trend Only V3 总览使用交易决策工作台并把实时状态改为抽屉", () => {
-  const html = read("public/index.html");
-  assert.match(html, /id="v3CommandState"/);
-  assert.match(html, /id="v3CommandReason"/);
-  assert.match(html, /id="v3MarketDataState"/);
-  assert.match(html, /body\.v3-active \.right-panel/);
-  assert.match(html, /id="v3StatusBtn"/);
-  assert.match(html, /id="v3FocusBtn"/);
-});
-
-test("零交易历史显示诊断空状态而不是成排数据不足卡片", () => {
-  const html = read("public/index.html");
-  assert.match(html, /id="historyEmptyState"/);
-  assert.match(html, /id="historyEmptyReason"/);
-  assert.match(html, /history-empty \.history-top/);
-  assert.match(html, /查看信号回放与阻断原因/);
-});
-
-test("V3 P2 支持高级筛选、质量 CSV、Fee Drag 与 Post Exit 复盘", () => {
-  const html = read("public/index.html"), panel = read("public/trend-only-panel.js"), mobile = read("public/mobile_view.html");
-  assert.match(html, /historyVersionFilter.*historyExperimentFilter.*historyConfigFilter/s);
-  assert.match(html, /grossR.*netR.*trendScore.*entryScore.*potentialR.*costR.*PostExitMFE_32/s);
-  assert.match(html, /False Entry Rate/); assert.match(html, /事后趋势候选占比/); assert.match(html, /成本侵蚀/);
-  assert.match(panel, /gradeAThreshold.*gradeBThreshold.*maxAllowedCostR.*minimumPotentialR.*shadowComparison/s);
-  assert.match(mobile, /Net R/); assert.match(mobile, /Trend \/ Entry/);
-});
-
-test("Active Strategy 与 Draft Strategy 分离，未保存 V3 不会伪装成已生效", () => {
-  const html = read("public/index.html"), panel = read("public/trend-only-panel.js");
-  assert.match(html, /let activeStrategyType = "classic"/);
-  assert.match(html, /latestStatusData\?\.strategyRuntime/);
-  assert.match(html, /策略修改尚未生效/);
-  assert.match(html, /当前运行策略.*准备切换/s);
-  assert.match(html, /UNSAVED CHANGES/);
-  assert.match(panel, /activeStrategyType !== draftStrategyType/);
-  assert.match(panel, /待保存.*当前生效/s);
-});
-
-test("启动前校验服务器策略版本，保存失败展示原始原因并执行读后校验", () => {
-  const html = read("public/index.html");
-  assert.match(html, /async function startCurrentStrategy/);
-  assert.match(html, /draftStrategyType !== serverStrategyType/);
-  assert.match(html, /页面中存在尚未保存的策略修改/);
-  assert.match(html, /showToast\(e\?\.message \|\| "保存失败"/);
-  assert.match(html, /function verifyStrategyStatus/);
-  assert.match(html, /保存结果与服务器实际配置不一致/);
-});
-
-test("Trend Only 原子切换包含停止、等待、保存、GET 校验和 V3 Paper 强制", () => {
-  const html = read("public/index.html");
-  const start = html.indexOf("async function switchTrendStrategy");
-  const end = html.indexOf("async function saveConfig", start);
-  const flow = html.slice(start, end);
-  assert.match(flow, /api\("\/api\/status"\)/);
-  assert.match(flow, /api\("\/api\/stop"/);
-  assert.match(flow, /tickRunning/);
-  assert.match(flow, /\/api\/trend-only\/config/);
-  assert.match(flow, /verifyStrategyStatus/);
-  assert.match(flow, /trend_only_v3.*simulation/s);
-  assert.match(flow, /当前存在趋势仓位/);
-  assert.match(flow, /当前订单状态未知/);
-});
-
-test("总览 ACTIVE 标识只读取服务器配置与 runtime 诊断", () => {
-  const html = read("public/index.html");
-  assert.match(html, /id="activeStrategyRuntimeBadge"/);
-  assert.match(html, /activeTradeMode.*PAPER.*ACTIVE ·.*V3/s);
-  assert.match(html, /runtime\.activeEngine/);
-  assert.match(html, /STRATEGY_VERSION_MISMATCH/);
-});
+test("V4固定五导航且无独立4H工作台入口",()=>{assert.deepEqual([...html.matchAll(/data-tab="([^"]+)"/g)].map(m=>m[1]),["overview","strategies","history","analysis","settings"]);assert.doesNotMatch(html,/CORE ONLINE|href="\/compound.html"/);});
+test("普通新账户菜单只允许当前可执行策略，Short-Term能力明确",()=>{const menu=html.match(/id="createStrategy"[\s\S]*?<\/select>/)[0];assert.match(menu,/trend_only_v3/);assert.match(menu,/compound_4h_v1/);assert.doesNotMatch(menu,/classic|smart_regime_v1|trend_only_v1|trend_only_v2/);assert.match(read("terminal/policy.js"),/暂不支持实际Paper下单/);});
+test("旧V1升级V2入口及旧策略参数表单已退役",()=>{assert.doesNotMatch(html+moduleText,/overviewUpgradeV2Btn|一键升级到 Trend Only V2|经典补仓策略|id="baseAmount"|confirmLive/);assert.equal(fs.existsSync(path.join(base,"public/trend-only-panel.js")),false);});
+test("统一终端主文件只负责语义结构，业务脚本全部外置",()=>{assert.equal((html.match(/<style/g)||[]).length,0);assert.equal((html.match(/<script>(?!<)/g)||[]).length,0);for(const name of ["core","layout","forms","history","overview","strategies","analysis","app"])assert.ok(html.includes("/terminal/"+name+".js"));});
+test("所有V4脚本均可解析，渲染只用DOM与textContent",()=>{for(const f of fs.readdirSync(path.join(base,"public/terminal")).filter(f=>f.endsWith(".js")))new vm.Script(read("public/terminal/"+f));assert.doesNotMatch(moduleText,/innerHTML|insertAdjacentHTML/);assert.match(moduleText,/textContent/);});
+test("账户搜索按名称策略状态生效，手机和桌面使用同一账户控制器",()=>{const A=pure(),a={name:"ETH研究",strategyType:"trend_only_v3",running:true,symbol:"ETH",policy:{status:"SUPPORTED"}};assert.equal(A.accountMatches(a,"研究","","running"),true);assert.equal(A.accountMatches(a,"btc","","all"),false);assert.equal(A.accountMatches(a,"","compound_4h_v1","all"),false);assert.match(moduleText,/accountSwitcher.*selectAccount/s);});
+test("历史错误不作为当前健康错误；状态分开显示",()=>{assert.match(read("terminal/model.js"),/error:st.activeError/);assert.match(html,/modeBadge/);assert.match(html,/runBadge/);assert.match(html,/healthBadge/);assert.doesNotMatch(read("terminal/model.js"),/error:st.lastError/);});
+test("当前决策只展示人话，专业漏斗在策略分析",()=>{assert.match(read("public/terminal/overview.js"),/当前策略决策/);assert.doesNotMatch(read("public/terminal/overview.js"),/decisions24h|decisions72h|v3DecisionFunnel/);assert.match(read("public/terminal/analysis.js"),/24小时执行漏斗/);});
+test("历史主表仍为九列，点击时间查看完整复盘",()=>{const head=html.match(/<thead>([\s\S]*?)<\/thead>/)[1];assert.equal((head.match(/<th>/g)||[]).length,9);assert.match(read("public/terminal/history.js"),/交易复盘 · 原始归属保留/);assert.match(moduleText,/detailBody.*JSON.stringify/s);});
+test("历史旧归属不改为V3，缺失净收益不伪造为零",()=>{const M=require("../terminal/model"),rows=M.historyRows([{pnl:10},{strategyVersion:"classic",netPnl:3}]);assert.equal(rows[0].strategyVersion,"legacy_unclassified");assert.equal(rows[0].netPnl,null);assert.equal(rows[1].strategyVersion,"classic");assert.equal(rows[0].original.pnl,10);});
+test("保护退出负净收益文案和净值统计正确",()=>{const A=pure();assert.equal(A.reason({closeReason:"trend_tp",netPnl:-1}),"保护退出（净亏损）");assert.equal(A.reason({closeReason:"trend_tp",netPnl:1}),"移动止盈/保护止盈");const M=require("../public/history-model");assert.equal(M.summary([{netPnl:-1},{netPnl:1}]).winRate,.5);});
+test("缺失价格或风险显示暂无数据而非0",()=>{const A=pure();for(const v of [null,undefined,"",NaN])assert.equal(A.fmt(v),"暂无数据");assert.equal(A.fmt(0),"0");});
+test("移动端不是宽表缩放，有独立卡片和下拉账户",()=>{assert.match(css,/@media\(max-width:800px\)/);assert.match(css,/#historyMobile\{display:block/);assert.match(css,/\.table-wrap\{display:none/);assert.match(html,/id="accountSwitcher"/);assert.match(css,/minmax\(0,1fr\)/);});
+test("侧栏支持折叠，不存在常驻右侧冗余三栏",()=>{assert.match(css,/sidebar-collapsed/);assert.doesNotMatch(html,/id="rightPanel"/);assert.match(moduleText,/drawer-open/);});
+test("4H已融入统一总览，四层状态未激活与等待成交明确区分",()=>{assert.match(read("public/terminal/overview.js"),/renderLayers/);assert.match(read("public/terminal/core.js"),/DORMANT:"未激活"/);assert.match(read("public/terminal/overview.js"),/riskBudget/);assert.equal(fs.existsSync(path.join(base,"public/compound.js")),false);});
+test("4H基础高级参数可视化，原始JSON仅在开发者折叠工具中",()=>{const f=read("public/terminal/forms.js");for(const key of ["layerNotionalPct","maxAdds","atrPeriod","zoneAtr","layerSpacingAtr","stopBufferAtr","maxDailyLossRatio"])assert.ok(f.includes(key));assert.match(f,/后端normalize\(\)/);assert.match(read("public/terminal/strategies.js"),/高级管理与开发者工具/);});
+test("主操作仅启动暂停设置，危险退出有前后端二次确认",()=>{assert.match(moduleText,/启动策略/);assert.match(moduleText,/暂停新交易/);assert.match(moduleText,/策略设置/);assert.match(read("public/terminal/core.js"),/action==="close"&&!confirm/);assert.match(read("terminal/api.js"),/input.confirm!==true/);});
+test("暂停文案准确，不伪装成平仓",()=>{assert.match(moduleText,/停止新开与补仓，已有持仓继续接受风险保护/);assert.match(read("terminal/api.js"),/已有持仓继续接受风险保护/);});
+test("未保存草稿不得启动，服务器策略变化会拒绝旧页面操作",()=>{assert.match(read("public/terminal/core.js"),/action==="start"&&A.state.dirty/);assert.match(read("terminal/api.js"),/服务器策略已变更/);assert.match(moduleText,/configurationLocked/);});
+test("账户切换使用请求代号防串号，刷新和切换标签不发启动订单",()=>{assert.match(moduleText,/ticket!==A.state.epoch/);assert.match(read("public/terminal/layout.js"),/\/api\/account\/select/);assert.doesNotMatch(read("public/terminal/app.js"),/action:"start"/);});
+test("历史分页、筛选保持及CSV使用当前全部筛选结果",()=>{const h=read("public/terminal/history.js");assert.match(h,/historyOffset/);assert.match(h,/export:"true"/);assert.match(h,/window.HistoryModel.csv/);assert.match(moduleText,/sessionStorage/);});
