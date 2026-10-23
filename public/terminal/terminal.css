@@ -17,3 +17,37 @@ dialog{background:var(--surface);color:var(--text);border:1px solid #3d536e;bord
 @media(max-width:1100px){body{grid-template-columns:220px minmax(0,1fr)}main,header{padding-left:20px;padding-right:20px}.strategy-grid{grid-template-columns:1fr}.strategy-card p{min-height:0}.layers{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.two-column{grid-template-columns:1fr}}
 @media(max-width:800px){body,body.sidebar-collapsed{display:block}#sidebar{display:none;position:fixed;top:0;left:0;z-index:30;width:min(310px,86vw);height:100dvh;box-shadow:15px 0 60px #000b}#sidebar.drawer-open{display:flex}header{padding:18px 16px 0}.mobile-account{display:flex;margin-top:14px;font-size:12px;color:var(--muted)}main{padding:20px 16px}.view-choice{margin-left:0;width:100%}nav{gap:0}nav button{padding:9px 13px;font-size:13px}h1{font-size:18px}.panel{padding:17px}.metric{padding:16px}.metric strong{font-size:22px}.decision-text{font-size:17px}.page-title{flex-wrap:wrap}.form-grid,.filter-row{grid-template-columns:1fr 1fr}.table-wrap{display:none}#historyMobile{display:block}.trade-card{padding:16px;border:1px solid var(--line);border-radius:12px;margin-bottom:12px;background:var(--surface)}.trade-card>:first-child{grid-column:1/-1}.trade-card>span{grid-column:1/-1}.facts{grid-template-columns:105px minmax(0,1fr)}.strategy-card{padding:18px}dialog{padding:18px}footer{padding:12px 16px}.action-bar>button{flex:1;min-width:110px}}
 @media(max-width:400px){.metrics{gap:10px}.metric strong{font-size:19px}.form-grid{grid-template-columns:1fr}.header-main{gap:10px}nav button{font-size:12px;padding:9px 11px}.facts{grid-template-columns:92px minmax(0,1fr)}}
+
+/* Production-scale account navigation: only this list scrolls, never shrink cards. */
+#sidebar{overflow:hidden}
+#sidebar>:not(.account-list){flex-shrink:0}
+.account-list{flex:1 1 0;overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;overscroll-behavior-y:contain;padding-right:4px}
+.account-card{flex:0 0 auto;flex-shrink:0;height:92px;min-height:92px;padding:10px 12px;gap:5px;overflow:hidden;line-height:1.35}
+.account-card-head{display:flex;align-items:center;gap:8px;flex:none;min-width:0;width:100%}
+.account-card-head strong{flex:1;min-width:0;font-size:14px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.account-card .account-card-state{flex:0 0 auto;font-size:12px;line-height:1.35;color:var(--muted);white-space:nowrap}
+.account-card .account-card-state.warning{color:var(--warning)}
+.account-card .account-card-pair{display:block;flex:none;min-width:0;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;font-size:12px;line-height:1.35}
+.account-card-net{display:flex;align-items:baseline;gap:7px;flex:none;min-width:0;max-width:100%;line-height:1.35;font-size:12px;font-variant-numeric:tabular-nums}
+.account-card-net>span{flex:none;white-space:nowrap;line-height:1.35}
+.account-card-net>b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550;font-variant-numeric:tabular-nums}
+#closeAccounts{display:none}
+#accountTitle,#accountMeta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.position-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.position-heading h2{margin:0}
+.position-heading .badge{white-space:nowrap}
+@media(min-width:801px){
+ header{padding-top:16px}.status-strip{margin:12px 0}main{padding-top:20px}
+ #overviewCards{gap:12px;margin-bottom:16px}#overviewCards .metric{padding:16px;min-height:104px}
+ #overviewCards .metric>span{margin-bottom:8px}#overviewCards .metric strong{font-size:clamp(22px,1.6vw,27px)}#overviewCards .metric small{font-size:12px;line-height:1.4;margin-top:6px}
+ #page-overview>.panel,#page-overview .two-column>.panel{padding:18px;margin-bottom:16px}
+ #decision h2{margin-bottom:8px}#decision .decision-text{font-size:17px;line-height:1.6;margin:6px 0 14px}
+ #decision .facts{grid-template-columns:100px minmax(0,1fr) 100px minmax(0,1fr);gap:8px 16px}
+ .position-heading{margin-bottom:12px}
+}
+@media(max-width:800px){
+ #closeAccounts{display:block}.sidebar-heading{gap:8px}.sidebar-heading h2{flex:1}
+ body.sidebar-collapsed #sidebar.drawer-open{display:flex}
+ #sidebar{height:100vh;height:100dvh}
+ #accountTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .position-heading{margin-bottom:12px}#overviewCards .metric strong{font-size:20px}
+}

@@ -3,6 +3,7 @@
  for(const id of ["accountSearch","accountStrategy","accountStatus"])A.$(id).oninput=A.renderAccounts;
  A.$("accountSwitcher").onchange=e=>A.selectAccount(e.target.value).catch(error=>A.error(error.message));
  A.$("toggleAccounts").onclick=()=>{if(matchMedia("(max-width: 800px)").matches)A.$("sidebar").classList.toggle("drawer-open");else document.body.classList.toggle("sidebar-collapsed");};
+ A.$("closeAccounts").onclick=()=>A.$("sidebar").classList.remove("drawer-open");
  A.$("newAccount").onclick=A.newAccount;A.$("refresh").onclick=()=>A.load().catch(e=>A.error(e.message));
  A.$("detailClose").onclick=()=>A.$("detail").close();A.$("createClose").onclick=()=>A.$("createAccount").close();
  A.$("analysisHours").onchange=()=>A.renderAnalysis().catch(e=>A.error(e.message));
