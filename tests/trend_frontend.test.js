@@ -117,3 +117,16 @@ for(const count of [63,100,150])test("生产规模账户DOM回归："+count+"账
 test("账户卡必须不可压缩且固定最小高度，列表独立滚动并预留滚动条",()=>{assert.match(css,/\.account-card\{flex:0 0 auto;flex-shrink:0;height:92px;min-height:92px/);assert.match(css,/scrollbar-gutter:stable/);assert.match(css,/#sidebar>:not\(\.account-list\)\{flex-shrink:0/);assert.match(css,/\.account-card-head strong\{[^}]*text-overflow:ellipsis/);assert.match(css,/\.account-card-pair\{[^}]*text-overflow:ellipsis/);assert.match(css,/account-card-net[^}]*tabular-nums/);});
 test("手机抽屉可显式关闭，PC折叠后转手机仍可打开",()=>{assert.match(html,/id="closeAccounts"/);assert.match(read("public/terminal/app.js"),/closeAccounts.*classList.remove\("drawer-open"\)/);assert.match(css,/body.sidebar-collapsed #sidebar.drawer-open\{display:flex/);});
 test("运行、交易、持仓状态分别展示且不改变交易字段",()=>{assert.match(read("public/terminal/layout.js"),/运行 RUNNING/);assert.match(read("public/terminal/layout.js"),/暂停 PAUSED/);assert.match(read("public/terminal/overview.js"),/交易状态/);assert.match(read("public/terminal/overview.js"),/FLAT · 无持仓/);assert.match(read("public/terminal/core.js"),/NO_SIGNAL:/);});
+
+test("旧账户迁移清单展示精确阻断及建议；仅核验通过才启用迁移",async()=>{
+ for(const eligible of [false,true]){
+  const {A}=accountDOM(),original=A.el;A.el=(...args)=>{const e=original(...args);e.isConnected=true;return e;};A.state.id="legacy";
+  const calls=[],report={migrationEligible:eligible,blockers:eligible?[]:[{field:"simulationLedger"}],checks:[{field:"running",value:false,status:"PASS",reason:"核对通过"},{field:"simulationLedger",value:242,status:eligible?"PASS":"BLOCK",reason:"ETH:short 净数量=-34.64 <script>",advice:"核对原始成交，不清空账本"}],manualReview:{procedure:"人工复核，禁止强制解除"},evidenceHash:"test"};
+  A.api=async(path,body)=>{calls.push({path,body});return{items:[report]};};vm.runInNewContext(read("public/terminal/strategies.js"),{window:{SA:A}});const box=A.el("div");A.renderLegacyReview(box);await new Promise(setImmediate);
+  const walk=e=>[e,...e.children.flatMap(walk)],nodes=walk(box),button=nodes.find(e=>e.textContent==="确认迁移至 Trend V3 Paper");assert.equal(button.disabled,!eligible);assert.equal(calls.length,1);assert.equal(calls[0].body,undefined);assert.match(calls[0].path,/legacy-diagnostics/);assert.ok(nodes.some(e=>String(e.textContent).includes("simulationLedger")));assert.ok(nodes.some(e=>String(e.textContent).includes("核对原始成交"))||eligible);assert.ok(nodes.some(e=>e.tagName==="details"));assert.equal(nodes.some(e=>e.innerHTML),false);
+ }
+});
+
+test("账户切换后丢弃迟到的迁移诊断，防止串号启用按钮",async()=>{
+ const {A}=accountDOM(),original=A.el;A.el=(...args)=>{const e=original(...args);e.isConnected=true;return e;};A.state.id="first";let deliver;A.api=()=>new Promise(resolve=>deliver=resolve);vm.runInNewContext(read("public/terminal/strategies.js"),{window:{SA:A}});const box=A.el("div");A.renderLegacyReview(box);A.state.id="second";deliver({items:[{migrationEligible:true}]});await new Promise(setImmediate);const section=box.children[0];assert.equal(section.children.find(e=>e.textContent==="确认迁移至 Trend V3 Paper").disabled,true);
+});

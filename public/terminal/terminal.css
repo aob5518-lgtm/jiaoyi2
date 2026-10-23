@@ -49,5 +49,6 @@ dialog{background:var(--surface);color:var(--text);border:1px solid #3d536e;bord
  body.sidebar-collapsed #sidebar.drawer-open{display:flex}
  #sidebar{height:100vh;height:100dvh}
  #accountTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .position-heading{margin-bottom:12px}#overviewCards .metric strong{font-size:20px}
+.position-heading{margin-bottom:12px}#overviewCards .metric strong{font-size:20px}
 }
+.legacy-review{min-width:0}.legacy-check{padding:12px;border-bottom:1px solid var(--border,#20313b);min-width:0}.legacy-check pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;margin:6px 0}.legacy-check.blocked strong{color:#f5b866}.legacy-review small{overflow-wrap:anywhere}.legacy-check p{margin:6px 0}

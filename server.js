@@ -755,16 +755,20 @@ const compoundRuntime=require("./strategy/compound_4h/runtime").createRuntime({d
  }});
 async function verifyLegacyLiveFlat(a){
   try{
+    const verify=require("./terminal/native-review").verifyFlat;
     if(a.platform==="hyperliquid"){
       const [account,orders]=await Promise.all([getHyperAccount(a.address,a.symbol),fetchJsonWithRetry("https://api.hyperliquid.xyz/info",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"openOrders",user:a.address})},"迁移只读挂单核验",0,10000)]);
-      if(account.currentPos||!Array.isArray(orders)||orders.length)throw Error("有仓位或挂单");
+      verify(a.platform,account.rawPerp?.assetPositions,orders);
     }else if(a.platform==="binance"){
-      const account=await getBinanceAccount(a),query="timestamp="+Date.now(),signature=sign(query,a.apiSecret),r=await fetch("https://fapi.binance.com/fapi/v1/openOrders?"+query+"&signature="+signature,{headers:{"X-MBX-APIKEY":a.apiKey},signal:AbortSignal.timeout(10000)}),orders=await r.json();
-      if(!r.ok||!Array.isArray(orders)||orders.length||account.positions.some(p=>Number(p.positionAmt)!==0))throw Error("有仓位或挂单");
+      const query="timestamp="+Date.now(),signature=sign(query,a.apiSecret),headers={"X-MBX-APIKEY":a.apiKey},responses=await Promise.all(["/fapi/v2/account","/fapi/v1/openOrders"].map(route=>fetch("https://fapi.binance.com"+route+"?"+query+"&signature="+signature,{headers,signal:AbortSignal.timeout(10000)})));
+      if(responses.some(r=>!r.ok))throw Error("原生账户请求失败");const [account,orders]=await Promise.all(responses.map(r=>r.json()));verify(a.platform,account.positions,orders);
     }else if(a.platform==="extended"){
-      const [account,orders]=await Promise.all([getExtendedAccount(a),getExtendedOpenOrders(a)]);if(account.currentPos||!Array.isArray(orders)||orders.length)throw Error("有仓位或挂单");
+      const [positions,orders]=await Promise.all([extendedRequest("/api/v1/user/positions",{method:"GET",apiKey:a.apiKey}),extendedRequest("/api/v1/user/orders",{method:"GET",apiKey:a.apiKey})]);
+      if(!Array.isArray(orders?.data))throw Error("原生委托信息缺失");
+      // Terminal rows are history, but partial executions still require explicit native positions.
+      const open=orders.data.filter(o=>!["FILLED","CANCELLED","CANCELED","EXPIRED","REJECTED"].includes(String(o.status||"").toUpperCase()));verify(a.platform,positions?.data,open);
     }else throw Error("平台不支持核验");
-  }catch(error){throw Error("无法确认Live原生持仓和挂单均为空，禁止迁移；请在交易所完成核对后重试");}
+  }catch(error){throw Error("无法确认Live原生持仓和挂单均为空，禁止迁移；"+(error.nativeReviewReason||"核验请求失败或数据不完整")+"；请在交易所完成核对后重试");}
 }
 let stateMap = {};
 let historyRevision = 0;
@@ -4956,7 +4960,7 @@ const server = http.createServer((req, res) => {
           const cfg = loadConfig(), target = cfg.accounts.find(a => a.id === acc.id);
           if(isCompound(target))throw Error("4H独立账本不可切换到趋势账户，请新建账户");
           const requestedType = ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(data.strategyType) ? data.strategyType : (isTrendOnly(acc) ? getStrategyType(acc) : "trend_only_v2");
-          const migration=await require("./terminal/migration-audit").prepare({directory:__dirname,account:acc,st,runtime:trendRuntime.get(acc),orders:simulationOrdersMap[acc.id]||[],nextType:requestedType,verifyLiveFlat:verifyLegacyLiveFlat});
+          const migration=await require("./terminal/migration-audit").prepare({directory:__dirname,account:acc,st,runtime:trendRuntime.get(acc),orders:simulationOrdersMap[acc.id]||[],nextType:requestedType,verifyLiveFlat:verifyLegacyLiveFlat,ownsTick:true});
           target.trendOnlyConfig = trendEngine(requestedType).normalizeConfig(data.config);
           target.strategyType = requestedType; target.strategyMode = requestedType === "trend_only_v3" ? "Trend Only V3" : requestedType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
           target.leverage = target.trendOnlyConfig.leverage;
@@ -5190,6 +5194,7 @@ const server = http.createServer((req, res) => {
           clearSmartRuntime(current.id);
           resetSmartPosition(currentState);
         }
+        require("./terminal/migration-audit").assertTarget(migration,next);
         const nextAccount = { ...current, ...next };
         const switchedTrendVersion = isTrendOnly(nextAccount) && (
           getStrategyType(current) !== getStrategyType(nextAccount) ||
