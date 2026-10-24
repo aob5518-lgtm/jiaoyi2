@@ -17,6 +17,9 @@ function setup(t,env={}){
  }
  return{ctx,call,directory};
 }
+async function migrate(f,config){const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,200,r.text);return config?f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config}):r;}
+// Historical V1/V2 status/recovery fixtures are seeded directly, never created through a retired upgrade API.
+function seedLegacy(f,version){f.ctx.seedVersion=version;vm.runInContext('Object.assign(config.accounts[0],{strategyType:"trend_only_"+seedVersion,strategyMode:"Trend Only "+seedVersion.toUpperCase(),trendOnlyConfig:require(seedVersion==="v1"?"./trend_only":"./trend_only_v2").normalizeConfig({}),leverage:10,maxAdds:0});saveConfig(config);trendRuntime.resetForStrategySwitch(config.accounts[0],"trend_only_"+seedVersion)',f.ctx);}
 test('V4全部终端接口要求登录且不返回密钥',async t=>{const f=setup(t);for(const route of ['terminal','history','analysis'])assert.equal((await f.call('/api/v4/'+route,undefined,false)).code,401);assert.equal((await f.call('/api/v4/control',{action:'start'},false)).code,401);const r=await f.call('/api/v4/terminal');assert.equal(r.code,200);for(const value of ['stark-secret','0x'+'1'.repeat(64),'"apiSecret"','"privateKey"'])assert.equal(r.text.includes(value),false);assert.equal(r.data.account.hasPrivateKey,true);assert.equal(r.data.overview.policy.status,'LEGACY_RESTRICTED');});
 test('V4未知策略不回退经典引擎，创建和启动均阻断',async t=>{const f=setup(t);vm.runInContext('config.accounts[0].strategyType="unrecognized_bot"',f.ctx);assert.equal(vm.runInContext('getStrategyType(config.accounts[0])',f.ctx),'unrecognized_bot');const r=await f.call('/api/v4/terminal');assert.equal(r.data.overview.status,'UNSUPPORTED_STRATEGY');assert.equal((await f.call('/api/start',{})).code,400);assert.equal((await f.call('/api/v4/control',{id:'legacy',action:'start'})).code,400);assert.equal((await f.call('/api/v4/accounts',{strategyType:'classic'})).code,400);});
 test('V4三策略能力如实展示，新建V3/4H可用，Short-Term不能伪造独立Paper账户',async t=>{const f=setup(t),r=await f.call('/api/v4/terminal');assert.equal(r.data.catalog.length,3);assert.equal(r.data.catalog.find(v=>v.id==='short_term_v1').mode,'Shadow');assert.equal(r.data.catalog.find(v=>v.id==='short_term_v1').independentAccount,false);assert.equal((await f.call('/api/v4/accounts',{strategyType:'short_term_v1'})).code,400);for(const strategyType of ['trend_only_v3','compound_4h_v1']){const created=await f.call('/api/v4/accounts',{strategyType,name:'V4 test'});assert.equal(created.code,200,created.text);const status=await f.call('/api/v4/terminal?id='+created.data.id);assert.equal(status.data.account.strategyType,strategyType);assert.equal(status.data.account.tradeMode,'simulation');assert.equal(status.data.overview.health.running,false);assert.equal(status.data.account.hasApiKey,false);}});
@@ -80,13 +83,60 @@ test('V4旧策略只能reduce-only，未知策略任何订单均拒绝',()=>{con
 
 test('V4分析拒绝跨实验混算并尊重样本类型与时间范围',async t=>{const f=setup(t),id=(await f.call('/api/v4/accounts',{strategyType:'trend_only_v3'})).data.id;assert.equal((await f.call('/api/v4/analysis?id='+id+'&experiment=all')).code,400);const shadow=await f.call('/api/v4/analysis?id='+id+'&sample=shadow&hours=24');assert.equal(shadow.code,200,shadow.text);assert.equal(shadow.data.data.decisions72h,null);const exact=await f.call('/api/v4/analysis?id='+id+'&experiment=isolated-test&revision=test-revision&hash=test-hash');assert.equal(exact.code,200,exact.text);assert.equal(exact.data.data.scope.experimentId,'isolated-test');assert.equal(exact.data.data.scope.configHash,'test-hash');});
 
-test('V4兼容接口的显式迁移同样审计并阻断未核验Live与Paper残单',async t=>{for(const route of ['/api/config','/api/trend-only/config']){const payload=route==='/api/config'?{strategyType:'trend_only_v3',trendOnlyConfig:{}}:{accountId:'legacy',strategyType:'trend_only_v3',config:{}};const good=setup(t);assert.equal((await good.call(route,payload)).code,200);const files=fs.readdirSync(path.join(good.directory,'backups/v4-migrations'));assert.equal(files.length,1);const audit=JSON.parse(fs.readFileSync(path.join(good.directory,'backups/v4-migrations',files[0])));assert.equal(audit.phase,'COMPLETED');assert.equal(audit.beforeAccount.strategyType,'classic');for(const mode of ['live','unsettled']){const f=setup(t);vm.runInContext(mode==='live'?'Object.assign(config.accounts[0],{tradeMode:"live",simulationEnabled:false});saveConfig(config)':'simulationOrdersMap.legacy=[{status:"FILLED",size:1,orderSide:"buy"}]',f.ctx);assert.equal((await f.call(route,payload)).code,400,route+mode);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'classic');}}});
+test('兼容接口不接受迁移声明或confirm伪装；合格Paper只走正式入口',async t=>{for(const route of ['/api/config','/api/trend-only/config']){const f=setup(t),r=await f.call(route,{accountId:'legacy',strategyType:'trend_only_v3',confirm:true,entryPoint:'formal',trendOnlyConfig:{},config:{}});assert.equal(r.code,400);assert.match(r.data.error,/LEGACY_MIGRATION_REQUIRED/);assert.equal(fs.existsSync(path.join(f.directory,'backups/v4-migrations')),false);await migrate(f);const files=fs.readdirSync(path.join(f.directory,'backups/v4-migrations'));assert.equal(files.length,1);assert.equal(JSON.parse(fs.readFileSync(path.join(f.directory,'backups/v4-migrations',files[0]))).phase,'COMPLETED');}});
+
+const compatibilityRoutes=['/api/config','/api/trend-only/config','/api/v4/config'];
+function financialSnapshot(f){return vm.runInContext('JSON.stringify({config,historyMap,simulationOrdersMap,smartRuntimeMap,runtime:trendRuntime.get(config.accounts[0]),state:{simBalance:stateMap.legacy.simBalance,simRealizedPnl:stateMap.legacy.simRealizedPnl,positionQty:stateMap.legacy.positionQty,smartExitPending:stateMap.legacy.smartExitPending,smartExitSignalTime:stateMap.legacy.smartExitSignalTime,smartOrderIds:stateMap.legacy.smartOrderIds,smartRiskOff:stateMap.legacy.smartRiskOff}})',f.ctx);}
+function configRequest(type){return{id:'legacy',accountId:'legacy',strategyType:type,config:{},trendOnlyConfig:{}};}
+
+test('全部旧策略及兼容接口拒绝V1/V2/V3或旧策略跳板切换，资金与运行时不变',async t=>{
+ for(const source of ['classic','smart_regime_v1','trend_only_v1','trend_only_v2'])for(const route of compatibilityRoutes)for(const target of ['classic','trend_only_v1','trend_only_v2','trend_only_v3']){
+  const f=setup(t);if(source.startsWith('trend_only_'))seedLegacy(f,source.slice(-2));else vm.runInContext('config.accounts[0].strategyType='+JSON.stringify(source)+';saveConfig(config)',f.ctx);
+  vm.runInContext('stateMap.legacy.simBalance=10008;stateMap.legacy.simRealizedPnl=8;stateMap.legacy.smartExitPending={phase:"checking"};stateMap.legacy.smartOrderIds=["keep"];smartRuntimeMap.legacy={simBalance:10008,smartOrderIds:["keep"]};stateMap.legacy.profitHistory=[{netPnl:8,id:"preserved"}]',f.ctx);
+  const before=financialSnapshot(f),disk=fs.readFileSync(path.join(f.directory,'config.json'),'utf8'),r=await f.call(route,configRequest(target));assert.equal(r.code,400,source+route+target);assert.match(r.data.error,/LEGACY_MIGRATION_REQUIRED/);assert.equal(financialSnapshot(f),before);assert.equal(fs.readFileSync(path.join(f.directory,'config.json'),'utf8'),disk);assert.equal(fs.existsSync(path.join(f.directory,'backups/v4-migrations')),false);
+ }
+});
+
+test('残差或缺失净盈亏时，正式及全部兼容接口均拒绝迁移且保留证据',async t=>{
+ for(const fault of ['residual','missingNet'])for(const route of [...compatibilityRoutes,'/api/v4/migrate']){
+  const f=setup(t);vm.runInContext(fault==='residual'?'simulationOrdersMap.legacy=[{id:"residual",status:"FILLED",symbol:"ETH",positionSide:"long",orderSide:"buy",size:1}]':'stateMap.legacy.profitHistory=[{id:"missing-net",pnl:8}];stateMap.legacy.simBalance=10008',f.ctx);
+  const before=financialSnapshot(f),r=await f.call(route,route==='/api/v4/migrate'?{id:'legacy',target:'trend_only_v3',confirm:true}:configRequest('trend_only_v3'));assert.equal(r.code,400,r.text);if(route==='/api/v4/migrate')assert.ok(r.data.diagnostics.blockers.some(v=>v.field===(fault==='residual'?'simulationLedger':'paperEquityReconciliation')));else assert.match(r.data.error,/LEGACY_MIGRATION_REQUIRED/);assert.equal(financialSnapshot(f),before);
+ }
+});
+
+test('旧Live通过任何配置或迁移入口均不能静默转Paper，reduce-only保护权限保留',async t=>{
+ for(const route of [...compatibilityRoutes,'/api/v4/migrate']){const f=setup(t);vm.runInContext('Object.assign(config.accounts[0],{strategyType:"smart_regime_v1",tradeMode:"live",simulationEnabled:false});saveConfig(config);stateMap.legacy.positionQty=-.0001;stateMap.legacy.smartRiskOff=true',f.ctx);const before=financialSnapshot(f),r=await f.call(route,{...configRequest('trend_only_v3'),target:'trend_only_v3',confirm:true,tradeMode:'simulation',simulationEnabled:true});assert.equal(r.code,400);assert.match(r.data.error,/LEGACY_MIGRATION_REQUIRED/);assert.equal(financialSnapshot(f),before);}
+ const P=require('../terminal/policy');for(const strategyType of P.LEGACY){assert.doesNotThrow(()=>P.assertEntry({strategyType,tradeMode:'live'},true));assert.throws(()=>P.assertEntry({strategyType,tradeMode:'live'},false),/LEGACY_RESTRICTED/);}
+});
+
+test('旧账户不能单独经兼容接口改资金身份币种或交易模式来绕过正式迁移',async t=>{
+ for(const route of compatibilityRoutes)for(const next of [{simulationBalance:1},{symbol:'BTC'},{tradeMode:'live',simulationEnabled:false},{id:'replacement'},{strategyType:'smart_regime_v1'}]){const f=setup(t),before=financialSnapshot(f);const r=await f.call(route,{accountId:'legacy',config:{},...next});assert.equal(r.code,400);assert.equal(financialSnapshot(f),before);}
+});
+
+test('已正式迁移V3可正常配置，各入口均保留历史权益且不能降级或开启Live',async t=>{
+ for(const route of compatibilityRoutes){const f=setup(t);vm.runInContext('stateMap.legacy.simBalance=10008;stateMap.legacy.profitHistory=[{id:"prior-profit",netPnl:8}]',f.ctx);await migrate(f);const original=vm.runInContext('JSON.stringify({orders:simulationOrdersMap.legacy,history:stateMap.legacy.profitHistory,equity:trendRuntime.get(config.accounts[0]).simBalance})',f.ctx);
+  const r=await f.call(route,{...configRequest('trend_only_v3'),name:'updated',config:{riskPerTrade:.005},trendOnlyConfig:{riskPerTrade:.005}});assert.equal(r.code,200,r.text);assert.equal(vm.runInContext('config.accounts[0].trendOnlyConfig.riskPerTrade',f.ctx),.005);assert.equal(vm.runInContext('JSON.stringify({orders:simulationOrdersMap.legacy,history:stateMap.legacy.profitHistory,equity:trendRuntime.get(config.accounts[0]).simBalance})',f.ctx),original);
+  for(const change of [{strategyType:'trend_only_v2'},{strategyType:null},{strategyType:''},{strategyType:'unknown'},{strategyType:'short_term_v1'},{tradeMode:'live'},{simulationEnabled:false}]){assert.equal((await f.call(route,{...configRequest('trend_only_v3'),...change})).code,400);assert.equal(vm.runInContext('config.accounts[0].tradeMode',f.ctx),'simulation');assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v3');}
+ }
+});
+
+test('迁移服务自身先校验目标和入口，不会对V1/V2目标返回null',async()=>{
+ const M=require('../terminal/migration-audit');for(const strategyType of ['classic','smart_regime_v1','trend_only_v1','trend_only_v2'])for(const nextType of ['classic','trend_only_v1','trend_only_v2','trend_only_v3'])await assert.rejects(M.prepare({account:{strategyType},nextType}),/LEGACY_MIGRATION_REQUIRED/);
+});
+
+test('配置迁移被拒后，全部旧Live引擎仍可走原生reduce-only保护退出',async t=>{
+ for(const strategyType of ['classic','smart_regime_v1','trend_only_v1','trend_only_v2']){const f=setup(t);f.ctx.liveType=strategyType;vm.runInContext('Object.assign(config.accounts[0],{strategyType:liveType,tradeMode:"live",simulationEnabled:false});saveConfig(config);getHlAssetMeta=async()=>({asset:0,meta:{szDecimals:4}});let protectiveOrders=[];createHlExchangeClient=()=>({order:async payload=>{protectiveOrders.push(payload);return{status:"ok",response:{data:{statuses:[{filled:{totalSz:"1",avgPx:"2500",oid:"mock-protective"}}]}}};}})',f.ctx);
+  assert.equal((await f.call('/api/config',{strategyType:'classic',simulationEnabled:true,tradeMode:'simulation'})).code,400);
+  const order=await vm.runInContext('placeHyperliquidOrder({account:config.accounts[0],symbol:"ETH",side:"sell",size:1,price:2500,reduceOnly:true})',f.ctx);assert.equal(order.reduceOnly,true);assert.equal(order.size,1);assert.equal(vm.runInContext('protectiveOrders[0].orders[0].r',f.ctx),true);
+  await assert.rejects(vm.runInContext('placeHyperliquidOrder({account:config.accounts[0],symbol:"ETH",side:"buy",size:1,price:2500,reduceOnly:false})',f.ctx),/LEGACY_RESTRICTED/);assert.equal(vm.runInContext('protectiveOrders.length',f.ctx),1);
+ }
+});
 
 test('趋势状态接口不可改写旧策略持仓',async t=>{const f=setup(t);vm.runInContext('stateMap.legacy.positionQty=2;stateMap.legacy.entryPrice=100',f.ctx);const r=await f.call('/api/trend-only');assert.equal(r.code,200);assert.equal(r.data.active,false);assert.equal(vm.runInContext('stateMap.legacy.positionQty',f.ctx),2);});
 test('未登录不能读取或确认 Live',async t=>{const f=setup(t);assert.equal((await f.call('/api/trend-only',undefined,false)).code,401);assert.equal((await f.call('/api/trend-only/confirm',{confirmLive:true},false)).code,401);});
 
 test('Short-Term authenticated API is isolated Shadow and configuration cannot enable Live',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
+ const f=setup(t);await migrate(f);
  assert.equal((await f.call('/api/trend-only/short-term',undefined,false)).code,401);
  const save=await f.call('/api/trend-only/short-term/config',{id:'legacy',config:{enabled:true,allowLive:true,entryModes:['momentum_breakout'],riskPerTrade:.0025}});assert.equal(save.code,200);assert.equal(save.data.config.allowLive,false);assert.equal(save.data.orderPermission,false);
  const status=await f.call('/api/trend-only/short-term');assert.equal(status.code,200);assert.equal(status.data.strategyVersion,'short_term_v1');assert.equal(status.data.sampleType,'shadow');assert.equal(status.data.summary.trades,0);
@@ -94,7 +144,7 @@ test('Short-Term authenticated API is isolated Shadow and configuration cannot e
 });
 
 test('Short-Term occupied Shadow book prevents market changes through ordinary config',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
+ const f=setup(t);await migrate(f);
  vm.runInContext('trendRuntime.get(config.accounts[0]).shortTermBooks={occupied:{position:{positionSize:1}}}',f.ctx);
  const changed=await f.call('/api/config',{symbol:'BTC'});assert.equal(changed.code,400);assert.match(changed.data.error,/Shadow/);assert.equal(vm.runInContext('config.accounts[0].symbol',f.ctx),'ETH');
  const blocked=await f.call('/api/trend-only/short-term/config',{id:'legacy',config:{enabled:false}});
@@ -126,23 +176,23 @@ test('4H cannot be enabled by reusing an old strategy account and risk/parameter
  assert.equal((await f.call('/api/compound/config',{id,config:{maxAdds:4}})).code,400);
 });
 test('analysis time filters exclude undated legacy rows only when an explicit window is requested',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
+ const f=setup(t);await migrate(f);
  vm.runInContext(`const scopeForTime=v3Scope(TrendOnlyV3.normalizeConfig(config.accounts[0].trendOnlyConfig));stateMap.legacy.profitHistory=[{...scopeForTime,netPnl:2,netR:1,exitTime:Date.now()-1000},{...scopeForTime,netPnl:3,netR:1,exitTime:1000}]`,f.ctx);
  const r=await f.call('/api/trend-only/analytics?from='+String(Date.now()-5000));assert.equal(r.data.summary.trades,1);assert.equal(r.data.summary.netPnl,2);assert.equal((await f.call('/api/trend-only/analytics?from=bad')).code,400);
 });
-test('启用趋势默认推荐 V2、Paper 并保存 10 倍配置',async t=>{const f=setup(t);const r=await f.call('/api/trend-only/config',{accountId:'legacy',config:{}});assert.equal(r.code,200,JSON.stringify(r));assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v2');assert.equal(vm.runInContext('config.accounts[0].leverage',f.ctx),10);assert.equal(vm.runInContext('config.accounts[0].tradeMode',f.ctx),'simulation');});
-test('Trend Only V1 继续可用并可一键升级到 V2',async t=>{const f=setup(t);assert.equal((await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v1',config:{}})).code,200);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v1');const before=vm.runInContext('({platform:config.accounts[0].platform,symbol:config.accounts[0].symbol,balance:config.accounts[0].simulationBalance,key:config.accounts[0].privateKey})',f.ctx);assert.equal((await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{version:'v2',leverage:10}})).code,200);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v2');assert.equal(vm.runInContext('config.accounts[0].strategyMode',f.ctx),'Trend Only V2');assert.equal(vm.runInContext('config.accounts[0].trendOnlyConfig.version',f.ctx),'v2');assert.equal(vm.runInContext('config.accounts[0].maxAdds',f.ctx),0);assert.equal(vm.runInContext('config.accounts[0].leverage',f.ctx),10);assert.deepEqual(vm.runInContext('({platform:config.accounts[0].platform,symbol:config.accounts[0].symbol,balance:config.accounts[0].simulationBalance,key:config.accounts[0].privateKey})',f.ctx),before);});
-test('V2 chopTransitionMax=52 可正常保存且不依赖旧 maxChop',async t=>{const f=setup(t);const r=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{chopTransitionMax:52,maxChopToTrade:1}});assert.equal(r.code,200,JSON.stringify(r.data));assert.equal(vm.runInContext('config.accounts[0].trendOnlyConfig.chopTransitionMax',f.ctx),52);assert.equal(vm.runInContext('Object.hasOwn(config.accounts[0].trendOnlyConfig,"maxChopToTrade")',f.ctx),false);});
-test('/api/status 返回 Trend Only 统一 executionState 和 executionReason',async t=>{const f=setup(t);assert.equal((await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{}})).code,200);const r=await f.call('/api/status');assert.equal(r.code,200);assert.equal(r.data.state.trendOnly.executionState,'MONITOR_STOPPED');assert.match(r.data.state.trendOnly.executionReason,/停止/);});
+test('省略策略不再默认升级V2，必须进入正式迁移',async t=>{const f=setup(t),r=await f.call('/api/trend-only/config',{accountId:'legacy',config:{}});assert.equal(r.code,400);assert.match(r.data.error,/LEGACY_MIGRATION_REQUIRED/);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'classic');});
+test('退役的一键V1升级V2接口被拒绝，历史V1账户状态保留',async t=>{const f=setup(t);seedLegacy(f,'v1');const before=vm.runInContext('JSON.stringify(config)',f.ctx);const r=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{}});assert.equal(r.code,400);assert.match(r.data.error,/LEGACY_MIGRATION_REQUIRED/);assert.equal(vm.runInContext('JSON.stringify(config)',f.ctx),before);});
+test('历史V2计算模块保留CHOP兼容性，但不开放旧配置写入口',()=>{const c=require('../trend_only_v2').normalizeConfig({chopTransitionMax:52,maxChopToTrade:1});assert.equal(c.chopTransitionMax,52);assert.equal(Object.hasOwn(c,'maxChopToTrade'),false);});
+test('/api/status 保留历史V2统一执行状态与原因',async t=>{const f=setup(t);seedLegacy(f,'v2');const r=await f.call('/api/status');assert.equal(r.code,200);assert.equal(r.data.state.trendOnly.executionState,'MONITOR_STOPPED');assert.match(r.data.state.trendOnly.executionReason,/停止/);});
 test('Trend Only 异常后下一轮成功会清除 activeError 并保留最近错误',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{}});
+ const f=setup(t);seedLegacy(f,'v2');
  await vm.runInContext('(async()=>{trendRuntime.tick=async()=>{throw Error("candles API timeout")};await tickAccount(config.accounts[0])})()',f.ctx);
  let r=await f.call('/api/status');assert.equal(r.data.state.activeError,'candles API timeout');assert.equal(r.data.state.lastError,'candles API timeout');assert.ok(r.data.state.lastErrorAt>0);assert.equal(r.data.state.health.status,'error');
  await vm.runInContext('(async()=>{trendRuntime.tick=async(_acc,st)=>{st.lastAction="趋势有效，等待延续结构确认"};await tickAccount(config.accounts[0])})()',f.ctx);
  r=await f.call('/api/status');assert.equal(r.data.state.activeError,'');assert.equal(r.data.state.lastError,'candles API timeout');assert.equal(r.data.state.health.status,'healthy');
 });
 test('health 优先区分 riskLock、当前异常与已恢复历史错误',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{}});
+ const f=setup(t);seedLegacy(f,'v2');
  vm.runInContext('Object.assign(stateMap.legacy,{activeError:"",lastError:"历史超时",lastErrorAt:123});Object.assign(trendRuntime.get(config.accounts[0]),{riskLock:false,riskLockReason:""})',f.ctx);
  let r=await f.call('/api/status');assert.equal(r.data.state.health.status,'healthy');assert.equal(r.data.state.health.lastError,'历史超时');
  vm.runInContext('Object.assign(trendRuntime.get(config.accounts[0]),{riskLock:true,riskLockReason:"保护止损失败"})',f.ctx);
@@ -156,8 +206,8 @@ test('classic 成功 tick 清除当前异常但不破坏历史错误',async t=>{
 test('历史接口标记旧记录并可靠推导持仓时长',async t=>{const f=setup(t);vm.runInContext('stateMap.legacy.profitHistory=[{time:new Date(1600000).toISOString(),entryTime:1000000,exitTime:1600000,symbol:"ETH",side:"long",entryPrice:100,exitPrice:101,pnl:1,netPnl:0.8,tradingFee:0.2}]',f.ctx);const r=await f.call('/api/profit-history?id=legacy');assert.equal(r.code,200);assert.equal(r.data.items[0].legacyRecord,true);assert.equal(r.data.items[0].holdingDurationMs,600000);assert.equal(r.data.items[0].netPnl,0.8);assert.equal(r.data.items[0].maximumAdverseExcursion,undefined);});
 test('Extended Live + Trend Only V2 启动返回明确禁用原因',async t=>{const f=setup(t);vm.runInContext('Object.assign(config.accounts[0],{strategyType:"trend_only_v2",strategyMode:"Trend Only V2",platform:"extended",tradeMode:"live",simulationEnabled:false,trendOnlyConfig:require("./trend_only_v2").normalizeConfig({})})',f.ctx);const r=await f.call('/api/start',{});assert.equal(r.code,400);assert.match(r.data.error,/Extended Live 趋势下单暂未开放/);assert.equal(r.data.message,r.data.error);});
 test('运行中禁止切换或修改趋势模式',async t=>{const f=setup(t);vm.runInContext('config.accounts[0].running=true;stateMap.legacy.running=true',f.ctx);const r=await f.call('/api/trend-only/config',{accountId:'legacy',config:{}});assert.equal(r.code,400);});
-test('普通重置与手动下单不能绕过趋势状态',async t=>{const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',config:{}});assert.equal((await f.call('/api/reset',{})).code,400);assert.equal((await f.call('/api/manual-order',{size:1})).code,500);});
-test('跨账户或过期确认拒绝',async t=>{const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',config:{}});assert.equal((await f.call('/api/trend-only/confirm',{accountId:'other',confirmLive:true})).code,400);assert.equal((await f.call('/api/trend-only/confirm',{accountId:'legacy',confirmLive:true})).code,400);});
+test('普通重置与手动下单不能绕过趋势状态',async t=>{const f=setup(t);await migrate(f);assert.equal((await f.call('/api/reset',{})).code,400);assert.equal((await f.call('/api/manual-order',{size:1})).code,500);});
+test('跨账户或过期确认拒绝',async t=>{const f=setup(t);await migrate(f);assert.equal((await f.call('/api/trend-only/confirm',{accountId:'other',confirmLive:true})).code,400);assert.equal((await f.call('/api/trend-only/confirm',{accountId:'legacy',confirmLive:true})).code,400);});
 test('/api/status、/api/mobile-status 与 /api/config 不返回完整密钥',async t=>{
  const f=setup(t);
  for(const endpoint of ['/api/status','/api/mobile-status']){
@@ -173,13 +223,13 @@ test('/api/status、/api/mobile-status 与 /api/config 不返回完整密钥',as
  }
  const saved=await f.call('/api/config',{name:'legacy-safe',platform:'hyperliquid',symbol:'ETH',quoteAsset:'USDC',side:'long',tradeMode:'simulation',simulationEnabled:true,privateKey:'',apiSecret:'',starkPrivateKey:'',leverage:5,baseAmount:100,addAmount:100,takeProfit:.01,addTrigger:.01,maxAdds:2,interval:15000});
  const text=JSON.stringify(saved.data);
- assert.equal(saved.code,200,text);
+ assert.equal(saved.code,400,text);assert.match(saved.data.error,/LEGACY_MIGRATION_REQUIRED/);
  assert.equal(text.includes('privateKey'),false);
  assert.equal(text.includes('apiSecret'),false);
  assert.equal(text.includes('starkPrivateKey'),false);
 });
 test('密钥输入为空时保存配置不会清空旧密钥',async t=>{
- const f=setup(t);
+ const f=setup(t);await migrate(f);
  const before=vm.runInContext('config.accounts[0].privateKey',f.ctx);
  await f.call('/api/config',{name:'legacy',platform:'hyperliquid',symbol:'ETH',quoteAsset:'USDC',side:'long',tradeMode:'simulation',simulationEnabled:true,privateKey:'',apiKey:'',apiSecret:'',starkPrivateKey:'',publicKey:'',vault:'',leverage:5,baseAmount:100,addAmount:100,takeProfit:.01,addTrigger:.01,maxAdds:2,interval:15000});
  assert.equal(vm.runInContext('config.accounts[0].privateKey',f.ctx),before);
@@ -192,22 +242,22 @@ test('静态路由禁止访问 public 目录外文件',async t=>{
 });
 test('批量启动跳过 Trend Only 并返回明确原因',async t=>{
  const f=setup(t);
- await f.call('/api/trend-only/config',{accountId:'legacy',config:{}});
+ await migrate(f);
  const r=await f.call('/api/start-all',{});
  assert.equal(r.code,200,JSON.stringify(r.data));
  assert.equal(r.data.successCount,0);
  assert.equal(r.data.skippedCount,1);
- assert.match(r.data.skipped[0].reason,/Trend Only V2/);
+ assert.match(r.data.skipped[0].reason,/Trend Only V3/);
 });
 test('/api/public/status 对 Trend Only 内部 journal 与订单字段严格脱敏',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{}});
+ const f=setup(t);seedLegacy(f,'v2');
  vm.runInContext('Object.assign(trendRuntime.get(config.accounts[0]),{signalJournal:[{time:1,executionBlocker:"secret"}],stopOrderId:"stop-secret",riskLockReason:"risk-secret",trendContext:{internal:true},signal:{regime:"trend",directionRaw:"long",tradeDirection:"long"}})',f.ctx);
  const r=await f.call('/api/public/status?id=legacy',undefined,false),text=JSON.stringify(r.data);
  assert.equal(r.code,200);for(const field of ['signalJournal','stopOrderId','clientOrderId','trendContext','riskLockReason','executionBlocker'])assert.equal(text.includes(field),false,field);
  assert.deepEqual(Object.keys(r.data.state.trendOnly).sort(),['direction','hasPosition','marketStage','marketStatus','nextAction','pnl','roi','running','tradeDirection','updatedAt'].sort());
 });
 test('/api/status 仅返回 50 条 journal，分页接口可读取完整历史',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{}});
+ const f=setup(t);seedLegacy(f,'v2');
  vm.runInContext('trendRuntime.get(config.accounts[0]).signalJournal=Array.from({length:80},(_,i)=>({time:i+1,finalDecision:i%2?"NO_SIGNAL":"READY_TO_OPEN"}))',f.ctx);
  const status=await f.call('/api/status');assert.equal(status.data.state.trendOnly.signalJournal.length,50);
  const page=await f.call('/api/trend-only/signal-journal?id=legacy&limit=20&offset=50');assert.equal(page.code,200);assert.equal(page.data.total,80);assert.equal(page.data.items.length,20);assert.equal(page.data.items[0].time,30);
@@ -224,7 +274,7 @@ test('生产环境登录 Cookie 强制 Secure、HttpOnly 与 SameSite=Lax',async
  assert.match(r.headers['Set-Cookie'],/HttpOnly; SameSite=Lax; Secure/);
 });
 test('V3 策略分析接口按版本、实验与配置隔离并使用净值统计',async t=>{
- const f=setup(t);const enabled=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{experimentId:'A'}});assert.equal(enabled.code,200,JSON.stringify(enabled.data));
+ const f=setup(t);const enabled=await migrate(f,{experimentId:'A'});assert.equal(enabled.code,200,JSON.stringify(enabled.data));
  vm.runInContext(`stateMap.legacy.profitHistory=[
   {strategyVersion:'trend_only_v3',experimentId:'A',configHash:'h1',entryMode:'pullback_entry',exitTime:1,netPnl:10,netR:1,tradingFee:1},
   {strategyVersion:'trend_only_v3',experimentId:'A',configHash:'h1',entryMode:'pullback_entry',exitTime:2,netPnl:-5,netR:-.5,tradingFee:1},
@@ -241,7 +291,7 @@ test('V3 Post Exit 更新按凭证键合并，不会制造重复历史',async t=
 });
 
 test('Forward Test API defaults exclude old revisions and preserve old history explicitly',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{}});
+ const f=setup(t);await migrate(f);
  vm.runInContext(`const forwardScope=v3Scope(TrendOnlyV3.normalizeConfig(config.accounts[0].trendOnlyConfig));stateMap.legacy.profitHistory=[{...forwardScope,entryMode:'pullback_entry',netPnl:2,netR:1},{...forwardScope,strategyRevision:'V3_20261009_STRUCTURE',netPnl:-5,netR:-2},{...forwardScope,strategyRevision:undefined,netPnl:-7,netR:-3}]`,f.ctx);
  const analysis=await f.call('/api/trend-only/analytics');assert.equal(analysis.code,200);assert.equal(analysis.data.summary.trades,1);assert.equal(analysis.data.strategyRevision,require('../strategy/trend_v3/scope').REVISION);assert.equal(analysis.data.experimentId,'V3_STD_20261015_C');assert.equal(analysis.data.forward.modeFunnel.breakout_entry.Filled,0);
  assert.equal(analysis.data.forward.independentShadows.V3_COST_TIGHT.initialized,false);assert.match(analysis.data.forward.independentShadows.V3_COST_TIGHT.message,/尚未形成有效样本/);
@@ -252,9 +302,9 @@ test('Forward Test API defaults exclude old revisions and preserve old history e
 });
 
 test('停止后切换 V2 到 V3 会强制 Paper、发布真实引擎并清除瞬时状态',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{version:'v2'}});
+ const f=setup(t);seedLegacy(f,'v2');
  vm.runInContext('Object.assign(trendRuntime.get(config.accounts[0]),{signal:{directionRaw:"short"},preview:{qty:1},executionState:"READY_TO_OPEN",executionReason:"old",strategyState:"READY",candidateSetup:{grade:"A"},trendContext:{trendId:"old"},signalJournal:[{time:1}],journal:[{id:"history-1"}],simBalance:9988})',f.ctx);
- const switched=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});assert.equal(switched.code,200,JSON.stringify(switched.data));
+ const switched=await migrate(f);assert.equal(switched.code,200,JSON.stringify(switched.data));
  const status=await f.call('/api/status');
  assert.equal(status.data.config.strategyType,'trend_only_v3');assert.equal(status.data.config.strategyMode,'Trend Only V3');assert.equal(status.data.config.trendOnlyConfig.version,'v3');
  assert.equal(status.data.config.tradeMode,'simulation');assert.equal(status.data.config.simulationEnabled,true);
@@ -264,34 +314,34 @@ test('停止后切换 V2 到 V3 会强制 Paper、发布真实引擎并清除瞬
 
 test('趋势版本切换对持仓、pending 与 unknown order 全部 fail closed',async t=>{
  for(const setupState of ['position','pending','unknown']){
-  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v2',config:{version:'v2'}});
+  const f=setup(t);seedLegacy(f,'v2');
   vm.runInContext(setupState==='position'?'trendRuntime.get(config.accounts[0]).position={positionSize:1}':setupState==='pending'?'trendRuntime.get(config.accounts[0]).pendingOrder={status:"submitted"}':'trendRuntime.get(config.accounts[0]).pendingOrder={status:"unknown_order_state"}',f.ctx);
-  const r=await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});assert.equal(r.code,400,setupState);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v2');
+  const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,400,setupState);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v2');
  }
 });
 
 test('配置与运行时引擎版本不一致时状态告警且禁止启动',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
+ const f=setup(t);await migrate(f);
  vm.runInContext('trendRuntime.get(config.accounts[0]).engineVersion="v2"',f.ctx);
  const status=await f.call('/api/status');assert.equal(status.data.strategyRuntime.activeEngine,'TrendOnlyV2');assert.equal(status.data.strategyRuntime.versionMismatch,true);assert.equal(status.data.state.trendOnly.executionState,'STRATEGY_VERSION_MISMATCH');
  const start=await f.call('/api/start',{});assert.equal(start.code,409);assert.match(start.data.error,/禁止启动/);assert.equal(vm.runInContext('stateMap.legacy.running',f.ctx),false);
 });
 
 test('/api/start 返回实际 Trend Only 版本、模式与运行状态',async t=>{
- const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
+ const f=setup(t);await migrate(f);
  const r=await f.call('/api/start',{});assert.equal(r.code,200);assert.equal(r.data.strategyType,'trend_only_v3');assert.equal(r.data.strategyMode,'Trend Only V3');assert.equal(r.data.strategyVersion,'v3');assert.equal(r.data.running,true);assert.match(r.data.message,/Paper/);
 });
 
-test('普通配置保存初始化正确引擎；旧账户迁移V3不同时切换币种',async t=>{
+test('Classic/Smart不能经普通配置切换到任何趋势版本',async t=>{
  for(const source of ['classic','smart_regime_v1']) for(const version of ['v1','v2','v3']) {
   const f=setup(t);vm.runInContext(`config.accounts[0].strategyType=${JSON.stringify(source)};saveConfig(config);trendRuntime.busy(config.accounts[0])`,f.ctx);
   const symbol=version==='v3'?'ETH':'BTC';const saved=await f.call('/api/config',{strategyType:'trend_only_'+version,strategyMode:'Trend Only '+version.toUpperCase(),symbol,trendOnlyConfig:{version},privateKey:'',apiSecret:'',starkPrivateKey:''});
-  assert.equal(saved.code,200,JSON.stringify(saved.data));
-  const status=await f.call('/api/status');assert.equal(status.data.strategyRuntime.engineVersion,version);assert.equal(status.data.strategyRuntime.versionMismatch,false);
-  assert.equal(status.data.config.symbol,symbol);assert.equal(status.data.config.hasPrivateKey,true);
+  assert.equal(saved.code,400,JSON.stringify(saved.data));assert.match(saved.data.error,/LEGACY_MIGRATION_REQUIRED/);
+  const status=await f.call('/api/status');assert.equal(status.data.config.strategyType,source);
+  assert.equal(status.data.config.symbol,'ETH');assert.equal(status.data.config.hasPrivateKey,true);
   assert.equal(vm.runInContext('config.accounts[0].apiSecret',f.ctx),'secret');
   assert.equal(status.data.state.running,false);
-  const start=await f.call('/api/start',{});assert.equal(start.code,version==='v3'?200:400,JSON.stringify(start.data));if(version!=='v3')assert.match(start.data.error,/LEGACY_RESTRICTED/);
+  const start=await f.call('/api/start',{});assert.equal(start.code,400,JSON.stringify(start.data));assert.match(start.data.error,/LEGACY_RESTRICTED/);
  }
 });
 
@@ -304,7 +354,7 @@ test('创建账户默认 V3 后保存 BTC V3 不留下旧引擎',async t=>{
 
 test('停止后显式保存可修复旧 V3/V1 标记并保留余额、历史与风控锁',async t=>{
  for(const endpoint of ['/api/config','/api/trend-only/config']){
-  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
+  const f=setup(t);await migrate(f);
   vm.runInContext('Object.assign(trendRuntime.get(config.accounts[0]),{engineVersion:"v1",journal:[{id:"keep-history"}],signalJournal:[{time:1}],simBalance:9988,riskLock:true,riskLockReason:"保留保护锁"})',f.ctx);
   const before=await f.call('/api/start',{});assert.equal(before.code,409);
   const body=endpoint==='/api/config'?{strategyType:'trend_only_v3',trendOnlyConfig:{version:'v3'}}:{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}};
@@ -316,7 +366,7 @@ test('停止后显式保存可修复旧 V3/V1 标记并保留余额、历史与�
 
 test('普通配置保存不能利用引擎修复绕过运行、持仓或待确认订单',async t=>{
  for(const kind of ['running','position','pending','unknown']){
-  const f=setup(t);await f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config:{version:'v3'}});
+  const f=setup(t);await migrate(f);
   vm.runInContext('trendRuntime.get(config.accounts[0]).engineVersion="v1"',f.ctx);
   vm.runInContext(kind==='running'?'config.accounts[0].running=true;stateMap.legacy.running=true;saveConfig(config)':kind==='position'?'trendRuntime.get(config.accounts[0]).position={positionSize:1}':`trendRuntime.get(config.accounts[0]).pendingOrder={status:${JSON.stringify(kind==='unknown'?'unknown_order_state':'submitted')}}`,f.ctx);
   const saved=await f.call('/api/config',{strategyType:'trend_only_v3',trendOnlyConfig:{version:'v3'}});assert.equal(saved.code,400,kind);

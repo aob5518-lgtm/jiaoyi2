@@ -4955,17 +4955,17 @@ const server = http.createServer((req, res) => {
         if (!lock) throw new Error("账户交易锁繁忙");
         st.tickRunning = true;
         if (pathname === "/api/trend-only/config") {
+          require("./terminal/migration-audit").authorize({account:acc,next:{...data,strategyType:data.strategyType??getStrategyType(acc)}});
           if(data.strategyType!==undefined&&!["trend_only_v1","trend_only_v2","trend_only_v3"].includes(data.strategyType))throw Error("策略标识不支持");
           if (st.running || Number(st.positionQty) > 0 || trendRuntime.busy(acc)) throw new Error("请先停止开仓，并平仓或核对未确认订单后修改配置");
           const cfg = loadConfig(), target = cfg.accounts.find(a => a.id === acc.id);
           if(isCompound(target))throw Error("4H独立账本不可切换到趋势账户，请新建账户");
-          const requestedType = ["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(data.strategyType) ? data.strategyType : (isTrendOnly(acc) ? getStrategyType(acc) : "trend_only_v2");
-          const migration=await require("./terminal/migration-audit").prepare({directory:__dirname,account:acc,st,runtime:trendRuntime.get(acc),orders:simulationOrdersMap[acc.id]||[],nextType:requestedType,verifyLiveFlat:verifyLegacyLiveFlat,ownsTick:true});
+          const requestedType = data.strategyType??getStrategyType(acc);
           target.trendOnlyConfig = trendEngine(requestedType).normalizeConfig(data.config);
           target.strategyType = requestedType; target.strategyMode = requestedType === "trend_only_v3" ? "Trend Only V3" : requestedType === "trend_only_v2" ? "Trend Only V2" : "Trend Only V1";
           target.leverage = target.trendOnlyConfig.leverage;
           target.maxAdds = 0;
-          // Initial activation is Paper. Live remains an explicit separate account setting.
+          // Only an already migrated V3 Paper account reaches this compatibility writer.
           if (!isTrendOnly(acc) || requestedType === "trend_only_v3") { target.tradeMode = "simulation"; target.simulationEnabled = true; }
           // Explicit stopped-account saves also repair a stale engine marker.
           // Startup itself must continue to fail closed on any mismatch.
@@ -4973,7 +4973,6 @@ const server = http.createServer((req, res) => {
           saveConfig(cfg);
           if (switchedVersion) trendRuntime.resetForStrategySwitch(acc, requestedType);
           config = cfg; trendRuntime.clearApproval(acc.id);
-          require("./terminal/migration-audit").complete(migration,trendRuntime.get(config.accounts.find(a=>a.id===acc.id)));if(migration)trendRuntime.save();
         } else {
           if (!isTrendOnly(acc)) throw new Error("当前账户未选择 Trend Only 策略");
           if (pathname === "/api/trend-only/confirm") { trendRuntime.confirm(acc, data); await trendRuntime.tick(acc, st); }
@@ -5163,6 +5162,7 @@ const server = http.createServer((req, res) => {
         if (idx === -1) return jsonRes(res, 404, { ok: false, error: "当前账户不存在" });
 
         const current = cfg.accounts[idx];
+        require("./terminal/migration-audit").authorize({account:current,next});
         const currentState = stateMap[current.id];
         if(currentState.tickRunning)throw Error("账户正在执行，请稍后重试");
         configurationLock=acquireAccountTradeLock(current.id);if(!configurationLock)throw Error("账户交易锁繁忙");configurationState=currentState;currentState.terminalMutating=true;
@@ -5181,7 +5181,6 @@ const server = http.createServer((req, res) => {
         if (isTrendOnly(next) && (!isTrendOnly(current) || next.strategyType === "trend_only_v3")) { next.tradeMode = "simulation"; next.simulationEnabled = true; }
         if (isTrendOnly(current) && !next.strategyType) next.leverage = (next.trendOnlyConfig || current.trendOnlyConfig).leverage;
         if (next.strategyType && !isTrendOnly(next)) next.strategyMode = next.strategyType === "classic" ? "DCA基础模式" : "智能V1";
-        const migration=await require("./terminal/migration-audit").prepare({directory:__dirname,account:current,st:currentState,runtime:trendRuntime.get(current),orders:simulationOrdersMap[current.id]||[],nextType:next.strategyType,verifyLiveFlat:verifyLegacyLiveFlat});
         trendRuntime.clearApproval(current.id);
         const changesPositionContract =
           (next.strategyType && next.strategyType !== (current.strategyType || "classic")) ||
@@ -5190,11 +5189,6 @@ const server = http.createServer((req, res) => {
         if (changesPositionContract && Number(currentState?.positionQty || 0) > 0) {
           throw new Error("当前仍有持仓，请先平仓后再切换策略、币种或交易模式");
         }
-        if (current.strategyType === "smart_regime_v1" && next.strategyType === "classic") {
-          clearSmartRuntime(current.id);
-          resetSmartPosition(currentState);
-        }
-        require("./terminal/migration-audit").assertTarget(migration,next);
         const nextAccount = { ...current, ...next };
         const switchedTrendVersion = isTrendOnly(nextAccount) && (
           getStrategyType(current) !== getStrategyType(nextAccount) ||
@@ -5205,7 +5199,6 @@ const server = http.createServer((req, res) => {
         if (switchedTrendVersion) trendRuntime.resetForStrategySwitch(current, getStrategyType(cfg.accounts[idx]));
         config = cfg;
         ensureAccountStates();
-        require("./terminal/migration-audit").complete(migration,trendRuntime.get(cfg.accounts[idx]));if(migration)trendRuntime.save();
 
         return jsonRes(res, 200, { ok: true, config: sanitizeAccountForDashboard(cfg.accounts[idx], stateMap[cfg.accounts[idx].id]) });
       } catch (e) {
