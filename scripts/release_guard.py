@@ -97,6 +97,20 @@ def verify_code(app,stage):
     if code_files(app)!=code_files(stage): raise ValueError('Mixed code tree')
     for name in code_files(stage):
         if digest(Path(app)/name)!=digest(Path(stage)/name): raise ValueError('Code mismatch: '+name)
+def dependencies(app,stage,dest):
+    app,stage,dest=Path(app),Path(stage),Path(dest)
+    for root in [app,stage]:
+        if not (root/'node_modules').is_dir() or (root/'node_modules').is_symlink(): raise ValueError('Dependencies must be isolated real directories')
+    if (dest/'node_modules-before').exists(): raise ValueError('Dependencies already backed up')
+    # All directories share /root/app filesystem. Interrupted second rename is recoverable.
+    os.replace(app/'node_modules',dest/'node_modules-before')
+    os.replace(stage/'node_modules',app/'node_modules')
+def restore_dependencies(app,dest):
+    app,dest=Path(app),Path(dest); previous=dest/'node_modules-before'
+    if previous.exists():
+        if previous.is_symlink() or (app/'node_modules').is_symlink(): raise ValueError('Unexpected dependency symlink')
+        if (app/'node_modules').exists(): os.replace(app/'node_modules',dest/'node_modules-failed')
+        os.replace(previous,app/'node_modules')
 def install(app,stage,fail_after=0):
     app,stage=Path(app),Path(stage); before=states(app); names=code_files(stage)
     for n,name in enumerate(names,1):
@@ -111,10 +125,11 @@ def rollback(app,dest):
         if not (allowed(name) or name=='DEPLOY_COMMIT') or digest(dest/'code-before'/name)!=sha: raise ValueError('Invalid code backup')
     for name in set(code_files(app))-set(manifest): (app/name).unlink()
     for name in manifest: atomic_copy(dest/'code-before'/name,app/name)
+    restore_dependencies(app,dest)
     if set(code_files(app))!=set(manifest) or any(digest(app/n)!=h for n,h in manifest.items()): raise ValueError('Incomplete rollback')
     # NEW history/orders written after restart must never be replaced by predeploy copies.
     if states(app)!=before: raise ValueError('Rollback modified state')
 if __name__=='__main__':
     mode,*args=sys.argv[1:]
-    value={'pack':pack,'verify':verify,'backup':backup,'install':install,'rollback':rollback,'verify-code':verify_code,'verify-states':verify_states}[mode](*args)
+    value={'pack':pack,'verify':verify,'backup':backup,'dependencies':dependencies,'install':install,'rollback':rollback,'verify-code':verify_code,'verify-states':verify_states}[mode](*args)
     print(mode+': OK'+((' '+str(value)) if value is not None else ''))

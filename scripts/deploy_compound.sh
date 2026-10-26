@@ -54,6 +54,7 @@ STOPPED=1
 pm2 stop hyper-safe-ui
 python3 "$GUARD" backup "$APP" "$BACKUP"
 INSTALLED=1
+python3 "$GUARD" dependencies "$APP" "$STAGE" "$BACKUP"
 python3 "$GUARD" install "$APP" "$STAGE"
 python3 "$GUARD" verify-states "$APP" "$BACKUP"
 pm2 restart hyper-safe-ui --update-env

@@ -27,6 +27,29 @@ class DeploymentTests(unittest.TestCase):
     def test_sensitive_paths_and_traversal_rejected(self):
         for name in ['config.json','auth.json','key.pem','.env','../server.js','public/../../auth.json','node_modules/a.js','trend_only_runtime.json','docs/private-secret.js','auth.example.json']: self.assertFalse(guard.allowed(name),name)
         self.assertTrue(guard.allowed('server.js'))
+    def test_dependency_switch_and_restart_failure_restore_original_dependencies(self):
+        with tempfile.TemporaryDirectory() as d:
+            app,stage,backup=self.fixture(Path(d))
+            for root,value in [(app,'old SDK'),(stage,'lockfile SDK')]:
+                (root/'node_modules').mkdir(); (root/'node_modules/version').write_text(value)
+            guard.dependencies(app,stage,backup); guard.install(app,stage)
+            self.assertEqual((app/'node_modules/version').read_text(),'lockfile SDK')
+            (app/'future_runtime.json').write_text('{"orders":[1,2]}')
+            guard.rollback(app,backup)
+            self.assertEqual((app/'node_modules/version').read_text(),'old SDK')
+            self.assertEqual((app/'future_runtime.json').read_text(),'{"orders":[1,2]}')
+    def test_interrupted_dependency_rename_is_recoverable(self):
+        with tempfile.TemporaryDirectory() as d:
+            app,stage,backup=self.fixture(Path(d))
+            for root in [app,stage]: (root/'node_modules').mkdir()
+            (app/'node_modules/version').write_text('old SDK')
+            real_replace=guard.os.replace
+            def injected(source,target):
+                if Path(source)==stage/'node_modules': raise OSError('injected dependency switch failure')
+                return real_replace(source,target)
+            with patch.object(guard.os,'replace',side_effect=injected),self.assertRaises(OSError): guard.dependencies(app,stage,backup)
+            guard.rollback(app,backup)
+            self.assertEqual((app/'node_modules/version').read_text(),'old SDK')
     def test_tampered_backup_rejected_before_restore(self):
         with tempfile.TemporaryDirectory() as d:
             app,stage,backup=self.fixture(Path(d)); guard.install(app,stage); (backup/'code-before/server.js').write_text('tampered')
