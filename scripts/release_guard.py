@@ -3,7 +3,7 @@
 import hashlib, io, json, os, shutil, subprocess, sys, tarfile, tempfile
 from pathlib import Path, PurePosixPath
 BASELINE='39555bc8fae8d3eedf63af984366d2a48438cb76'
-ROOT_FILES={'package.json','package-lock.json','.gitignore','.gitattributes'}
+ROOT_FILES={'package.json','package-lock.json','.gitignore','.gitattributes','config.example.json','config.compound.example.json'}
 CODE_DIRS={'public','strategy','terminal','scripts','tests','docs'}
 SUFFIXES={'.js','.css','.html','.svg','.png','.jpg','.webp','.ico','.md','.sh','.py'}
 def allowed(name):
