@@ -5298,29 +5298,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/api/account/delete" && req.method === "POST") {
-    const cfg = loadConfig();
-    const deleting = getCurrentAccount();
-    if(isCompound(deleting)&&(stateMap[deleting.id]?.running||compoundRuntime.busy(deleting)))return jsonRes(res,400,{ok:false,error:"4H轮次尚未安全结束，禁止删除"});
-    if (isTrendOnly(deleting) && (stateMap[deleting.id]?.running || stateMap[deleting.id]?.tickRunning || trendRuntime.busy(deleting))) return jsonRes(res, 400, { ok: false, error: "趋势账户仍运行、持仓或订单未确认，禁止删除" });
-
-    if (cfg.accounts.length <= 1) {
-      return jsonRes(res, 400, { ok: false, error: "至少保留一个账户" });
-    }
-
-    const currentId = cfg.currentAccountId;
-    cfg.accounts = cfg.accounts.filter(a => a.id !== currentId);
-    cfg.currentAccountId = cfg.accounts[0].id;
-    saveConfig(cfg);
-    config = cfg;
-
-    delete historyMap[currentId];
-    historyRevision += 1;
-    historyWriter.schedule();
-    clearSmartRuntime(currentId);
-
-    ensureAccountStates();
-
-    return jsonRes(res, 200, { ok: true });
+    return jsonRes(res, 410, { ok: false, code: "ACCOUNT_DELETE_DISABLED", error: "危险删除接口已停用；请等待统一的安全账户管理入口。账户、历史与财务数据均保留。" });
   }
 
 

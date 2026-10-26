@@ -17,6 +17,7 @@ function setup(t,env={}){
  }
  return{ctx,call,directory};
 }
+test('危险删除接口永久拒绝，不修改Legacy账户、历史、Smart或模拟账本',async t=>{const f=setup(t);vm.runInContext('historyMap.legacy=[{id:"retained",netPnl:8}];smartRuntimeMap.legacy={riskLock:true};simulationOrdersMap.legacy=[{status:"UNKNOWN"}]',f.ctx);const before=vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx);const r=await f.call('/api/account/delete',{id:'legacy',force:true});assert.equal(r.code,410);assert.equal(r.data.code,'ACCOUNT_DELETE_DISABLED');assert.equal(vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx),before);assert.equal((await f.call('/api/account/delete',{},false)).code,401);});
 async function migrate(f,config){const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,200,r.text);return config?f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config}):r;}
 // Historical V1/V2 status/recovery fixtures are seeded directly, never created through a retired upgrade API.
 function seedLegacy(f,version){f.ctx.seedVersion=version;vm.runInContext('Object.assign(config.accounts[0],{strategyType:"trend_only_"+seedVersion,strategyMode:"Trend Only "+seedVersion.toUpperCase(),trendOnlyConfig:require(seedVersion==="v1"?"./trend_only":"./trend_only_v2").normalizeConfig({}),leverage:10,maxAdds:0});saveConfig(config);trendRuntime.resetForStrategySwitch(config.accounts[0],"trend_only_"+seedVersion)',f.ctx);}
