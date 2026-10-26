@@ -360,6 +360,10 @@ async function getPublicMarketKlines(symbol, interval, limit, platform = "") {
           symbol: `${base}USDT`,
           interval: safeInterval,
           source: provider.name,
+          baseAsset: base,
+          quoteAsset: provider.name === "hyperliquid" ? "USDC" : "USDT",
+          marketType: ["hyperliquid","futures"].includes(provider.name) ? "perpetual" : "spot",
+          sourcePlatform: provider.name === "hyperliquid" ? "hyperliquid" : provider.name === "market-reference" ? "okx" : "binance",
           stale: crossVenueFallback,
           warning: crossVenueFallback ? `${normalizedPlatform} candles unavailable; entries are blocked on cross-venue fallback data` : "",
           updatedAt: Date.now(),
@@ -744,13 +748,15 @@ const trendRuntime = createTrendRuntime({
   request: (u, o) => fetchJsonWithRetry(u, o, "趋势交易所请求", 0, 10000)
 });
 const compoundRuntime=require("./strategy/compound_4h/runtime").createRuntime({directory:__dirname,price:getFreshMarketPrice,candles:getPublicMarketKlines,
+ quote:async a=>({price:Number(await getFreshMarketPrice(a)),timestamp:Date.now(),platform:a.platform,symbol:a.symbol,quoteAsset:a.platform==="binance"?"USDT":a.platform==="hyperliquid"?"USDC":"USD",marketType:"perpetual",source:"native_"+a.platform}),
+ referencePrice:async(a,source)=>source==="futures"?{price:Number(await getBinanceFuturesPrice(a.symbol)),source,timestamp:Date.now()}:null,
  constraints:async(a,price)=>{
   if(a.platform==="binance"){const m=await getBinanceSymbolMeta(a.symbol),lot=m.filters.find(f=>f.filterType==="LOT_SIZE");return{qtyStep:Number(lot.stepSize),minQty:Number(lot.minQty),maxQty:Number(lot.maxQty),priceTick:Number(m.filters.find(f=>f.filterType==="PRICE_FILTER")?.tickSize),minNotional:Number(m.filters.find(f=>f.filterType==="MIN_NOTIONAL")?.notional)};}
   if(a.platform==="hyperliquid"){const {meta}=await getHlAssetMeta(a.symbol),step=10**-Number(meta.szDecimals);return{qtyStep:step,minQty:step,minNotional:10,priceTick:10**Math.max(-6+Number(meta.szDecimals),Math.floor(Math.log10(price))-4)};}
   const m=await getExtendedMarkets(a.symbol),t=m.tradingConfig||{};return{qtyStep:Number(t.minOrderSizeChange),minQty:Number(t.minOrderSize),maxQty:Number(t.maxOrderSize)||null,minNotional:Number(t.minOrderValue)||Number(t.minOrderSize)*price,priceTick:Number(t.minPriceChange)};
  },permit:(target,risk,side)=>{
   // New accounts contain no live credentials or shared wallet: one strategy owns this Paper ledger.
-  const entries=config.accounts.map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:stateMap[a.id]?.balance,state:isCompound(a)?a.id===target.id?{}:compoundRuntime.exposure(a):isTrendOnly(a)?trendRuntime.get(a):{}}));
+  const entries=config.accounts.map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:isCompound(a)?compoundRuntime.get(a).equity:stateMap[a.id]?.balance,state:isCompound(a)?a.id===target.id?{}:compoundRuntime.exposure(a):isTrendOnly(a)?trendRuntime.get(a):{}}));
   return require("./strategy/trend_v3/portfolio").snapshot({...target,paper:true},entries,side,risk);
  }});
 async function verifyLegacyLiveFlat(a){
@@ -4862,7 +4868,7 @@ const server = http.createServer((req, res) => {
       const input=JSON.parse(body||"{}");
       if(pathname==="/api/compound/create"){
         const cfg=loadConfig(),c=Compound.normalize(input.config||{}),platform=input.platform||"hyperliquid";if(!["hyperliquid","binance","extended"].includes(platform))throw Error("平台无效");
-        const a={id:crypto.randomUUID(),name:String(input.name||"4H ETH Paper").slice(0,80),platform,symbol:"ETH",quoteAsset:"USDC",side:"long",strategyType:Compound.ID,strategyMode:"4H Compound Reversal V1",tradeMode:"simulation",simulationEnabled:true,simulationBalance:c.initialEquity,simulationSlippageBps:5,leverage:1,baseAmount:100,addAmount:100,maxAdds:3,takeProfit:.01,addTrigger:.01,interval:15000,running:false,compoundConfig:c};
+        const a={id:crypto.randomUUID(),name:String(input.name||"4H ETH Paper").slice(0,80),platform,symbol:"ETH",quoteAsset:platform==="binance"?"USDT":platform==="hyperliquid"?"USDC":"USD",side:"long",strategyType:Compound.ID,strategyMode:"4H Compound Reversal V1",tradeMode:"simulation",simulationEnabled:true,simulationBalance:c.initialEquity,simulationSlippageBps:5,leverage:1,baseAmount:100,addAmount:100,maxAdds:3,takeProfit:.01,addTrigger:.01,interval:15000,running:false,compoundConfig:c};
         cfg.accounts.push(a);saveConfig(cfg);config=cfg;ensureAccountStates();compoundRuntime.get(a);compoundRuntime.save();return jsonRes(res,200,{ok:true,id:a.id});
       }
       const a=getAccountById(input.id||account?.id);if(!a||!isCompound(a))throw Error("只允许独立4H Paper账户");

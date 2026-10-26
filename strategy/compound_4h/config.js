@@ -1,6 +1,6 @@
 "use strict";
 const crypto=require("crypto");
-const ID="compound_4h_v1",REVISION="COMPOUND_4H_V1_20261023",EXPERIMENT="COMPOUND_ETH_STD_20261023_A";
+const ID="compound_4h_v1",REVISION="COMPOUND_4H_V1_20261026_REVIEW",EXPERIMENT="COMPOUND_ETH_REVIEW_20261026_A";
 const DEFAULTS=Object.freeze({initialEquity:10000,riskPerCycle:.005,layerNotionalPct:.01,maxAdds:3,leverage:1,gradeA:82,gradeB:74,atrPeriod:14,zoneAtr:.6,stopBufferAtr:.5,layerSpacingAtr:.25,minimumNetRR:1.5,orderTtlBars:3,cooldownBars:1,maxDailyLossRatio:.02,maxConsecutiveLosses:3,stopSlippageBps:5,fundingReserveRate:.0001,fillFraction:.5,takeProfitMode:"R_MULTIPLE",compoundMode:"FULL_EQUITY",partialProfitRatio:.5,exitVariant:"PARTIAL_TRAIL",weights:{daily:20,structure:25,momentum:15,confirmation:15,space:15,quality:10}});
 function normalize(raw={}){
  if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error("4H 参数必须为对象");
@@ -15,6 +15,6 @@ function normalize(raw={}){
  c.weights={...DEFAULTS.weights,...(raw.weights||{})};if(Object.keys(c.weights).some(k=>!Object.hasOwn(DEFAULTS.weights,k))||Object.values(c.weights).some(v=>!Number.isFinite(v)||v<=0)||Math.abs(Object.values(c.weights).reduce((a,b)=>a+b,0)-100)>1e-8)throw Error("评分权重必须为正且合计100");
  return{...c,strategyId:ID,strategyVersion:ID,revision:REVISION,strategyRevision:REVISION,experimentId:EXPERIMENT,allowLive:false,counterTrendEnabled:false,entryTimeframe:"4h",higherTimeframe:"1d",confirmationTimeframe:"1h"};
 }
-function scope(config,account={}){return{strategyId:ID,strategyVersion:ID,revision:REVISION,strategyRevision:REVISION,experimentId:EXPERIMENT,configHash:crypto.createHash("sha256").update(JSON.stringify({config:normalize(config),symbol:account.symbol||"ETH",platform:account.platform||null})).digest("hex")};}
+function scope(config,account={}){return{strategyId:ID,strategyVersion:ID,revision:REVISION,strategyRevision:REVISION,experimentId:EXPERIMENT,configHash:crypto.createHash("sha256").update(JSON.stringify({config:normalize(config),symbol:account.symbol||"ETH",platform:account.platform||null,executionPolicy:{allowReferenceSignals:account.compoundExecutionPolicy?.allowReferenceSignals===true,maxBasisBps:Number(account.compoundExecutionPolicy?.maxBasisBps??25)}})).digest("hex")};}
 function baseEquity(book,c){return c.compoundMode==="FIXED_BASE"?Math.min(book.initialEquity,book.equity):c.compoundMode==="PARTIAL_PROFIT"?book.initialEquity+Math.min(0,book.equity-book.initialEquity)+Math.max(0,book.equity-book.initialEquity)*c.partialProfitRatio:book.equity;}
 module.exports={ID,REVISION,EXPERIMENT,DEFAULTS,normalize,scope,baseEquity};
