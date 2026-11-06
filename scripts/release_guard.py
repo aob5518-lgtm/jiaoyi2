@@ -10,7 +10,7 @@ def allowed(name):
     p=PurePosixPath(name)
     if str(p)!=name or p.is_absolute() or '..' in p.parts or '\\' in name: return False
     if any(x.startswith('.env') or x in {'node_modules','.git','.audit','backups','deploy-backups','__pycache__'} for x in p.parts): return False
-    if name in ROOT_FILES or name=='docs/compound_4h_research_20261026.json': return True
+    if name in ROOT_FILES or name in {'docs/compound_4h_research_20261026.json','docs/HYPOTHESIS_V5_RESULTS_20261106.json'}: return True
     if p.suffix not in SUFFIXES or any(x in p.name.lower() for x in ['private','secret','credential','id_ed25519','id_rsa']): return False
     return len(p.parts)==1 or p.parts[0] in CODE_DIRS
 def git(repo,*args): return subprocess.check_output(['git','-C',str(repo),*args])

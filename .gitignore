@@ -1,4 +1,5 @@
 node_modules/
+.v5-research/
 .audit/
 docs/REVIEW_20261015.md
 config.json

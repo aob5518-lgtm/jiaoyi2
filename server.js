@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const url = require("url");
 const crypto = require("crypto");
+let hypothesisResearchService;
 const TrendOnly = require("./trend_only");
 const TrendOnlyV2 = require("./trend_only_v2");
 const TrendOnlyV3 = require("./trend_only_v3");
@@ -4854,6 +4855,12 @@ const server = http.createServer((req, res) => {
   if (protectedApiPrefixes.includes(pathname) && !isAuthenticated(req)) {
     return jsonRes(res, 401, { ok: false, error: "未登录或登录已过期" });
   }
+  if(pathname.startsWith("/api/v5/")){
+    if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
+    const research=require("./strategy/hypothesis_v5/service");
+    hypothesisResearchService ||= research.createService({directory:path.join(__dirname,".v5-research","integrated")});
+    research.handle(req,res,{pathname},hypothesisResearchService);return;
+  }
   if(pathname.startsWith("/api/v4/")){
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
     require("./terminal/api").handle(req,res,parsed,{directory:__dirname,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
@@ -5634,6 +5641,7 @@ async function gracefulShutdown(signal) {
   shutdownStarted = true;
   console.log(`Received ${signal}; flushing runtime state before shutdown.`);
   server.close();
+  if(hypothesisResearchService)hypothesisResearchService.stop();
 
   try {
     await Promise.all([

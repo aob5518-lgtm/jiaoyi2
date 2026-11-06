@@ -1,0 +1,15 @@
+"use strict";
+const {preregistration:P}=require("./registry");
+function metrics(book){
+ const rows=book.history,curve=book.equityCurve,net=rows.map(v=>v.netPnl),rs=rows.map(v=>v.netR),n=rows.length,sum=a=>a.reduce((s,v)=>s+v,0),mean=a=>a.length?sum(a)/a.length:null;
+ const wins=net.filter(v=>v>0),losses=net.filter(v=>v<0);let peak=book.initialEquity,dd=0,run=0,maxRun=0;
+ for(const p of curve){peak=Math.max(peak,p.equity);dd=Math.max(dd,(peak-p.equity)/peak);}
+ for(const v of net){run=v<0?run+1:0;maxRun=Math.max(maxRun,run);}
+ const end=curve.at(-1)?.equity??book.equity,elapsed=curve.length>1?(curve.at(-1).time-curve[0].time)/31557600000:0,returns=curve.slice(1).map((v,k)=>curve[k].equity>0?v.equity/curve[k].equity-1:0),m=mean(returns),variance=returns.length>1?sum(returns.map(v=>(v-m)**2))/(returns.length-1):0,dt=curve.length>1?(curve.at(-1).time-curve[0].time)/(curve.length-1):0,annual=dt?31557600000/dt:0,downside=returns.length?Math.sqrt(sum(returns.map(v=>Math.min(0,v)**2))/returns.length):0;
+ const rmean=mean(rs),se=n>1?Math.sqrt(sum(rs.map(v=>(v-rmean)**2))/(n-1)/n):null;
+ const interval=se===null?null:[rmean-1.96*se,rmean+1.96*se],gross=sum(rows.map(v=>v.grossPnl)),cost=sum(rows.map(v=>v.tradingFee-v.fundingPnl)),concentration=wins.length?Math.max(...wins)/sum(wins):null;
+ const byRegime={};for(const v of rows){const k=v.regime||"UNRECORDED";byRegime[k]||={trades:0,netPnl:0};byRegime[k].trades++;byRegime[k].netPnl+=v.netPnl;}
+ return{sampleType:book.mode==="Shadow"?"shadow":"historical_backtest",trades:n,netPnl:n?sum(net):null,netReturn:end/book.initialEquity-1,annualReturn:elapsed>0&&end>0?(end/book.initialEquity)**(1/elapsed)-1:null,maxDrawdown:dd,sharpe:variance>0?m/Math.sqrt(variance)*Math.sqrt(annual):null,sortino:downside>0?m/downside*Math.sqrt(annual):null,profitFactor:losses.length?sum(wins)/-sum(losses):null,expectancyR:rmean,averageWin:mean(wins),averageLoss:mean(losses),winRate:n?wins.length/n:null,maxConsecutiveLoss:maxRun,costToGrossProfit:gross>0?cost/gross:null,totalFees:sum(rows.map(v=>v.tradingFee)),fundingPnl:sum(rows.map(v=>v.fundingPnl)),netRConfidence95:interval,confidenceMethod:"normal approximation; not proof for small/serially-correlated samples",profitConcentration:concentration,byRegime,endingMarkedEquity:end,unfinished:!!book.position||!!book.pending,decisionCount:book.decisions.length};
+}
+function verdict(m,stress){const reasons=[];if(m.trades<P.minOutOfSampleTrades)reasons.push("INSUFFICIENT_SAMPLE");if(!(m.expectancyR>P.minExpectancyR))reasons.push("NON_POSITIVE_OOS");if(!m.netRConfidence95||m.netRConfidence95[0]<=0)reasons.push("CONFIDENCE_INSUFFICIENT");if(m.profitConcentration===null||m.profitConcentration>P.maxProfitConcentration)reasons.push("CONCENTRATED_RETURNS");if(!stress||!(stress.expectancyR>P.minStressExpectancyR))reasons.push("STRESS_NOT_PASSED");return{status:reasons.length?"NOT_PASSED":"RESEARCH_GATE_PASSED_ONLY",reasons,allowLive:false,automaticPromotion:false};}
+module.exports={metrics,verdict};

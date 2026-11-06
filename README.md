@@ -1,5 +1,13 @@
 # jiaoyi2
 
+## Hyper-Safe Quant V5 · H01/H05 独立趋势研究
+
+新增确定性的 H01 趋势持续性策略、H05 UTC 周末对照、事件回放、独立 Shadow 订单与风险账本，以及 [智能趋势工作台](public/intelligent-trend.html)。默认不创建或启动研究账户，禁止 Live，不修改现有 V4 账户或参数。
+
+真实 Binance 2024 年 BTC/ETH 永续数据的时间切分、消融和 Walk-forward 已执行；两币研究门槛均 **未通过**，不能把回测正收益当作已验证优势。完整 [研究报告](docs/HYPOTHESIS_V5_RESEARCH_REPORT_20261106.md)、[架构审计](docs/HYPOTHESIS_V5_AUDIT_AND_ARCHITECTURE.md) 和 [启动/回滚/测试步骤](docs/HYPOTHESIS_V5_OPERATIONS.md) 分别记录已实现、已测试和未验证项。
+
+独立运行：`node scripts/hypothesis_shadow.js /绝对路径/新研究目录 3311`，仅绑定本机，使用独立随机认证。需能访问 Binance 原生公共行情；不需要交易 API 密钥。当前默认研究结论不支持实盘。
+
 ## SUPER AGENT V4 · 统一交易终端
 
 主界面统一为 **总览 / 策略管理 / 交易记录 / 策略分析 / 系统设置**。普通入口只保留 Trend V3（Paper）、Short-Term V1（V3伴随 Shadow，尚不支持独立 Paper 执行）和 4H Compound V1（独立 Paper 研究账本）。4H 账户、可视化配置、四层委托、完整轮次复盘均在同一控制台；旧 `/compound.html?id=…` 在登录后安全跳转，绝不自动创建或启动账户。
