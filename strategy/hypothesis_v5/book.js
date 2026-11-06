@@ -1,6 +1,7 @@
 "use strict";
 const C=require("./config"),M=require("./market"),Portfolio=require("../trend_v3/portfolio"),Cost=require("../../trade_cost");
 const terminal=new Set(["FILLED","CANCELLED","EXPIRED","REJECTED"]);
+function scopeOf(b,config=b.config){return{...C.scope(config,b.symbol,b.mode,b.experimentId),strategyRevision:b.strategyRevision,configHash:b.configHash};}
 function create({id,symbol,mode="Shadow",equity=10000,config={},experimentId}){
  if(!/^[a-zA-Z0-9_-]{1,80}$/.test(id)||!(equity>=100&&equity<=10000000))throw Error("研究账户/权益无效");
  const cfg=C.normalize(config);return{schema:1,id,...C.scope(cfg,symbol,mode,experimentId),config:cfg,initialEquity:equity,equity,running:false,position:null,pending:null,riskLock:false,riskReason:null,day:null,dayStartEquity:equity,cooldownUntil:0,lastEventTime:0,seenSignals:[],orders:[],history:[],decisions:[],equityCurve:[],fundingIds:[],sequence:0,lastSnapshot:null};
@@ -18,7 +19,8 @@ function plan(b,s,event,books){
  const c=b.config,q=event.quote,review=M.quoteReview(q,b.symbol,event.time,c,event.variant?.omitLiquidity);if(!review.allowed)throw Error(review.reasons.join(","));
  if(!validRules(event.rules))throw Error("TRADE_RULES_UNKNOWN");
  const direction=s.direction,sign=direction==="long"?1:-1,raw=direction==="long"?q.ask:q.bid,cost=Cost.getEstimatedTradeCost({platform:"binance",paper:true,simulationSlippageBps:c.slippageBps},"H01");
- const price=raw*(1+sign*c.slippageBps/10000),distance=c.stopAtr*s.atr;
+ const price=raw*(1+sign*c.slippageBps/10000),rawStop=price-sign*c.stopAtr*s.atr,tick=event.rules.priceTick;
+ const stop=Number(((sign>0?Math.floor(rawStop/tick):Math.ceil(rawStop/tick))*tick).toPrecision(14)),distance=sign*(price-stop);
  if(!(distance>0&&distance<price&&s.atr>0))throw Error("STOP_INVALID");
  if(Math.abs(price-s.referencePrice)>s.atr*c.maxEntryExtensionAtr)throw Error("NO_CHASE");
  const perUnit=distance+price*(2*c.feeRate+c.stressSlippageBps/10000+c.fundingReserveRate),budget=b.equity*c.riskPerTrade;
@@ -30,12 +32,12 @@ function plan(b,s,event,books){
  const allowance=portfolio(books,b,riskAmount);if(!allowance.allowed)throw Error("PORTFOLIO_RISK_OR_POSITION_LIMIT");
  if(q.depthNotional<qty*price*10&&!event.variant?.omitLiquidity)throw Error("DEPTH_INSUFFICIENT");
  if(entryFee+qty*price/leverage>b.equity)throw Error("MARGIN_INSUFFICIENT");
- return{side:direction,qty,price,stop:price-sign*distance,atr:s.atr,distance,riskAmount,remainingRisk:riskAmount,leverage,budget,costSource:"estimated_taker_stress_reserve",liquidationEstimate:price-sign*liqDistance,liquidationModel:"conservative isolated research estimate; not exchange liquidation quote",portfolio:allowance};
+ return{side:direction,qty,price,stop,atr:s.atr,distance,riskAmount,remainingRisk:riskAmount,leverage,budget,costSource:"estimated_taker_stress_reserve",liquidationEstimate:price-sign*liqDistance,liquidationModel:"conservative isolated research estimate; not exchange liquidation quote",portfolio:allowance};
 }
 function close(b,price,reason,time){
  const p=b.position;if(!p)return;const c=p.config,sign=p.side==="long"?1:-1,exitFee=price*p.qty*c.feeRate,gross=(price-p.entryPrice)*p.qty*sign,net=gross-p.entryFee-exitFee+p.fundingPnl;
  p.mae=Math.max(p.mae,sign*(p.entryPrice-price));p.mfe=Math.max(p.mfe,sign*(price-p.entryPrice));
- b.equity+=gross-exitFee;b.history.push({id:b.id+"-trade-"+(++b.sequence),...C.scope(c,b.symbol,b.mode,b.experimentId),sampleType:b.mode==="Shadow"?"shadow":"historical_backtest",side:p.side,regime:p.regime,signalId:p.signalId,entryTime:p.entryTime,exitTime:time,entryPrice:p.entryPrice,exitPrice:price,qty:p.qty,initialStop:p.initialStop,finalStop:p.stop,riskAmount:p.initialRiskAmount,netR:net/p.initialRiskAmount,grossPnl:gross,tradingFee:p.entryFee+exitFee,fundingPnl:p.fundingPnl,netPnl:net,closeReason:reason,holdingDurationMs:time-p.entryTime,MAE:p.mae,MFE:p.mfe,MAE_R:p.mae/p.distance,MFE_R:p.mfe/p.distance,protectiveStop:p.protection,executionQuality:p.executionQuality,equityAfter:b.equity});
+ b.equity+=gross-exitFee;b.history.push({id:b.id+"-trade-"+(++b.sequence),...scopeOf(b,c),sampleType:b.mode==="Shadow"?"shadow":"historical_backtest",side:p.side,regime:p.regime,signalId:p.signalId,entryTime:p.entryTime,exitTime:time,entryPrice:p.entryPrice,exitPrice:price,qty:p.qty,initialStop:p.initialStop,finalStop:p.stop,riskAmount:p.initialRiskAmount,netR:net/p.initialRiskAmount,grossPnl:gross,tradingFee:p.entryFee+exitFee,fundingPnl:p.fundingPnl,netPnl:net,closeReason:reason,holdingDurationMs:time-p.entryTime,MAE:p.mae,MFE:p.mfe,MAE_R:p.mae/p.distance,MFE_R:p.mfe/p.distance,protectiveStop:p.protection,executionQuality:p.executionQuality,equityAfter:b.equity});
  if(reason==="hard_sl")b.cooldownUntil=time+c.cooldownHours*3600000;
  b.position=null;
 }
@@ -84,8 +86,9 @@ function step(b,event,books=[b]){
  if(b.pending){
   const o=b.pending,record=b.orders.find(v=>v.id===o.id),review=M.quoteReview(q,b.symbol,time,b.config,event.variant?.omitLiquidity);
   if(record.status==="UNKNOWN"){lock(b,b.riskReason||"UNKNOWN_ORDER");decision.finalDecision="UNKNOWN_ORDER";}
+  else if(![record.plannedQty,o.remainingRisk].every(v=>Number.isFinite(v)&&v>0)){record.status="UNKNOWN";lock(b,"ORDER_RESERVATION_UNKNOWN");}
   else if(event.cancelFailed){record.status="UNKNOWN";lock(b,"CANCEL_UNKNOWN");}
-  else if(time>=o.expiresAt||!b.running||b.riskLock||b.position)cancel(b,time>=o.expiresAt?"EXPIRED":"CANCELLED",time,"窗口结束/策略暂停/风控");
+  else if(time>=o.expiresAt||!b.running||b.riskLock||b.position||b.strategyRevision!==C.REVISION){const expired=time>=o.expiresAt;cancel(b,expired?"EXPIRED":"CANCELLED",time,"窗口结束/策略暂停/风控/版本变化");decision.finalDecision=expired?"ORDER_EXPIRED":"ORDER_CANCELLED";}
   else if(event.submitTimeout){record.status="UNKNOWN";lock(b,"SUBMIT_UNKNOWN");}
   else if(review.allowed&&time>o.submittedAt&&!event.noFill){
    try{
@@ -93,20 +96,22 @@ function step(b,event,books=[b]){
     if((b.dayStartEquity-mark(b,price))/b.dayStartEquity>=b.config.dailyLossLimit)throw Error("DAILY_LOSS");
     const saved=b.pending;b.pending=null;let planned;try{planned=plan(b,s,event,books);}finally{b.pending=saved;}
     const fraction=event.fillFraction??1;if(!(fraction>0&&fraction<=1))throw Error("FILL_FRACTION_INVALID");
-    const qty=Math.floor(planned.qty*fraction/event.rules.qtyStep)*event.rules.qtyStep;if(qty<event.rules.minQty||qty*planned.price<event.rules.minNotional)throw Error("PARTIAL_BELOW_MINIMUM");
+    // Never enlarge a submitted order or its reserved risk when repricing.
+    const maxQty=Math.min(planned.qty,record.plannedQty,o.remainingRisk/(planned.riskAmount/planned.qty));
+    const qty=Math.floor(maxQty*fraction/event.rules.qtyStep)*event.rules.qtyStep;if(!Number.isFinite(qty)||qty<event.rules.minQty||qty*planned.price<event.rules.minNotional)throw Error("PARTIAL_BELOW_MINIMUM");
     if(event.stopRejected)throw Error("PROTECTIVE_STOP_REJECTED");
     const fee=qty*planned.price*b.config.feeRate;b.equity-=fee;
     b.position={...planned,qty,initialRiskAmount:planned.riskAmount*qty/planned.qty,entryPrice:planned.price,initialStop:planned.stop,entryTime:time,signalId:s.signalId,regime:s.regime?.state||"UNKNOWN",config:{...b.config},high:planned.price,low:planned.price,mae:0,mfe:0,fundingPnl:0,costTime:time,entryFee:fee,protection:"SIMULATED_ACTIVE",executionQuality:q.quality||"TOP_OF_BOOK_ASSUMPTION"};
-    record.status=qty<planned.qty?"PARTIAL_CANCELLED":"FILLED";record.filledQty=qty;record.remainingQty=planned.qty-qty;record.fillTime=time;record.fillPrice=planned.price;
+    record.status=qty<record.plannedQty?"PARTIAL_CANCELLED":"FILLED";record.filledQty=qty;record.remainingQty=Math.max(0,record.plannedQty-qty);record.fillTime=time;record.fillPrice=planned.price;
     b.pending=null;decision.finalDecision="ORDER_FILLED";decision.executionPermission="allowed";
-   }catch(e){cancel(b,"REJECTED",time,e.message);decision.blockers.push(e.message);if(e.message==="PROTECTIVE_STOP_REJECTED")lock(b,e.message);}
+   }catch(e){cancel(b,"REJECTED",time,e.message);decision.finalDecision="ORDER_REJECTED";decision.blockers.push(e.message);if(e.message==="PROTECTIVE_STOP_REJECTED")lock(b,e.message);}
   }else decision.finalDecision=record.status==="UNKNOWN"?"UNKNOWN_ORDER":"ORDER_WAITING";
  }
  const s=event.signal;
  if(!b.position&&!b.pending&&s?.signalPermission==="allowed"&&!b.seenSignals.includes(s.signalId)){
   b.seenSignals.push(s.signalId);
   try{
-   if(!b.running)throw Error("MONITOR_STOPPED");if(b.riskLock)throw Error("RISK_LOCK");if(time<b.cooldownUntil)throw Error("COOLDOWN");
+   if(b.strategyRevision!==C.REVISION)throw Error("ENGINE_REVISION_CHANGED");if(!b.running)throw Error("MONITOR_STOPPED");if(b.riskLock)throw Error("RISK_LOCK");if(time<b.cooldownUntil)throw Error("COOLDOWN");
    if(time<s.signalTime||time>=s.signalTime+b.config.maxEntryAgeMs)throw Error("ENTRY_WINDOW_EXPIRED");
    if((b.dayStartEquity-mark(b,price))/b.dayStartEquity>=b.config.dailyLossLimit)throw Error("DAILY_LOSS");
    const planned=plan(b,s,event,books),id=b.id+"-order-"+(++b.sequence);
@@ -122,4 +127,4 @@ function step(b,event,books=[b]){
  b.equityCurve.push({time,equity:price?mark(b,price):b.equity});if(b.equityCurve.length>(b.curveLimit||50000))b.equityCurve=b.equityCurve.slice(-(b.curveLimit||50000));
  return decision;
 }
-module.exports={create,step,plan,close,mark,risk,portfolio,lock,validRules,terminal};
+module.exports={create,step,plan,close,mark,risk,portfolio,lock,validRules,terminal,scopeOf};

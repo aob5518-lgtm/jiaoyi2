@@ -156,6 +156,27 @@ test("H01 market adapter refuses every private/trading route before network acce
  for(const route of ["/fapi/v1/order","/fapi/v1/leverage","/fapi/v2/account","/sapi/v1/futures/transfer","https://evil.example/fapi/v1/klines"])await assert.rejects(()=>d.get(route),/PUBLIC_DATA_ONLY/);
  assert.equal(calls,0);assert.equal(d.order,undefined);assert.equal(d.cancel,undefined);
 });
+test("H01 repricing never expands submitted quantity or reserved risk",()=>{
+ for(const side of ["long","short"])for(const price of [167,168,168.5]){
+  const b=book(),s={...signal(),direction:side};B.step(b,event(now,{signal:s}));const submitted=structuredClone(b.orders[0]),risk=b.pending.remainingRisk;
+  B.step(b,event(now+1000,{signal:s,quote:quote(price,now+1000)}));
+  if(b.position){assert.ok(b.position.qty<=submitted.plannedQty+1e-10);assert.ok(b.position.initialRiskAmount<=risk+1e-10);assert.ok(Math.abs(b.orders[0].filledQty+b.orders[0].remainingQty-submitted.plannedQty)<1e-10);}
+ }
+});
+test("H01 stop aligns outward to tick and risk sizing uses the rounded distance",()=>{
+ for(const direction of ["long","short"]){const b=book(),s={...signal(),direction};B.step(b,event(now,{signal:s,rules:{...rules,priceTick:.5}}));const p=b.pending;assert.ok(p);assert.ok(Math.abs(p.stop/.5-Math.round(p.stop/.5))<1e-10);assert.ok(p.distance>=s.atr*b.config.stopAtr);assert.ok(p.riskAmount<=b.equity*b.config.riskPerTrade);}
+});
+test("H01 missing pending reservation stays UNKNOWN instead of creating NaN position",()=>{
+ const b=book();B.step(b,event());delete b.pending.remainingRisk;B.step(b,event(now+1000));assert.equal(b.position,null);assert.ok(b.pending);assert.equal(b.orders[0].status,"UNKNOWN");assert.equal(b.riskLock,true);
+});
+test("H01 old cohort keeps original version/hash at close and cannot create new risk",t=>{
+ const b=book();open(b);b.strategyRevision="H01_20261106_RESEARCH_V1";b.configHash="old-snapshot";B.step(b,event(now+2000,{quote:quote(150,now+2000),signal:null}));assert.equal(b.history[0].strategyRevision,b.strategyRevision);assert.equal(b.history[0].configHash,"old-snapshot");
+ const s=V.createService({directory:temp(t),data:{}}),a=s.create({symbol:"ETH"});s.get(a.id).strategyRevision="old";s.get(a.id).configHash="preserved";assert.throws(()=>s.control(a.id,"start"),/引擎已升级/);assert.equal(s.list().accounts[0].scope.configHash,"preserved");s.stop();
+});
+test("H01 expired and repricing-rejected orders publish their final execution decision",()=>{
+ const expired=book();B.step(expired,event());B.step(expired,event(now+1800001,{quote:quote(168,now+1800001),signal:null}));assert.equal(expired.lastSnapshot.decision.finalDecision,"ORDER_EXPIRED");
+ const rejected=book();B.step(rejected,event());B.step(rejected,event(now+1000,{quote:quote(180,now+1000),signal:null}));assert.equal(rejected.lastSnapshot.decision.finalDecision,"ORDER_REJECTED");assert.ok(rejected.lastSnapshot.decision.blockers.includes("NO_CHASE"));
+});
 test("H01 workbench DOM renders backend blockers safely and disables disconnected controls",async()=>{
  const vm=require("vm"),nodes={};class Element{constructor(tag){this.tagName=tag;this.children=[];this.value="";this.textContent="";this.disabled=false;}append(...x){this.children.push(...x);}replaceChildren(...x){this.children=x;}}
  const document={getElementById:id=>nodes[id]||=(new Element("div")),createElement:tag=>new Element(tag)},b=V.projections(book());b.running=false;b.lastSnapshot={signal:{blockers:["<img src=x onerror=alert(1)>"],signalPermission:"blocked",direction:"none",regime:{state:"RANGE"}},decision:{finalDecision:"NO_SIGNAL",blockers:["<img src=x onerror=alert(1)>"]}};

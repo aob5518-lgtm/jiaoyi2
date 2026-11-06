@@ -1,6 +1,6 @@
 "use strict";
 const fs=require("fs"),path=require("path"),crypto=require("crypto"),C=require("./config"),B=require("./book"),M=require("./market"),A=require("./analytics"),R=require("./registry"),D=require("./data"),Research=require("./research");
-const projections=b=>({id:b.id,symbol:b.symbol,mode:b.mode,running:b.running,scope:C.scope(b.config,b.symbol,b.mode,b.experimentId),config:b.config,equity:b.equity,position:b.position,pending:b.pending,riskLock:b.riskLock,riskReason:b.riskReason,lastSnapshot:b.lastSnapshot,alerts:(b.alerts||[]).slice(-20),metrics:A.metrics(b),orders:b.orders.slice(-50),history:b.history.slice(-50),decisions:b.decisions.slice(-50),equityCurve:b.equityCurve.slice(-1000),hypotheses:R.hypotheses,gate:"UNVALIDATED_NO_LIVE"});
+const projections=b=>({id:b.id,symbol:b.symbol,mode:b.mode,running:b.running,scope:B.scopeOf(b),engineRevision:C.REVISION,entryAllowed:b.strategyRevision===C.REVISION&&!b.riskLock,config:b.config,equity:b.equity,position:b.position,pending:b.pending,riskLock:b.riskLock,riskReason:b.riskReason,lastSnapshot:b.lastSnapshot,alerts:(b.alerts||[]).slice(-20),metrics:A.metrics(b),orders:b.orders.slice(-50),history:b.history.slice(-50),decisions:b.decisions.slice(-50),equityCurve:b.equityCurve.slice(-1000),hypotheses:R.hypotheses,gate:"UNVALIDATED_NO_LIVE"});
 function createService({directory,data=D.adapter(),now=Date.now}){
  const dir=path.resolve(directory),file=path.join(dir,"runtime.json");let books={},timer=null,busy=false,loadError="";
  try{if(fs.existsSync(file)){const saved=JSON.parse(fs.readFileSync(file,"utf8"));if(saved.schema!==1||!saved.books||Array.isArray(saved.books))throw Error("状态版本无效");books=saved.books;for(const b of Object.values(books)){C.scope(b.config,b.symbol,b.mode,b.experimentId);if(!b.id||!Number.isFinite(b.equity)||!Array.isArray(b.orders)||!Array.isArray(b.history))throw Error("研究账本损坏");}}}catch(e){loadError="V5_STATE_CORRUPT: "+e.message;books={};}
@@ -19,6 +19,7 @@ function createService({directory,data=D.adapter(),now=Date.now}){
  function control(id,action){
   const b=get(id);if(busy)throw Error("行情评估中，请稍后重试");
   if(!["start","pause"].includes(action))throw Error("不支持权限升级、解锁或删除");
+  if(action==="start"&&b.strategyRevision!==C.REVISION)throw Error("研究引擎已升级，请创建独立新实验；旧账本只保留保护与审查");
   if(action==="start"&&b.riskLock)throw Error("风险锁定，禁止自动恢复");
   b.running=action==="start";save();if(b.running)startTimer();return projections(b);
  }

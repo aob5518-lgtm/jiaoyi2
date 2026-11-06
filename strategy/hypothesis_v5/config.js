@@ -1,6 +1,6 @@
 "use strict";
 const crypto = require("crypto");
-const ID = "hypothesis_trend_h01", REVISION = "H01_20261106_RESEARCH_V1";
+const ID = "hypothesis_trend_h01", REVISION = "H01_20261107_RESEARCH_V2";
 const DEFAULTS = Object.freeze({
   riskPerTrade: .003, dailyLossLimit: .02, portfolioRiskLimit: .015, maxPositions: 2,
   maxLeverage: 10, marginFraction: .5, stopAtr: 2, trailActivationR: 1.5, trailAtr: 3,
@@ -29,6 +29,6 @@ const hash = v => crypto.createHash("sha256").update(JSON.stringify(canonical(v)
 function scope(config, symbol, mode = "Shadow", experimentId = "H01_H05_PREREG_20261106") {
   if (!["Research","Shadow"].includes(mode)) throw Error("H01 尚未批准真实交易");
   if (!["BTC","ETH"].includes(symbol)) throw Error("仅批准 BTC/ETH 独立验证");
-  return {strategyId:ID,strategyRevision:REVISION,hypothesisId:"H01",weekendHypothesisId:"H05",experimentId,configHash:hash({config:normalize(config),symbol,mode,experimentId}),symbol,quoteAsset:"USDT",platform:"binance",mode,allowLive:false};
+  return {strategyId:ID,strategyRevision:REVISION,hypothesisId:"H01",weekendHypothesisId:"H05",experimentId,configHash:hash({strategyRevision:REVISION,config:normalize(config),symbol,mode,experimentId}),symbol,quoteAsset:"USDT",platform:"binance",mode,allowLive:false};
 }
 module.exports={ID,REVISION,DEFAULTS,normalize,scope,hash};

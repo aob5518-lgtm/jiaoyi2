@@ -41,7 +41,7 @@ node scripts/hypothesis_summary.js .audit
 
 ## 测试
 
-交付实测：404通过、0失败、0跳过，另8项发布回滚测试通过；桌面与两个手机视口真实浏览器渲染通过。详见 [测试与视觉报告](HYPOTHESIS_V5_TEST_REPORT_20261107.md)。
+交付实测：409通过、0失败、0跳过，另8项发布回滚测试通过；桌面与两个手机视口真实浏览器渲染通过。详见 [测试与视觉报告](HYPOTHESIS_V5_TEST_REPORT_20261107.md)。
 
 npm test 包含全部既有回归和新增H01测试。另执行 python tests/deploy_release_test.py 验证原有代码部署恢复逻辑。最终实际数量以当前交付日志为准，核心新增覆盖：
 
