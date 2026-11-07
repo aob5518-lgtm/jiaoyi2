@@ -46,15 +46,20 @@ test("H01 main gateway uses server credential and the same isolated book", async
   assert.equal(calls, 1);
 });
 
-test("H01 homepage exposes only H01 and retains a separate historical safety entry", () => {
+test("Research lab removes retired strategy menus and distinguishes planning from execution", () => {
   const root = path.resolve(__dirname, "../public");
   const main = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(main, /H01 趋势工作台/);
+  assert.match(main, /策略研究台/);
   assert.doesNotMatch(main, /Trend V3|Short-Term V1|4H Compound V1|\/terminal\/app.js/);
-  assert.match(main, /href="\/legacy-terminal.html"/);
-  assert.deepEqual([...main.matchAll(/data-view="([^"]+)"/g)].map(x => x[1]), ["overview", "settings", "history", "analysis"]);
+  assert.match(main, /data-view="archive"/);
+  assert.deepEqual([...main.matchAll(/data-view="([^"]+)"/g)].slice(0, 6).map(x => x[1]), ["overview", "plan", "experiments", "history", "analysis", "archive"]);
+  assert.match(main, /尚无新策略执行引擎/);
+  assert.match(main, /H01 仅作为现有参考基线/);
   assert.equal(main.replace(/\r\n/g, "\n"), fs.readFileSync(path.join(root, "intelligent-trend.html"), "utf8").replace(/\r\n/g, "\n"));
-  assert.match(fs.readFileSync(path.join(root, "legacy-terminal.html"), "utf8"), /\/terminal\/app.js/);
+  assert.match(fs.readFileSync(path.join(root, "legacy-terminal.html"), "utf8"), /url=\/#archive/);
+  const safety = fs.readFileSync(path.join(root, "safety-console.html"), "utf8");
+  assert.match(safety, /\/terminal\/retired-safety.js/);
+  assert.match(safety, /id="newAccount"[^>]*hidden disabled/);
 });
 
 test("H01 gateway failure is contained and never returns server credential content", async t => {
@@ -62,4 +67,27 @@ test("H01 gateway failure is contained and never returns server credential conte
   const response = await fetch("http://127.0.0.1:" + port + "/api/v5/status");
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), {ok: false, error: "独立研究服务连接尚未配置"});
+});
+
+test("Retired risk console removes entry/configuration actions and preserves protective controls", async () => {
+  const vm = require("vm");
+  const calls = [], errors = [], nodes = {};
+  const element = () => ({children: [], replaceChildren(...items) {this.children = items;}, append(...items) {this.children.push(...items);}});
+  const A = {
+    state: {data: {account: {name: "old"}, overview: {health: {running: false}, orders: [], position: null}}},
+    control: async action => calls.push(action), renderOverview() {},
+    error: message => errors.push(message), $: id => nodes[id] ||= element(),
+    el: () => element(), rows() {}, button: (label, click) => ({label, click})
+  };
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../public/terminal/retired-safety.js"), "utf8"), {window: {SA: A}});
+  await A.control("start");A.newAccount();
+  assert.equal(calls.length, 0);
+  assert.equal(errors.length, 2);
+  await A.control("pause");await A.control("close");await A.control("cancel_pending");
+  assert.deepEqual(calls, ["pause", "close", "cancel_pending"]);
+  A.renderStrategies();
+  assert.equal(nodes.strategyCards.children.length, 0);
+  A.renderOverview();
+  assert.equal(nodes.primaryActions.children.length, 2);
+  assert.ok(nodes.primaryActions.children.every(item => !/启动|创建|配置/.test(item.label)));
 });

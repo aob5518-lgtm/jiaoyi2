@@ -1,35 +1,66 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SUPER AGENT V5 · H01 趋势工作台</title>
-<link rel="stylesheet" href="/hypothesis/workbench.css?v=20261107-main">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SUPER AGENT · 策略研究台</title>
+<link rel="stylesheet" href="/hypothesis/workbench.css?v=20261108-lab">
 </head>
 <body>
-<header>
-  <div><a href="/">SUPER AGENT V5</a><h1>H01 趋势工作台</h1><p>当前唯一研究策略 · Shadow · 收益验证未通过</p></div>
-  <div class="header-actions"><a class="history-link" href="/legacy-terminal.html">历史账户与安全管理</a><button id="refresh">刷新</button></div>
-</header>
-<nav class="workspace-nav" aria-label="H01 工作台">
-  <button data-view="overview" aria-current="page">总览</button>
-  <button data-view="settings">策略配置</button>
-  <button data-view="history">研究交易</button>
-  <button data-view="analysis">验证与分析</button>
+<div class="app-shell">
+<aside class="sidebar">
+<a class="brand" href="/"><span class="brand-mark">S</span><span>SUPER AGENT<small>策略研究台</small></span></a>
+<div class="nav-caption">工作空间</div>
+<nav aria-label="主导航">
+<button data-view="overview" aria-current="page"><span class="nav-icon">◈</span>研究总览</button>
+<button data-view="plan"><span class="nav-icon">⌘</span>策略规划<span class="nav-dot"></span></button>
+<button data-view="experiments"><span class="nav-icon">▥</span>实验管理</button>
+<button data-view="history"><span class="nav-icon">≋</span>研究记录</button>
+<button data-view="analysis"><span class="nav-icon">↗</span>证据与验证</button>
 </nav>
+<div class="sidebar-bottom"><button data-view="archive"><span class="nav-icon">▤</span>历史归档</button><p>独立账本 · 全程留痕</p><span class="safe-label"><i></i> SHADOW ONLY</span></div>
+</aside>
+<div class="workspace">
+<header class="topbar"><div class="breadcrumbs">工作空间 <span>/</span> <strong id="pageTitle">研究总览</strong></div><div class="header-actions"><span id="connection" class="connection">连接中</span><button id="refresh" class="icon-button" aria-label="刷新研究状态">刷新</button></div></header>
 <main>
-  <p id="error" role="status" hidden></p>
-  <section class="panel" id="accessPanel"><label>独立服务访问凭据<input id="access" type="password" autocomplete="off" placeholder="主站登录后自动连接；独立服务需输入研究凭据"></label><button id="connect">连接研究服务</button></section>
-  <section class="toolbar panel"><label>H01 独立研究账户<select id="accounts"><option value="">尚无研究账户</option></select></label><button id="start" disabled>启动 Shadow</button><button id="pause" disabled>暂停新风险</button><span id="mode">正在连接研究服务</span></section>
-  <section id="empty" class="panel empty-state" hidden><h2>开始 H01 趋势研究</h2><p>H01 是当前工作台的唯一策略。选择 ETH 或 BTC 创建独立 Shadow 账户，资金和记录按实验分别保存。</p><button id="setup">创建研究账户</button><p>当前尚未证实稳定盈利。创建后保持停止，由你确认启动。</p></section>
-  <section id="metrics" class="metrics" data-page="overview"></section>
-  <section class="columns" data-page="overview"><article class="panel"><h2>当前决策</h2><p id="decision">等待连接研究服务</p><dl id="market"></dl></article><article class="panel"><h2>持仓与风险保护</h2><dl id="position"></dl></article></section>
-  <section class="panel" data-page="settings" hidden><h2>创建 H01 独立 Shadow 实验</h2><p>每次创建保存独立配置快照。单笔风险上限为 0.3%，仅支持 ETH / BTC 的 USDT 永续行情。</p><form id="create"><label>标的<select name="symbol"><option value="ETH">ETH / USDT</option><option value="BTC">BTC / USDT</option></select></label><label>UTC 周末模式<select name="weekendMode"><option value="B">B · 周末不新增风险</option><option value="A">A · 全天候</option><option value="C">C · 流动性通过才允许</option></select></label><label>初始研究权益<input name="initialEquity" type="number" min="100" max="10000000" value="10000" required></label><label>单笔风险（%）<input name="risk" type="number" min="0.01" max="0.3" step="0.01" value="0.3" required></label><button type="submit">创建 H01 账户，保持停止</button></form></section>
-  <section class="panel" data-page="history" hidden><h2>H01 虚拟订单与交易归因</h2><div id="trades"></div></section>
-  <section class="panel" data-page="analysis" hidden><h2>验证与前向报告</h2><p id="researchGate">正在加载样本外验证</p><dl id="report"></dl><h3>固定默认参数历史验证</h3><dl id="backtest"></dl><p id="weekendResults"></p><div id="curve"></div><details><summary>完整决策与参数版本</summary><pre id="audit"></pre></details></section>
-  <section class="panel" data-page="analysis" hidden><details><summary>H01 / H05 研究假设登记</summary><div id="hypotheses"></div></details></section>
+<p id="error" class="notice danger" role="status" hidden></p>
+<section id="accessPanel" class="panel access-panel" hidden><div><h2>连接独立研究服务</h2><p>主站会沿用登录状态。独立端口需要研究访问凭据。</p></div><label>访问凭据<input id="access" type="password" autocomplete="off" placeholder="仅保留在本次页面内存"></label><button id="connect" class="primary">连接服务</button></section>
+<section data-page="overview">
+<div class="page-heading"><div><span class="eyebrow">RESEARCH / NEW CHAPTER</span><h1>重新出发，从证据开始。</h1><p>把策略想法、验证结果和运行状态放在同一个工作空间。</p></div><button id="setup" class="primary">查看新策略规划 <span>↗</span></button></div>
+<div class="status-grid">
+<article class="metric"><span>研究状态</span><strong id="researchStatus">等待连接</strong><small>新候选尚未获准执行</small></article>
+<article class="metric"><span>独立实验</span><strong id="experimentCount">—</strong><small id="experimentNote">正在读取研究账本</small></article>
+<article class="metric"><span>当前风险敞口</span><strong id="openCount">—</strong><small id="openNote">仓位与待确认订单</small></article>
+<article class="metric"><span>前向交易样本</span><strong id="tradeCount">—</strong><small>与历史回测分别统计</small></article>
+</div>
+<div class="overview-grid">
+<article class="panel roadmap"><div class="panel-heading"><div><span class="eyebrow">NEXT RESEARCH</span><h2>主方向：确认后的趋势回踩</h2></div><span class="tag amber">候选规划</span></div><p class="lead">先确认趋势，再等待突破后的回踩与恢复。研究目标是减少追价和成本侵蚀，而不是增加出手次数。</p><div class="rule-flow"><div><span>01</span><strong>环境筛选</strong><small>识别趋势与不适合交易的行情</small></div><div><span>02</span><strong>等待确认</strong><small>突破、回踩、重新站稳分开记录</small></div><div><span>03</span><strong>风险反推</strong><small>用结构失效距离决定仓位</small></div></div><div class="panel-footer"><span>当前阶段 · 规则定义与预登记</span><button data-view="plan" class="text-button">查看完整计划 →</button></div></article>
+<article class="panel progress-panel"><div class="panel-heading"><h2>验证进度</h2><span class="tag">0 / 4</span></div><ol class="checklist"><li class="current"><span>1</span><div><strong>冻结候选规则</strong><small>定义入场、退出与否证条件</small></div><em>进行中</em></li><li><span>2</span><div><strong>独立历史验证</strong><small>训练、验证与未使用样本外</small></div></li><li><span>3</span><div><strong>连续 Shadow 观察</strong><small>保留信号、成交与成本证据</small></div></li><li><span>4</span><div><strong>复核后再决定</strong><small>收益、回撤与稳健性共同评估</small></div></li></ol><p class="muted">界面上线和服务在线均不代表策略通过验证。</p></article>
+</div>
+<article class="panel"><div class="panel-heading"><h2>当前研究动态</h2><span class="tag" id="overviewMode">等待状态</span></div><p id="activity" class="activity">正在读取真实研究服务。</p><div class="panel-footer"><span id="lastUpdated">尚未更新</span><button data-view="experiments" class="text-button">管理基线实验 →</button></div></article>
+</section>
+<section data-page="plan" hidden>
+<div class="page-heading"><div><span class="eyebrow">STRATEGY BLUEPRINT</span><h1>先定义优势，再验证优势。</h1><p>下列是新的研究规划，尚无新策略执行引擎或获准交易的候选。</p></div><span class="tag amber">待冻结规则</span></div>
+<div class="plan-grid">
+<article class="panel"><span class="step-label">01 / 主候选</span><h2>突破确认后的有效回踩</h2><p>观察突破后回踩的承接是否能提供更清晰的失效位置，以及更低的入场成本。</p><dl class="facts"><dt>研究标的</dt><dd>BTC / ETH · USDT 永续</dd><dt>周期分工</dt><dd>4H 环境 · 1H 结构 · 15m 触发</dd><dt>入场过程</dt><dd>已收盘突破 → 有效回踩 → 收盘恢复确认</dd><dt>否证条件</dt><dd>扣费后样本外期望不为正，或收益过度集中</dd><dt>当前状态</dt><dd>待冻结回踩区、确认条件与数据范围</dd></dl></article>
+<article class="panel"><span class="step-label">02 / 独立对照</span><h2>将入场与退出分开研究</h2><p>比较入场质量时固定退出规则；比较退出方式时固定同一组入场事件。</p><ul class="plain-list"><li>简单突破作为成本一致的对照基准</li><li>追价距离与净空间分别做消融</li><li>结构退出、时间退出与移动保护独立比较</li><li>周末与工作日分别报告，候选按全天候研究</li><li>全部实验保留，包含亏损、零成交和失败结果</li></ul></article>
+<article class="panel wide"><div class="panel-heading"><h2>新候选的晋级门槛</h2><span class="tag">拟定研究标准</span></div><div class="gate-grid"><div><strong>独立样本</strong><p>扩大到未使用年份与不同市场环境，预先固定切分，样本不足时继续观察。</p></div><div><strong>成本后有效</strong><p>纳入手续费、滑点、资金费和未成交；扣费后期望与置信区间共同判断。</p></div><div><strong>风险可控</strong><p>拟定单笔风险不超过 0.25%，不补亏损仓、不翻倍、不因亏损自动加风险。</p></div><div><strong>前向可复核</strong><p>逐条保留信号到成交漏斗，参数版本独立，任何实盘晋级都需单独授权。</p></div></div><p class="muted">这是后续候选的研究提案。当前 H01 基线账本、配置与执行参数保持原有快照。</p></article>
+</div>
+</section>
+<section data-page="experiments" hidden>
+<div class="page-heading"><div><span class="eyebrow">EXPERIMENTS</span><h1>实验管理</h1><p>H01 仅作为现有参考基线，未通过收益验证。新候选暂不提供启动操作。</p></div></div>
+<div class="panel experiment-toolbar"><label>参考基线账户<select id="accounts"><option value="">尚无研究账户</option></select></label><span class="tag amber">H01 · 未通过</span><span id="mode">等待状态</span><div class="toolbar-actions"><button id="start" disabled>启动基线 Shadow</button><button id="pause" disabled>暂停新增风险</button></div></div>
+<section id="empty" class="panel empty-state" hidden><h2>尚无参考实验</h2><p>可以保留空白研究环境，先完成候选规则定义。</p></section>
+<section id="metrics" class="status-grid"></section>
+<div class="columns"><article class="panel"><h2>当前决策</h2><p id="decision">等待连接研究服务</p><details><summary>指标与执行诊断</summary><dl id="market" class="facts"></dl></details></article><article class="panel"><h2>持仓保护</h2><dl id="position" class="facts"></dl></article></div>
+<details class="panel"><summary>高级研究操作 · 新建 H01 参考实验</summary><p>只建立独立基线账本，创建后保持停止。与新候选的验证结果分开记录。</p><form id="create"><label>标的<select name="symbol"><option value="ETH">ETH / USDT</option><option value="BTC">BTC / USDT</option></select></label><label>周末对照模式<select name="weekendMode"><option value="B">B · 周末不新增</option><option value="A">A · 全天候</option><option value="C">C · 流动性通过</option></select></label><label>初始研究权益<input name="initialEquity" type="number" min="100" max="10000000" value="10000" required></label><label>单笔风险 %<input name="risk" type="number" min="0.01" max="0.3" step="0.01" value="0.3" required></label><button class="primary" type="submit">创建停止状态的基线实验</button></form></details>
+</section>
+<section data-page="history" hidden><div class="page-heading"><div><span class="eyebrow">FORWARD JOURNAL</span><h1>研究交易记录</h1><p>仅展示当前基线账户的实际 Shadow 账本记录。</p></div></div><article class="panel"><div id="trades"></div></article></section>
+<section data-page="analysis" hidden><div class="page-heading"><div><span class="eyebrow">EVIDENCE FIRST</span><h1>证据与验证</h1><p>保留失败的研究证据，以此约束下一轮策略设计。</p></div></div><article class="panel"><h2>现有基线的验证结论</h2><p id="researchGate">正在读取历史报告</p><dl id="backtest" class="facts"></dl><p id="weekendResults"></p><div id="curve"></div></article><article class="panel"><h2>当前基线前向统计</h2><dl id="report" class="facts"></dl><details><summary>原始参数与执行审计</summary><pre id="audit"></pre></details></article><details class="panel"><summary>原始假设登记</summary><div id="hypotheses"></div></details></section>
+<section data-page="archive" hidden><div class="page-heading"><div><span class="eyebrow">ARCHIVE</span><h1>历史归档</h1><p>旧账户仅提供记录检索和必要的风险处理，不再展示策略推荐、启动或配置入口。</p></div><button id="archiveRefresh">读取归档</button></div><div class="panel"><label>搜索历史账户<input id="archiveSearch" type="search" placeholder="账户名称、标的或平台"></label><p id="archiveStatus" role="status">进入此页后按需只读加载。</p><div id="archiveAccounts" class="archive-list"></div></div><article id="archiveDetail" class="panel" hidden><div class="panel-heading"><h2 id="archiveTitle">历史记录</h2><a id="safetyLink" href="/safety-console.html">处理已有仓位与订单 ↗</a></div><div id="archiveHistory"></div></article></section>
 </main>
-<footer>H01 · H01_20261107_RESEARCH_V2 · 独立 Shadow 账本 · Live 禁用</footer>
-<script src="/hypothesis/workbench.js?v=20261107-main"></script>
+<footer>SUPER AGENT · 独立研究 / 证据留存 / 风险优先 <span>LIVE DISABLED</span></footer>
+</div>
+</div>
+<script src="/hypothesis/workbench.js?v=20261108-lab"></script>
 </body>
 </html>

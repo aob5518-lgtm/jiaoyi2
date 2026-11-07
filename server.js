@@ -4816,7 +4816,7 @@ const server = http.createServer((req, res) => {
 
   const needsAuthPage =
     pathname === "/" ||
-    pathname === "/index.html" || pathname === "/legacy-terminal.html" || pathname === "/intelligent-trend.html" ||
+    pathname === "/index.html" || pathname === "/legacy-terminal.html" || pathname === "/safety-console.html" || pathname === "/intelligent-trend.html" ||
     pathname === "/mobile.html" || pathname === "/compound.html";
 
   if (needsAuthPage && !isAuthenticated(req)) {
@@ -4825,7 +4825,7 @@ const server = http.createServer((req, res) => {
   if(pathname==="/compound.html"||pathname==="/mobile.html"){
     const id=String(parsed.query.id||""),valid=id&&getAccountById(id);
     const tab=pathname==="/compound.html"?"strategies":"overview";
-    return redirect(res,valid?`/legacy-terminal.html?account=${encodeURIComponent(id)}#${tab}`:`/legacy-terminal.html#${tab}`);
+    return redirect(res,valid?`/safety-console.html?account=${encodeURIComponent(id)}#${tab}`:`/safety-console.html#${tab}`);
   }
 
   const protectedApiPrefixes = [
