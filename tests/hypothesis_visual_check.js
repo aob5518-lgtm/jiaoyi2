@@ -23,13 +23,14 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    results.push({width,height,...facts});
    if(facts.scrollWidth>facts.clientWidth||facts.width!==width||facts.mainWidth>width)throw Error("Horizontal overflow: "+JSON.stringify(facts));
    if(!facts.startEnabled||facts.pauseEnabled||!facts.report.includes("NOT_PASSED"))throw Error("Rendered state mismatch");
-   for(const view of ["plan","experiments","history","analysis","archive"]){
+   for(const view of ["plan","connections","experiments","history","analysis","archive"]){
     const selector='[data-view="'+view+'"]';
     await call("Runtime.evaluate",{expression:"document.querySelector("+JSON.stringify(selector)+").click();true",returnByValue:true});
     if(view==="archive")for(let n=0;n<100;n++){const loaded=await call("Runtime.evaluate",{expression:"document.querySelectorAll('.archive-item').length",returnByValue:true});if(loaded.result.value===64)break;if(n===99)throw Error("Archive did not load");await new Promise(r=>setTimeout(r,25));}
+    if(view==="connections")for(let n=0;n<100;n++){const loaded=await call("Runtime.evaluate",{expression:"document.querySelectorAll('.connection-item').length",returnByValue:true});if(loaded.result.value===64)break;if(n===99)throw Error("Connection accounts did not load");await new Promise(r=>setTimeout(r,25));}
     const state=await call("Runtime.evaluate",{expression:"JSON.stringify({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,visible:Array.from(document.querySelectorAll('[data-page]')).filter(x=>!x.hidden).map(x=>x.dataset.page),archive:document.querySelectorAll('.archive-item').length})",returnByValue:true}),layout=JSON.parse(state.result.value);
     if(layout.scroll>layout.client||layout.visible.length!==1||layout.visible[0]!==view)throw Error("View layout failure: "+view+" "+JSON.stringify(layout));
-    if(["plan","experiments","archive"].includes(view)){const shot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});fs.writeFileSync(path.join(directory,width+"x"+height+"-"+view+".png"),Buffer.from(shot.data,"base64"));}
+    if(["plan","connections","experiments","archive"].includes(view)){const shot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});fs.writeFileSync(path.join(directory,width+"x"+height+"-"+view+".png"),Buffer.from(shot.data,"base64"));}
     results.push({width,height,view,...layout});
    }
   }

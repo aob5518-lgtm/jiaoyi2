@@ -52,7 +52,10 @@ test("Research lab removes retired strategy menus and distinguishes planning fro
   assert.match(main, /策略研究台/);
   assert.doesNotMatch(main, /Trend V3|Short-Term V1|4H Compound V1|\/terminal\/app.js/);
   assert.match(main, /data-view="archive"/);
-  assert.deepEqual([...main.matchAll(/data-view="([^"]+)"/g)].slice(0, 6).map(x => x[1]), ["overview", "plan", "experiments", "history", "analysis", "archive"]);
+  assert.deepEqual([...main.matchAll(/data-view="([^"]+)"/g)].slice(0, 7).map(x => x[1]), ["overview", "plan", "connections", "experiments", "history", "analysis", "archive"]);
+  assert.match(main, /JUST AGENT/);
+  assert.doesNotMatch(main, /SUPER AGENT/);
+  assert.match(main, /id="newConnection"/);
   assert.match(main, /尚无新策略执行引擎/);
   assert.match(main, /H01 仅作为现有参考基线/);
   assert.equal(main.replace(/\r\n/g, "\n"), fs.readFileSync(path.join(root, "intelligent-trend.html"), "utf8").replace(/\r\n/g, "\n"));

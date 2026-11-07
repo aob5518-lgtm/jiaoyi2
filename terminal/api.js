@@ -9,6 +9,7 @@ function writeAudit(file,value){const tmp=file+".tmp",fd=fs.openSync(tmp,"w",0o6
 function legacyDiagnosis(d,a,options={}){const x=context(d,a);return require("./legacy-review").diagnose(a,x.st,x.t,d.simulationOrders(a.id),{...options,directory:d.directory});}
 async function handle(req,res,parsed,d){
  const route=parsed.pathname,q=parsed.query,send=(code,payload)=>d.json(res,code,Model.redact(payload));
+ if(route.startsWith("/api/v4/connections"))return require("./connections").handle(req,res,parsed,d);
  try{
   if(req.method==="GET"){
    const a=d.getAccountById(q.id||d.getCurrentAccount().id);if(!a)return send(404,{ok:false,error:"账户参数无效，未改变当前账户"});

@@ -4545,6 +4545,23 @@ function buildDashboardPayload(acc, st) {
   };
 }
 
+async function checkAccountConnection(account) {
+  let result;
+  if (account.platform === "hyperliquid") {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(account.address || "")) throw Error("Hyperliquid address required");
+    result = await getHyperAccount(account.address, account.symbol);
+  } else if (account.platform === "binance") {
+    if (!account.apiKey || !account.apiSecret) throw Error("Binance credentials required");
+    result = await getBinanceAccount(account);
+  } else if (account.platform === "extended") {
+    if (!account.apiKey) throw Error("Extended API key required");
+    result = await getExtendedAccount(account);
+  } else throw Error("Unsupported platform");
+  const balance = Number(result.balance ?? result.totalWalletBalance);
+  const positions = Array.isArray(result.positions) ? result.positions : result.currentPos ? [result.currentPos] : [];
+  return {balance: Number.isFinite(balance) ? balance : null, positionCount: positions.filter(item => Number(item.positionAmt ?? item.position?.szi ?? item.size ?? 0) !== 0).length};
+}
+
 const server = http.createServer((req, res) => {
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname || "/";
@@ -4866,7 +4883,7 @@ const server = http.createServer((req, res) => {
   }
   if(pathname.startsWith("/api/v4/")){
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
-    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
+    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:checkAccountConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
   }
 
   if(pathname.startsWith("/api/compound")){

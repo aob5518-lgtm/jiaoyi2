@@ -10,7 +10,7 @@
  };
  const pageNames = {
   overview: "研究总览", plan: "策略规划", experiments: "实验管理",
-  history: "研究记录", analysis: "证据与验证", archive: "历史归档"
+  history: "研究记录", analysis: "证据与验证", archive: "历史归档", connections: "账户管理"
  };
  const marketLabels = {
   TREND_UP: "上涨趋势", TREND_DOWN: "下跌趋势", RANGE: "震荡",
@@ -46,6 +46,7 @@
    else button.removeAttribute("aria-current");
   }
   $("pageTitle").textContent = pageNames[page];
+  if (typeof CustomEvent !== "undefined") document.dispatchEvent?.(new CustomEvent("workspacepage", {detail: page}));
   if (typeof history !== "undefined" && typeof location !== "undefined") history.replaceState(null, "", "#" + page);
   if (page === "archive" && !state.archiveLoaded) loadArchive();
  }
