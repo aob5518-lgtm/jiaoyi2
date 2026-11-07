@@ -86,7 +86,7 @@ async function handle(req, res, parsed, d) {
       }
     }
     st = d.state(account.id);
-    const trend = d.trend?.get(account) || {};
+    const trend = /^trend_only_v[123]$/.test(account.strategyType || "") ? d.trend?.get(account) || {} : {};
     const compoundBusy = account.strategyType === "compound_4h_v1" && d.compound?.busy(account);
     if (!st || st.running || st.tickRunning || st.placingOrder || st.pendingOrder || st.smartExitPending || Number(st.positionQty) > 0 || trend.position || trend.pendingOrder || compoundBusy) throw Error("请先停止监控并完成现有仓位与订单核对，再更改连接");
     lock = d.lock(account.id);
