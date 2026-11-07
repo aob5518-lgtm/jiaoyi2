@@ -96,7 +96,7 @@ test("portfolio includes pending reserves, uses shared equity once and fails clo
  assert.equal(snapshot(a,entries,"long",60).allowed,false);assert.equal(snapshot(a,entries,"long",50).allowed,true);assert.equal(snapshot(a,entries,"long",0).portfolioEffectiveRiskPct,.02);
  entries[1].state.pendingOrder.plan={};assert.equal(snapshot(a,entries,"long",1).unknownRisk,true);
 });
-test("all modular terminal scripts parse and Forward workbench uses server experiment scope",()=>{const directory=path.join(__dirname,"../public/terminal");for(const f of fs.readdirSync(directory).filter(f=>f.endsWith(".js")))new vm.Script(fs.readFileSync(path.join(directory,f),"utf8"));const html=fs.readFileSync(path.join(__dirname,"../public/index.html"),"utf8"),analysis=fs.readFileSync(path.join(directory,"analysis.js"),"utf8");assert.match(html,/page-analysis/);assert.match(html,/name="revision"/);assert.match(analysis,/当前账户、当前实验/);assert.match(analysis,/decisions24h/);});
+test("all modular terminal scripts parse and Forward workbench uses server experiment scope",()=>{const directory=path.join(__dirname,"../public/terminal");for(const f of fs.readdirSync(directory).filter(f=>f.endsWith(".js")))new vm.Script(fs.readFileSync(path.join(directory,f),"utf8"));const html=fs.readFileSync(path.join(__dirname,"../public/legacy-terminal.html"),"utf8"),analysis=fs.readFileSync(path.join(directory,"analysis.js"),"utf8");assert.match(html,/page-analysis/);assert.match(html,/name="revision"/);assert.match(analysis,/当前账户、当前实验/);assert.match(analysis,/decisions24h/);});
 // Shared deterministic fill fixture; retained unchanged from pre-V4 tests.
 function shadowEngine(){return{
  initialState:()=>({...V3.initialState(),trendEntryCounts:{}}),normalizeConfig:V3.normalizeConfig,

@@ -2,12 +2,24 @@
 (function(){"use strict";
 const $=id=>document.getElementById(id),state={accounts:[],id:"",busy:false,connected:false,access:"",research:null};
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=String(text);if(cls)n.className=cls;return n;},fmt=v=>v===null||v===undefined?"尚无有效数据":typeof v==="number"?v.toLocaleString("zh-CN",{maximumFractionDigits:5}):String(v),time=v=>v?new Date(v).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})+" UTC+8":"未评估";
+function showPage(page) {
+ for (const section of document.querySelectorAll?.("[data-page]") || []) section.hidden = section.dataset.page !== page;
+ for (const button of document.querySelectorAll?.("[data-view]") || []) {
+  if (button.dataset.view === page) button.setAttribute("aria-current", "page");
+  else button.removeAttribute("aria-current");
+ }
+}
+function showError(message) {
+ $("error").textContent = message;
+ $("error").hidden = !message;
+}
 function rows(id,values){const n=$(id);n.replaceChildren();for(const[k,v]of Object.entries(values))n.append(el("dt",k),el("dd",fmt(v)));}
 async function api(route,body){const r=await fetch("/api/v5/"+route,{method:body?"POST":"GET",credentials:"same-origin",headers:{...(state.access?{Authorization:"Bearer "+state.access}:{}),...(body?{"Content-Type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{})});let data;try{data=await r.json();}catch{throw Error("研究模块不可用，请检查服务或登录");}if(!r.ok||data.ok===false)throw Error(data.error||"研究请求失败");return data;}
 function render(){
  const b=state.accounts.find(v=>v.id===state.id),grid=$("metrics");grid.replaceChildren();
  $("start").disabled=!state.connected||!b||b.entryAllowed===false||b.running||b.riskLock||state.busy;$("pause").disabled=!state.connected||!b||!b.running||state.busy;
- if(!b){$("mode").textContent="尚无研究账户 · 创建后默认停止";return;}
+ $("empty").hidden = !!b || !state.connected;
+ if(!b){$("mode").textContent=state.connected?"尚无 H01 账户 · 请先创建研究账户":"研究服务连接未就绪";$("decision").textContent="创建研究账户后查看 H01 决策";for(const id of ["market","position","report","audit","trades"])$(id).replaceChildren();return;}
  const m=b.metrics,s=b.lastSnapshot?.signal,d=b.lastSnapshot?.decision,p=b.position;
  $("mode").textContent=b.mode+" · "+(b.running?"运行中":"已暂停")+" · "+(b.riskLock?"风险锁定":"无真实交易权限");
  for(const[k,v]of Object.entries({"已结算净权益":b.equity,"累计虚拟净收益":m.netPnl,"最大回撤":m.maxDrawdown,"当前净R":p&&s?.referencePrice?((b.lastSnapshot.markPrice??s.referencePrice)-p.entryPrice)*(p.side==="long"?1:-1)/p.distance:null})){const n=el("article",undefined,"metric");n.append(el("span",k),el("strong",fmt(v)));grid.append(n);}
@@ -21,9 +33,11 @@ function render(){
  const hypotheses=$("hypotheses");hypotheses.replaceChildren();for(const h of b.hypotheses){const n=el("article",undefined,"hypothesis");n.append(el("h3",h.id+" · "+h.status));for(const[k,key]of [["观察","observation"],["假设","hypothesis"],["机制","mechanism"],["验证","validation"],["否证","falsification"]])n.append(el("p",k+"："+h[key]));hypotheses.append(n);}
 }
 function renderResearch(b){const r=state.research?.assets?.[b.symbol];if(!r){$("backtest").textContent="真实历史报告尚未加载";return;}const v=r.splits.outOfSample;rows("backtest",{"数据":r.source+" · 2024","结论":r.gate.status,"未通过原因":r.gate.reasons.join(" / "),"样本外成交":v.metrics.trades,"样本外净收益":v.metrics.netPnl,"样本外净期望R":v.metrics.expectancyR,"样本外最大回撤":v.metrics.maxDrawdown,"数据版本":r.dataHash});$("weekendResults").textContent="同数据周末对照（样本外历史）："+r.weekendComparison.map(x=>x.mode+" · "+x.metrics.trades+"笔 · "+fmt(x.metrics.netPnl)+" U").join("；")+"。A/C同底层安全门槛，不能宣称C独立有效。";const box=$("curve");box.replaceChildren();const points=v.curve||[];if(points.length<2)return;const ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg"),line=document.createElementNS(ns,"polyline"),min=Math.min(...points.map(v=>v.equity)),max=Math.max(...points.map(v=>v.equity));svg.setAttribute("viewBox","0 0 600 160");svg.setAttribute("role","img");svg.setAttribute("aria-label","样本外历史净值，非Shadow收益");line.setAttribute("points",points.map((v,n)=>(10+n/(points.length-1)*580)+","+(150-(v.equity-min)/Math.max(.00001,max-min)*140)).join(" "));line.setAttribute("fill","none");line.setAttribute("stroke","#53d0de");line.setAttribute("stroke-width","2");svg.append(line);box.append(el("p","样本外历史净值（抽样显示）"),svg);}
-async function load(){if(state.busy)return;state.busy=true;try{const d=await api("status");state.connected=!d.error;state.accounts=d.accounts;if(!state.research)try{state.research=await api("research");}catch{}if(!state.accounts.some(b=>b.id===state.id))state.id=state.accounts[0]?.id||"";const select=$("accounts");select.replaceChildren();for(const b of state.accounts){const n=el("option",b.symbol+" · "+b.mode+" · "+b.scope.configHash.slice(0,8));n.value=b.id;select.append(n);}select.value=state.id;$("error").textContent=d.error||"";}catch(e){state.connected=false;$("error").textContent=e.message;}finally{state.busy=false;render();}}
-async function control(action){if(state.busy||!state.connected)return;try{await api("control",{id:state.id,action});await load();}catch(e){$("error").textContent=e.message;}}
+async function load(){if(state.busy)return;state.busy=true;try{const d=await api("status");state.connected=!d.error;state.accounts=d.accounts;if(!state.research)try{state.research=await api("research");}catch{}if(!state.accounts.some(b=>b.id===state.id))state.id=state.accounts[0]?.id||"";const select=$("accounts");select.replaceChildren();for(const b of state.accounts){const n=el("option",b.symbol+" · "+b.mode+" · "+b.scope.configHash.slice(0,8));n.value=b.id;select.append(n);}select.value=state.id;showError(d.error||"");$("accessPanel").hidden=state.connected&&!state.access;}catch(e){state.connected=false;showError(e.message);$("accessPanel").hidden=state.connected&&!state.access;}finally{state.busy=false;render();}}
+async function control(action){if(state.busy||!state.connected)return;try{await api("control",{id:state.id,action});await load();}catch(e){showError(e.message);$("accessPanel").hidden=state.connected&&!state.access;}}
 $("connect").onclick=()=>{state.access=$("access").value;$("access").value="";load();};$("refresh").onclick=load;$("accounts").onchange=()=>{state.id=$("accounts").value;render();};$("start").onclick=()=>control("start");$("pause").onclick=()=>control("pause");
-$("create").onsubmit=async e=>{e.preventDefault();const v=new FormData(e.target);try{const d=await api("accounts",{symbol:v.get("symbol"),mode:"Shadow",initialEquity:Number(v.get("initialEquity")),config:{weekendMode:v.get("weekendMode"),riskPerTrade:Number(v.get("risk"))/100}});state.id=d.account.id;await load();}catch(err){$("error").textContent=err.message;}};
+for (const button of document.querySelectorAll?.("[data-view]") || []) button.onclick = () => showPage(button.dataset.view);
+$("setup").onclick = () => showPage("settings");
+$("create").onsubmit=async e=>{e.preventDefault();const v=new FormData(e.target);try{const d=await api("accounts",{symbol:v.get("symbol"),mode:"Shadow",initialEquity:Number(v.get("initialEquity")),config:{weekendMode:v.get("weekendMode"),riskPerTrade:Number(v.get("risk"))/100}});state.id=d.account.id;await load();showPage("overview");}catch(err){showError(err.message);}};
 load();setInterval(load,15000);
 })();

@@ -1,13 +1,35 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hyper-Safe Quant V5 · 智能趋势研究</title><link rel="stylesheet" href="/hypothesis/workbench.css"></head><body>
-<header><div><a href="/">SUPER AGENT</a><h1>智能趋势策略 · H01</h1><p>假设驱动研究 / Shadow · 未验证交易优势 · 禁止真实交易</p></div><button id="refresh">刷新</button></header>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SUPER AGENT V5 · H01 趋势工作台</title>
+<link rel="stylesheet" href="/hypothesis/workbench.css?v=20261107-main">
+</head>
+<body>
+<header>
+  <div><a href="/">SUPER AGENT V5</a><h1>H01 趋势工作台</h1><p>当前唯一研究策略 · Shadow · 收益验证未通过</p></div>
+  <div class="header-actions"><a class="history-link" href="/legacy-terminal.html">历史账户与安全管理</a><button id="refresh">刷新</button></div>
+</header>
+<nav class="workspace-nav" aria-label="H01 工作台">
+  <button data-view="overview" aria-current="page">总览</button>
+  <button data-view="settings">策略配置</button>
+  <button data-view="history">研究交易</button>
+  <button data-view="analysis">验证与分析</button>
+</nav>
 <main>
-<section class="panel" id="accessPanel"><label>独立研究服务访问凭据（主站登录时留空）<input id="access" type="password" autocomplete="off" placeholder="仅保留本次页面内存，不写浏览器存储"></label><button id="connect">连接研究服务</button><p id="error" role="status"></p></section>
-<section class="toolbar panel"><label>独立研究账户<select id="accounts"><option value="">尚无研究账户</option></select></label><button id="start">启动 Shadow</button><button id="pause">暂停新风险</button><span id="mode">尚未连接</span></section>
-<section id="metrics" class="metrics"></section>
-<section class="columns"><article class="panel"><h2>当前市场与执行决定</h2><p id="decision">等待连接；系统在线不代表允许入场。</p><dl id="market"></dl></article><article class="panel"><h2>持仓与风险保护</h2><dl id="position"></dl></article></section>
-<section class="panel"><h2>H01 / H05 五格研究登记</h2><div id="hypotheses"></div></section>
-<section class="panel"><h2>创建独立 Shadow 实验</h2><p>创建后默认停止。配置作为新实验快照保存，不修改生产账户或已运行实验。</p><form id="create"><label>标的<select name="symbol"><option value="ETH">ETH / USDT</option><option value="BTC">BTC / USDT</option></select></label><label>UTC 周末模式<select name="weekendMode"><option value="B">B · 周末不新增风险</option><option value="A">A · 全天候</option><option value="C">C · 流动性通过才允许</option></select></label><label>初始研究权益<input name="initialEquity" type="number" min="100" max="10000000" value="10000" required></label><label>单笔风险（%）<input name="risk" type="number" min="0.01" max="0.3" step="0.01" value="0.3" required></label><button type="submit">保存为新实验，保持停止</button></form></section>
-<section class="panel"><h2>研究与前向报告</h2><p id="researchGate">样本外验证尚未载入。Shadow 收益不能替代独立样本外证据。</p><dl id="report"></dl><h3>固定默认参数历史验证（非当前配置的批准）</h3><dl id="backtest"></dl><p id="weekendResults"></p><div id="curve"></div><details><summary>完整决策与参数版本</summary><pre id="audit"></pre></details></section>
-<section class="panel"><h2>虚拟订单与交易归因</h2><div id="trades"></div></section>
-</main><footer>H02 / H03 / H04 仅登记研究，尚无交易执行权限。AI 不能修改风险硬上限或自动晋级 Live。</footer>
-<script src="/hypothesis/workbench.js"></script></body></html>
+  <p id="error" role="status" hidden></p>
+  <section class="panel" id="accessPanel"><label>独立服务访问凭据<input id="access" type="password" autocomplete="off" placeholder="主站登录后自动连接；独立服务需输入研究凭据"></label><button id="connect">连接研究服务</button></section>
+  <section class="toolbar panel"><label>H01 独立研究账户<select id="accounts"><option value="">尚无研究账户</option></select></label><button id="start" disabled>启动 Shadow</button><button id="pause" disabled>暂停新风险</button><span id="mode">正在连接研究服务</span></section>
+  <section id="empty" class="panel empty-state" hidden><h2>开始 H01 趋势研究</h2><p>H01 是当前工作台的唯一策略。选择 ETH 或 BTC 创建独立 Shadow 账户，资金和记录按实验分别保存。</p><button id="setup">创建研究账户</button><p>当前尚未证实稳定盈利。创建后保持停止，由你确认启动。</p></section>
+  <section id="metrics" class="metrics" data-page="overview"></section>
+  <section class="columns" data-page="overview"><article class="panel"><h2>当前决策</h2><p id="decision">等待连接研究服务</p><dl id="market"></dl></article><article class="panel"><h2>持仓与风险保护</h2><dl id="position"></dl></article></section>
+  <section class="panel" data-page="settings" hidden><h2>创建 H01 独立 Shadow 实验</h2><p>每次创建保存独立配置快照。单笔风险上限为 0.3%，仅支持 ETH / BTC 的 USDT 永续行情。</p><form id="create"><label>标的<select name="symbol"><option value="ETH">ETH / USDT</option><option value="BTC">BTC / USDT</option></select></label><label>UTC 周末模式<select name="weekendMode"><option value="B">B · 周末不新增风险</option><option value="A">A · 全天候</option><option value="C">C · 流动性通过才允许</option></select></label><label>初始研究权益<input name="initialEquity" type="number" min="100" max="10000000" value="10000" required></label><label>单笔风险（%）<input name="risk" type="number" min="0.01" max="0.3" step="0.01" value="0.3" required></label><button type="submit">创建 H01 账户，保持停止</button></form></section>
+  <section class="panel" data-page="history" hidden><h2>H01 虚拟订单与交易归因</h2><div id="trades"></div></section>
+  <section class="panel" data-page="analysis" hidden><h2>验证与前向报告</h2><p id="researchGate">正在加载样本外验证</p><dl id="report"></dl><h3>固定默认参数历史验证</h3><dl id="backtest"></dl><p id="weekendResults"></p><div id="curve"></div><details><summary>完整决策与参数版本</summary><pre id="audit"></pre></details></section>
+  <section class="panel" data-page="analysis" hidden><details><summary>H01 / H05 研究假设登记</summary><div id="hypotheses"></div></details></section>
+</main>
+<footer>H01 · H01_20261107_RESEARCH_V2 · 独立 Shadow 账本 · Live 禁用</footer>
+<script src="/hypothesis/workbench.js?v=20261107-main"></script>
+</body>
+</html>

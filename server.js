@@ -4816,7 +4816,7 @@ const server = http.createServer((req, res) => {
 
   const needsAuthPage =
     pathname === "/" ||
-    pathname === "/index.html" ||
+    pathname === "/index.html" || pathname === "/legacy-terminal.html" || pathname === "/intelligent-trend.html" ||
     pathname === "/mobile.html" || pathname === "/compound.html";
 
   if (needsAuthPage && !isAuthenticated(req)) {
@@ -4825,7 +4825,7 @@ const server = http.createServer((req, res) => {
   if(pathname==="/compound.html"||pathname==="/mobile.html"){
     const id=String(parsed.query.id||""),valid=id&&getAccountById(id);
     const tab=pathname==="/compound.html"?"strategies":"overview";
-    return redirect(res,valid?`/?account=${encodeURIComponent(id)}#${tab}`:`/#${tab}`);
+    return redirect(res,valid?`/legacy-terminal.html?account=${encodeURIComponent(id)}#${tab}`:`/legacy-terminal.html#${tab}`);
   }
 
   const protectedApiPrefixes = [
@@ -4857,6 +4857,9 @@ const server = http.createServer((req, res) => {
   }
   if(pathname.startsWith("/api/v5/")){
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
+    if(process.env.H01_RESEARCH_ACCESS_FILE){
+      require("./terminal/hypothesis-gateway").handle(req,res,pathname,{accessFile:process.env.H01_RESEARCH_ACCESS_FILE});return;
+    }
     const research=require("./strategy/hypothesis_v5/service");
     hypothesisResearchService ||= research.createService({directory:path.join(__dirname,".v5-research","integrated")});
     research.handle(req,res,{pathname},hypothesisResearchService);return;
