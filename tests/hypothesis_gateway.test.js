@@ -49,13 +49,16 @@ test("H01 main gateway uses server credential and the same isolated book", async
 test("Research lab removes retired strategy menus and distinguishes planning from execution", () => {
   const root = path.resolve(__dirname, "../public");
   const main = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(main, /量化交易后台/);
+  assert.match(main, /经典交易工作台/);
   assert.doesNotMatch(main, /Trend V3|Short-Term V1|4H Compound V1|\/terminal\/app.js/);
-  assert.deepEqual([...main.matchAll(/data-view="([^"]+)"/g)].slice(0, 4).map(x => x[1]), ["overview", "strategy", "history", "connections"]);
+  assert.equal((main.match(/data-view=/g)||[]).length,0);
+  assert.match(main, /id="deskSettings"/);
+  assert.match(main, /id="deskFills"/);
+  assert.match(main, /id="deskTrades"/);
   assert.match(main, /JUST AGENT/);
   assert.doesNotMatch(main, /SUPER AGENT/);
   assert.match(main, /id="newConnection"/);
-  assert.match(main, /\/intelligent-trend.html/);
+  assert.doesNotMatch(main, /\/intelligent-trend.html/);
   assert.match(main, /经典规则没有自动止损/);
   assert.match(fs.readFileSync(path.join(root, "intelligent-trend.html"), "utf8"), /H01 仅作为现有参考基线/);
   assert.match(fs.readFileSync(path.join(root, "legacy-terminal.html"), "utf8"), /url=\/#archive/);

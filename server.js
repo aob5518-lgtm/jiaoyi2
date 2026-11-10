@@ -3,6 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const url = require("url");
 const crypto = require("crypto");
+const classicOnly = process.env.JUST_AGENT_CLASSIC_ONLY === "1" || fs.existsSync(path.join(__dirname, ".classic-only"));
+const ClassicOnly = require("./terminal/classic-only");
 let hypothesisResearchService;
 const TrendOnly = require("./trend_only");
 const TrendOnlyV2 = require("./trend_only_v2");
@@ -730,7 +732,7 @@ let simulationOrdersMap = loadSimulationOrdersMap();
 let smartRuntimeMap = loadSmartRuntimeMap();
 const trendRuntime = createTrendRuntime({
   directory: __dirname, isPaper: isSimulationAccount, log: addLog, history: addProfitHistory,
-  entryRestricted: acc=>TerminalPolicy.restricted(acc),
+  entryRestricted: acc=>classicOnly || TerminalPolicy.restricted(acc),
   portfolioAccounts: () => config.accounts.filter(a=>getStrategyType(a)==="trend_only_v3"||isCompound(a)).map(a=>({account:{...a,paper:isSimulationAccount(a)},equity:stateMap[a.id]?.balance,...(isCompound(a)?{state:compoundRuntime.exposure(a)}:{})})),
   referencePrice: a => getBinanceFuturesPrice(a.symbol),
   shortTermConstraints: async a=>{
@@ -3416,6 +3418,11 @@ async function tickAccount(acc) {
       classicPaper.mark(getAccountById(acc.id), price);
       return;
     }
+    if (classicOnly && acc.tradeMode === "simulation" && acc.simulationEnabled === true) {
+      st.running = false;
+      if (isCompound(acc) && !compoundRuntime.busy(acc)) return;
+      if (isTrendOnly(acc) && !ClassicOnly.hasTrendWork(trendRuntime.get(acc))) return;
+    }
     if(!STRATEGY_TYPES.has(activeStrategyType)){st.lastAction="UNSUPPORTED_STRATEGY：禁止交易，请核对配置";return;}
     if(isCompound(acc)){await compoundRuntime.tick(acc,st);return;}
     if (["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(activeStrategyType)) { await trendRuntime.tick(acc, st); return; }
@@ -4880,6 +4887,7 @@ const server = http.createServer((req, res) => {
   if (needsAuthPage && !isAuthenticated(req)) {
     return redirect(res, `/login.html?next=${encodeURIComponent(pathname === "/index.html" ? "/" : pathname)}`);
   }
+  if (classicOnly && pathname === "/intelligent-trend.html") return redirect(res, "/");
   if (pathname === "/safety-console.html") {
     const account = getAccountById(String(parsed.query.account || getCurrentAccount()?.id || ""));
     if (account && classicPaper.get(account.id)) return redirect(res, "/?account=" + encodeURIComponent(account.id) + "#overview");
@@ -4917,6 +4925,10 @@ const server = http.createServer((req, res) => {
   if (protectedApiPrefixes.includes(pathname) && !isAuthenticated(req)) {
     return jsonRes(res, 401, { ok: false, error: "未登录或登录已过期" });
   }
+  if (classicOnly && ClassicOnly.retiredRoute(req.method, pathname)) {
+    if (!isAuthenticated(req)) return jsonRes(res, 401, {ok: false, error: "请先登录"});
+    return jsonRes(res, 410, {ok: false, error: "该入口已退役，交易请使用经典模拟工作台"});
+  }
   if(pathname.startsWith("/api/v5/")){
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
     if(process.env.H01_RESEARCH_ACCESS_FILE){
@@ -4937,7 +4949,7 @@ const server = http.createServer((req, res) => {
   }
   if(pathname.startsWith("/api/v4/")){
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
-    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,classicPaper,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:checkAccountConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
+    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,classicPaper,classicOnly,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:checkAccountConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
   }
 
   if(pathname.startsWith("/api/compound")){
@@ -5600,6 +5612,7 @@ const server = http.createServer((req, res) => {
         const current = getCurrentAccount();
         const data = JSON.parse(body || "{}");
         if (classicPaper.get(current.id)) throw Error("经典模拟仓位请在量化后台管理");
+        if (classicOnly && data.reduceOnly !== true) return jsonRes(res, 410, {ok: false, error: "旧手动开仓入口已退役"});
         if(isCompound(current))return jsonRes(res,400,{ok:false,error:"4H独立Paper策略禁止手动加仓，请使用4H工作台"});
         if(data.reduceOnly&&data.confirm!==true)return jsonRes(res,400,{ok:false,error:"手动减仓必须明确确认"});
         if (isTrendOnly(current)) throw new Error("独立策略禁止手动加仓，请使用对应工作台平仓");

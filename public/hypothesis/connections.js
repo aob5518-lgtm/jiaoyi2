@@ -87,17 +87,21 @@
  }
  async function chooseCurrent(id) {
   if (state.busy) return;
+  const guard = new CustomEvent("just-account-selecting", {detail: id, cancelable: true});
+  if (!document.dispatchEvent(guard)) { $("connectionSwitcher").value = state.current;return; }
   state.busy = true;
+  let success = false;
   try {
    await request("/api/account/select", {id});
    state.current = id;
+   success = true;
    $("connectionSwitcher").value = id;
    document.dispatchEvent(new CustomEvent("just-account-selected", {detail: id}));
-   message("当前交易所账户已切换。策略未自动启动，Shadow 基线账户仍独立管理。");
+   message("当前账户已切换。可直接在工作台查看该账户的参数和持仓。");
   } catch (error) {
    $("connectionSwitcher").value = state.current;
    message(error.message);
-  } finally {state.busy = false;}
+  } finally {state.busy = false;document.dispatchEvent(new CustomEvent("just-account-switch-finished", {detail: {success}}));}
  }
  $("connectionSearch").oninput = renderList;
  $("newConnection").onclick = () => selectEditor("");

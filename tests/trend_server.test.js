@@ -67,6 +67,38 @@ test("经典模拟固定金额补仓、次数上限及双向成交成本",()=>{
   assert.equal(closed.realized,closed.trades[0].netPnl);
  }
 });
+test("经典单页计划保留首仓成交与逐笔补仓，旧记录不伪造首仓价",()=>{
+ const C=require("../terminal/classic-paper"), start=Date.now();
+ for(const side of ["long","short"]){
+  const book={settings:{...C.defaults,side,maxAdds:2},cost:{entryFee:.0005,exitFee:.0005,slippage:.0005},running:true,balance:10000,realized:0,lastActionAt:0,position:null,trades:[]};
+  const opened=C.step(book,100,start).book;
+  const added=C.step(opened,side==="long"?98:102,start+60000).book;
+  const p=C.tradePlan(added,100,start+61000);
+  assert.equal(p.first.price,opened.position.entry);assert.equal(p.fills.length,2);assert.equal(p.add.amount,100);
+  assert.equal(p.add.lastPrice,added.position.lastFill);assert.equal(p.add.done,1);
+  assert.ok(Math.abs(p.add.quantity*p.add.price-100)<1e-8);
+  added.running=false;
+  const stopped=C.tradePlan(added,100,start+62000);
+  assert.equal(stopped.add.status,"已暂停");assert.equal(stopped.add.price,p.add.price);
+  delete added.position.firstFill;delete added.position.fills;
+  assert.equal(C.tradePlan(added,100).first.price,null);
+  assert.equal(C.step(added,101,start+63000,true).book.trades[0].firstFill,null);
+ }
+});
+test("仅经典模式关闭所有旧创建启动入口，保留只读核对和退出能力", async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"});
+ for(const route of ["/api/start","/api/start-all","/api/account/create","/api/config","/api/v4/accounts","/api/v4/config","/api/v4/shadow","/api/v4/migrate","/api/compound/start","/api/compound/create","/api/compound/config","/api/trend-only/config","/api/trend-only/confirm"]){
+  assert.equal((await f.call(route,{})).code,410,route);
+  assert.equal((await f.call(route,{},false)).code,401,route);
+ }
+ assert.equal((await f.call("/api/v4/control",{id:"legacy",action:"start"})).code,410);
+ assert.equal((await f.call("/api/v5/status")).code,410);
+ assert.equal((await f.call("/api/v4/desk")).code,200);
+ assert.equal((await f.call("/api/v4/connections")).code,200);
+ assert.equal((await f.call("/intelligent-trend.html")).headers.Location,"/");
+ assert.equal(vm.runInContext("stateMap.legacy.positionQty",f.ctx),0);
+ assert.equal((await f.call("/api/v4/control",{id:"legacy",action:"pause"})).code,200);
+});
 test('危险删除接口永久拒绝，不修改Legacy账户、历史、Smart或模拟账本',async t=>{const f=setup(t);vm.runInContext('historyMap.legacy=[{id:"retained",netPnl:8}];smartRuntimeMap.legacy={riskLock:true};simulationOrdersMap.legacy=[{status:"UNKNOWN"}]',f.ctx);const before=vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx);const r=await f.call('/api/account/delete',{id:'legacy',force:true});assert.equal(r.code,410);assert.equal(r.data.code,'ACCOUNT_DELETE_DISABLED');assert.equal(vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx),before);assert.equal((await f.call('/api/account/delete',{},false)).code,401);});
 test('V5研究接口必须登录，读取不会改生产账户/运行时/历史',async t=>{const f=setup(t),before=vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx);assert.equal((await f.call('/api/v5/status',undefined,false)).code,401);for(const page of ['/legacy-terminal.html','/safety-console.html','/intelligent-trend.html'])assert.match((await f.call(page,undefined,false)).headers.Location,/login/);assert.equal((await f.call('/api/v4/connections',undefined,false)).code,401);const connections=await f.call('/api/v4/connections');assert.equal(connections.code,200);assert.equal(connections.data.accounts[0].hasPrivateKey,true);assert.equal(JSON.stringify(connections.data).includes('stark-secret'),false);const r=await f.call('/api/v5/status');assert.equal(r.code,200);assert.equal(r.data.allowLive,false);assert.equal(r.data.accounts.length,0);assert.equal(vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx),before);assert.equal(fs.existsSync(path.join(f.directory,'.v5-research')),false);});
 async function migrate(f,config){const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,200,r.text);return config?f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config}):r;}

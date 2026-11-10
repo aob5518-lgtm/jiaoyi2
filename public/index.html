@@ -1,51 +1,68 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JUST AGENT · 量化交易后台</title>
-<link rel="stylesheet" href="/hypothesis/workbench.css?v=desk1">
-<link rel="stylesheet" href="/quant/desk.css?v=desk1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JUST AGENT · 经典交易工作台</title>
+<link rel="stylesheet" href="/hypothesis/workbench.css?v=onepage1">
+<link rel="stylesheet" href="/quant/desk.css?v=onepage1">
 </head>
 <body>
-<div class="app-shell">
-<aside class="sidebar">
-  <a class="brand" href="/"><span class="brand-mark">J</span><span>JUST AGENT<small>量化交易后台</small></span></a>
-  <div class="nav-caption">交易工作台</div>
-  <nav aria-label="主导航">
-    <button data-view="overview" aria-current="page"><span class="nav-icon">◈</span>交易总览</button>
-    <button data-view="strategy"><span class="nav-icon">⌁</span>经典策略</button>
-    <button data-view="history"><span class="nav-icon">≋</span>交易记录</button>
-    <button data-view="connections"><span class="nav-icon">▦</span>账户管理</button>
-  </nav>
-  <div class="sidebar-bottom"><a class="research-link" href="/intelligent-trend.html">研究工作台 ↗</a><span class="safe-label"><i></i> 经典策略 · 模拟交易</span></div>
+<div class="trade-shell">
+<aside class="account-rail">
+  <a class="brand" href="/"><span class="brand-mark">J</span><span>JUST AGENT<small>经典交易工作台</small></span></a>
+  <div class="rail-heading"><strong>我的账户</strong><button id="openConnections" class="icon-button">管理</button></div>
+  <label class="sr-only" for="deskSearch">搜索账户</label><input id="deskSearch" type="search" placeholder="搜索账户 / 平台 / 币种">
+  <div class="rail-filters"><button data-filter="all" aria-pressed="true">全部</button><button data-filter="running" aria-pressed="false">运行中</button><button data-filter="position" aria-pressed="false">有仓位</button></div>
+  <small id="deskCount" class="rail-count">正在读取账户</small>
+  <div id="deskAccounts" class="rail-accounts" aria-label="账户列表"></div>
+  <p class="rail-note">经典补仓 · Paper 模拟<br>配置、行情与持仓在同一页查看</p>
 </aside>
-<div class="workspace">
-<header class="topbar"><div class="breadcrumbs">控制台 <span>/</span> <strong id="pageTitle">交易总览</strong></div>
-<div class="header-actions"><select id="connectionSwitcher" aria-label="当前交易所账户"><option>读取账户…</option></select><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button></div></header>
+<div class="trade-workspace">
+<header class="desk-header">
+  <div class="desk-title"><span class="eyebrow">CLASSIC TRADING</span><h1 id="deskAccount">正在读取账户</h1><p id="deskInstrument">—</p></div>
+  <div class="desk-top-actions"><select id="connectionSwitcher" aria-label="快速切换账户"><option>读取账户…</option></select><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button><button id="openConnectionsTop" class="icon-button">账户 / API</button></div>
+</header>
 <main>
-  <p id="deskMessage" class="notice" role="status" hidden></p>
-  <section data-page="overview">
-    <div class="page-heading"><div><span class="eyebrow">TRADING OVERVIEW</span><h1>交易总览</h1><p>按账户查看权益、持仓和策略动作。</p></div><button data-view="strategy" class="primary">配置经典策略 →</button></div>
-    <div class="account-bar panel"><div class="account-identity"><div class="account-icon">◎</div><div><h2 id="deskAccount">正在读取账户</h2><p id="deskInstrument">—</p></div></div><div class="account-badges"><span id="deskMode" class="tag">—</span><span id="deskRun" class="tag">—</span><span id="deskMarket" class="tag">等待行情</span></div></div>
-    <div class="status-grid desk-metrics">
-      <article class="metric"><span>账户权益</span><strong id="deskEquity">—</strong><small>含预计浮动净盈亏</small></article>
-      <article class="metric"><span>浮动净盈亏</span><strong id="deskFloating">—</strong><small>未平仓，按预计退出成本计</small></article>
-      <article class="metric"><span>已实现净盈亏</span><strong id="deskRealized">—</strong><small>已结算账本</small></article>
-      <article class="metric"><span>可用资金</span><strong id="deskAvailable">—</strong><small id="deskMargin">占用保证金 —</small></article>
-    </div>
-    <div class="desk-split">
-      <article class="panel"><div class="panel-heading"><h2>当前持仓</h2><span id="deskPositionBadge" class="tag">—</span></div><dl id="deskPosition" class="facts"></dl></article>
-      <article class="panel"><div class="panel-heading"><h2>下一步</h2><span id="deskStrategy" class="tag">—</span></div><p id="deskNext" class="lead">等待账户状态。</p><p id="deskLast" class="muted"></p>
-      <div class="desk-actions"><button class="primary" data-action="start" disabled>启动模拟</button><button data-action="pause" disabled>暂停新仓</button><button class="exit-button" data-action="close" disabled>平掉模拟仓</button></div>
-      <a id="deskSafety" class="research-link" href="/safety-console.html" hidden>查看原账户风险状态 ↗</a></article>
-    </div>
-    <article class="panel"><div class="panel-heading desk-table-heading"><div><h2>账户一览</h2><small id="deskCount">—</small></div><label><span class="sr-only">搜索账户</span><input id="deskSearch" type="search" placeholder="搜索账户、平台或币种"></label></div>
-    <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>账户</th><th>交易对</th><th>模式</th><th>状态</th><th>持仓</th></tr></thead><tbody id="deskAccounts"></tbody></table></div></article>
-  </section>
-  <section data-page="strategy" hidden>
-    <div class="page-heading"><div><span class="eyebrow">CLASSIC DCA</span><h1>经典补仓</h1><p id="deskConfigAccount">选择模拟账户后配置。</p></div><span class="tag">Paper</span></div>
-    <div class="desk-split strategy-layout"><article class="panel"><h2>策略参数</h2><p id="deskConfigHint" class="muted">保存参数后仍保持停止。</p>
-    <form id="deskSettings">
+<p id="deskMessage" class="notice" role="status" hidden></p>
+<div class="workspace-status"><div class="account-badges"><span id="deskMode" class="tag">—</span><span id="deskRun" class="tag">—</span><span id="deskMarket" class="tag">等待行情</span></div><small id="deskUpdated">等待同步</small></div>
+<div class="status-grid desk-metrics">
+  <article class="metric"><span>账户权益</span><strong id="deskEquity">—</strong><small>含预计浮动净盈亏</small></article>
+  <article class="metric"><span>浮动净盈亏</span><strong id="deskFloating">—</strong><small>预计扣除退出成本</small></article>
+  <article class="metric"><span>已实现净盈亏</span><strong id="deskRealized">—</strong><small>已结算交易</small></article>
+  <article class="metric"><span>可用资金</span><strong id="deskAvailable">—</strong><small id="deskMargin">占用保证金 —</small></article>
+</div>
+<div class="trading-grid">
+<div class="trading-main">
+<article class="panel price-panel">
+  <div class="panel-heading"><div><h2>成交与执行计划</h2><small>实际成交与下一步触发条件</small></div><span id="deskPositionBadge" class="tag">—</span></div>
+  <div class="market-price"><span>最新行情</span><strong id="deskPrice">—</strong><small id="deskPriceUnit">—</small></div>
+  <div class="price-cards">
+    <section><span class="card-kicker">01 · 首仓</span><strong id="deskOpenPrice">—</strong><small id="deskOpenStatus">等待参数</small><dl><dt>首仓名义金额</dt><dd id="deskOpenAmount">—</dd><dt>持仓均价</dt><dd id="deskAverage">—</dd></dl></section>
+    <section class="add-card"><span class="card-kicker">02 · 下次补仓</span><strong id="deskAddPrice">—</strong><small id="deskAddStatus">等待首仓</small><dl><dt>补仓名义金额</dt><dd id="deskAddAmount">—</dd><dt>预计补仓数量</dt><dd id="deskAddQty">—</dd></dl></section>
+    <section><span class="card-kicker">03 · 整仓止盈</span><strong id="deskTargetPrice">—</strong><small id="deskExitStatus">暂无持仓</small><dl><dt>距目标幅度</dt><dd id="deskTargetDistance">—</dd><dt>毛收益目标</dt><dd id="deskTargetReturn">—</dd></dl></section>
+  </div>
+  <div id="deskPosition" class="position-strip"></div>
+  <p id="deskNext" class="next-action">等待账户状态。</p>
+</article>
+<article class="panel execution-panel">
+  <div class="panel-heading"><h2>本轮成交明细</h2><small>实际模拟成交价</small></div>
+  <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>时间</th><th>动作</th><th>成交价</th><th>成交数量</th><th>成交金额</th></tr></thead><tbody id="deskFills"></tbody></table></div>
+</article>
+<article class="panel history-panel">
+  <div class="panel-heading"><div><h2>已结算交易</h2><small id="deskHistoryAccount">当前账户</small></div><button id="deskExport" class="icon-button" disabled>导出 CSV</button></div>
+  <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>平仓时间</th><th>方向</th><th>开仓 → 平仓</th><th>净盈亏</th><th>手续费</th><th>原因</th></tr></thead><tbody id="deskTrades"></tbody></table></div>
+  <div class="desk-pager"><button id="deskPrev" disabled>上一页</button><small id="deskHistoryCount">—</small><button id="deskNextPage" disabled>下一页</button></div>
+</article>
+</div>
+<aside class="trade-settings">
+<article class="panel control-panel">
+  <div class="panel-heading"><h2>运行控制</h2><span id="deskStrategy" class="tag">经典补仓</span></div>
+  <div class="desk-actions"><button class="primary" data-action="start" disabled>启动模拟</button><button data-action="pause" disabled>暂停新增</button><button class="exit-button" data-action="close" disabled>平掉模拟仓</button></div>
+  <p id="deskLast" class="muted"></p><a id="deskSafety" class="research-link" href="/safety-console.html" hidden>原账户风险处理 ↗</a>
+</article>
+<article class="panel settings-panel">
+  <div class="panel-heading"><h2>经典参数</h2><span class="tag">Paper</span></div><p id="deskConfigAccount" class="sr-only"></p><p id="deskConfigHint" class="muted">保存后保持停止。</p>
+  <form id="deskSettings">
       <label>方向<select name="side"><option value="long">做多</option><option value="short">做空</option></select></label>
       <label>杠杆倍数<input name="leverage" type="number" min="1" max="10" step="1" required></label>
       <label>首仓名义金额<input name="baseAmount" type="number" min="1" step="any" required></label>
@@ -55,13 +72,16 @@
       <label>最多补仓次数<input name="maxAdds" type="number" min="0" max="10" step="1" required></label>
       <p id="deskBudget" class="muted"></p>
       <button id="deskSave" class="primary" type="submit" disabled>保存参数</button>
-    </form></article><article class="panel rules-card"><h2>运行规则</h2><ol class="checklist"><li><span>1</span><div><strong>按选择的方向开首仓</strong><small>启动后，在下一次有效报价按设定金额模拟开仓。</small></div></li><li><span>2</span><div><strong>逆向达到设定幅度时补仓</strong><small>相对上次成交价计算。每次固定金额，达到上限后停止补仓。</small></div></li><li><span>3</span><div><strong>达到保证金收益目标时整仓止盈</strong><small>触发条件按毛收益率判断，成交净收益扣除模拟手续费和滑点。</small></div></li></ol><p class="notice">经典规则没有自动止损。暂停只停止新增仓位和补仓，已有仓位仍检查止盈，也可以手动平掉模拟仓。</p></article></div>
-  </section>
-  <section data-page="history" hidden>
-    <div class="page-heading"><div><span class="eyebrow">TRADE JOURNAL</span><h1>交易记录</h1><p id="deskHistoryAccount">按当前账户查看已结算记录。</p></div><button id="deskExport" disabled>导出当前页 CSV</button></div>
-    <article class="panel"><div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>平仓时间</th><th>方向</th><th>开仓 → 平仓</th><th>净盈亏</th><th>手续费</th><th>退出原因</th></tr></thead><tbody id="deskTrades"></tbody></table></div><div class="desk-pager"><button id="deskPrev" disabled>上一页</button><small id="deskHistoryCount">—</small><button id="deskNextPage" disabled>下一页</button></div></article>
-  </section>
-  <section data-page="connections" hidden>
+    </form>
+  <details class="strategy-note"><summary>规则与风险说明</summary><p>启动后按选定方向开首仓，反向达到触发幅度后按固定金额补仓。达到保证金毛收益目标时整仓止盈，净盈亏再扣手续费与滑点。</p><p>经典规则没有自动止损。暂停只停止新增和补仓，已有仓位继续检查止盈。</p></details>
+</article>
+</aside>
+</div>
+</main>
+<footer>JUST AGENT <span>经典补仓 · 单页交易工作台</span></footer>
+</div>
+</div>
+<dialog id="connectionDialog" class="connection-dialog"><div class="dialog-top"><strong>账户与交易所连接</strong><div><button id="newConnectionQuick" class="icon-button">新增账户</button><button id="closeConnections" class="icon-button" aria-label="关闭账户管理">关闭</button></div></div><section>
 <div class="page-heading"><div><span class="eyebrow">EXCHANGE ACCOUNTS</span><h1>账户与交易所连接</h1><p>保留已接通的交易所 API。账户选择与策略运行分别管理。</p></div><button id="newConnection" class="primary">新增账户</button></div>
 <p id="connectionStatus" role="status">正在读取账户配置…</p>
 <div class="connections-grid"><article class="panel"><label>搜索账户<input id="connectionSearch" type="search" placeholder="名称、平台或币种"></label><div id="connectionList" class="connection-list"></div></article>
@@ -80,11 +100,8 @@
 <label data-exchanges="extended">Vault<input name="vault" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
 <div class="connection-actions"><button type="submit" class="primary">保存连接</button><button id="checkConnection" type="button">测试已保存连接</button><button id="selectConnection" type="button">设为当前账户</button></div>
 </form><p class="muted">已配置的密钥仅显示配置状态。更新凭据前需要停止监控并核对仓位，Live 账户还需原生核验。连接测试只读取账户，不提交订单。</p>
-</article></div></section>
-</main>
-<footer>JUST AGENT <span>量化交易后台</span></footer>
-</div></div>
-<script src="/quant/desk.js?v=desk1"></script>
-<script src="/hypothesis/connections.js?v=desk1"></script>
+</article></div></section></dialog>
+<script src="/quant/desk.js?v=onepage1"></script>
+<script src="/hypothesis/connections.js?v=onepage1"></script>
 </body>
 </html>

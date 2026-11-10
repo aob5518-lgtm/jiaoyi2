@@ -31,6 +31,28 @@ function targets(book, price) {
   const exitFill = price * (1 - sign * book.cost.slippage);
   return {nextAdd, takeProfit, gross, floating: (exitFill - p.entry) * p.qty * sign - p.fee - exitFill * p.qty * book.cost.exitFee, margin: price * p.qty / c.leverage};
 }
+function tradePlan(book, price, now = Date.now()) {
+  const p = book.position, c = book.settings, t = targets(book, price);
+  const sign = c.side === "long" ? 1 : -1;
+  const cooldown = Math.max(0, Math.ceil((book.lastActionAt + (p ? 60000 : 45000) - now) / 1000));
+  return {
+    side: c.side,
+    first: {
+      price: p ? p.firstFill ?? (p.adds === 0 ? p.entry : null) : null,
+      reference: !p && price > 0 ? price * (1 + sign * book.cost.slippage) : null,
+      amount: c.baseAmount,
+      status: p ? "已成交" : !book.running ? "等待启动" : !price ? "等待报价" : cooldown ? "开仓冷却" : "等待下一轮"
+    },
+    add: {
+      price: t.nextAdd, amount: c.maxAdds > 0 && (!p || p.adds < c.maxAdds) ? c.addAmount : null,
+      quantity: t.nextAdd > 0 ? c.addAmount / t.nextAdd : null,
+      lastPrice: p?.adds > 0 ? p.lastFill : null, done: p?.adds || 0, limit: c.maxAdds,
+      status: c.maxAdds === 0 ? "未启用" : !p ? "等待首仓" : t.nextAdd === null ? "已达上限" : !book.running ? "已暂停" : cooldown ? "补仓冷却" : "等待触发"
+    },
+    exit: {price: t.takeProfit, status: p ? "监测止盈" : "暂无持仓"},
+    cooldown, fills: p?.fills || []
+  };
+}
 function step(book, mark, now, manual = false) {
   if (!num(mark, Number.MIN_VALUE, Number.MAX_VALUE)) throw Error("行情价格无效");
   const next = structuredClone(book), c = next.settings, p = next.position;
@@ -41,7 +63,7 @@ function step(book, mark, now, manual = false) {
     const gross = (exit - p.entry) * p.qty * sign, net = money(gross - fee);
     next.balance = money(next.balance + net);
     next.realized = money(next.realized + net);
-    next.trades.unshift({id: randomUUID(), time: now, side: c.side, entryPrice: p.entry, exitPrice: exit, qty: p.qty, addCount: p.adds, grossPnl: money(gross), tradingFee: money(fee), netPnl: net, reason: manual ? "手动平仓" : "策略止盈", sampleType: "Paper"});
+    next.trades.unshift({id: randomUUID(), time: now, side: c.side, entryPrice: p.entry, firstFill: p.firstFill ?? (p.adds === 0 ? p.entry : null), fills: p.fills || [], exitPrice: exit, qty: p.qty, addCount: p.adds, grossPnl: money(gross), tradingFee: money(fee), netPnl: net, reason: manual ? "手动平仓" : "策略止盈", sampleType: "Paper"});
     next.position = null;
     if (manual) next.running = false;
     next.lastAction = manual ? "已手动平掉模拟仓位" : "已完成模拟止盈";
@@ -53,7 +75,8 @@ function step(book, mark, now, manual = false) {
     const available = next.balance + t.floating - t.margin;
     if (fill * qty / c.leverage + fee > available) return {book, notice: "可用模拟保证金不足，等待风险降低"};
     const total = qty + (p?.qty || 0);
-    next.position = {qty: total, entry: (fill * qty + (p ? p.entry * p.qty : 0)) / total, lastFill: fill, fee: fee + (p?.fee || 0), adds: p ? p.adds + 1 : 0, openedAt: p?.openedAt || now};
+    const fills = [...(p?.fills || []), {at: now, kind: p ? "add" : "open", price: fill, qty, notional: fill * qty}];
+    next.position = {qty: total, entry: (fill * qty + (p ? p.entry * p.qty : 0)) / total, lastFill: fill, firstFill: p ? p.firstFill ?? (p.adds === 0 ? p.entry : null) : fill, fills, fee: fee + (p?.fee || 0), adds: p ? p.adds + 1 : 0, openedAt: p?.openedAt || now};
     next.lastAction = p ? "模拟补仓 #" + next.position.adds : "模拟首仓已成交";
   } else return {book, notice: !next.running ? p ? "已暂停新增交易，继续检查止盈" : "等待启动" : p ? "等待补仓或止盈条件" : "等待开仓冷却"};
   next.lastActionAt = now;
@@ -129,8 +152,9 @@ function create(directory) {
     const t = targets(book, fresh ? q.price : null);
     const p = book.position;
     const blocked = corrupt || !eligible(account) || book.identity !== identity(account);
+    const plan = tradePlan(book, fresh ? q.price : null, now);
     return {
-      settings: book.settings, running: book.running, blocked,
+      settings: book.settings, running: book.running, blocked, plan,
       equity: t.floating === null ? null : book.balance + t.floating, balance: book.balance, realized: book.realized,
       floating: t.floating, available: t.floating === null ? null : book.balance + t.floating - t.margin,
       margin: t.margin, mark: fresh ? q.price : null, updatedAt: q?.at || null, market: fresh ? "行情正常" : "等待最新行情",
@@ -140,4 +164,4 @@ function create(directory) {
   }
   return {get, configure, control, mark, view, corrupt: () => corrupt};
 }
-module.exports = {create, eligible, defaults, normalize, targets, step};
+module.exports = {create, eligible, defaults, normalize, targets, step, tradePlan};

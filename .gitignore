@@ -10,6 +10,7 @@ smart_runtime.json
 trend_only_runtime.json
 compound_4h_runtime.json
 classic_paper_runtime.json
+.classic-only
 strategy_migrations.json
 .trade-locks/
 backups/

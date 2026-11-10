@@ -34,6 +34,7 @@ async function handle(req,res,parsed,d){
      throw Error("经典模拟账户请在量化后台管理，避免混用历史策略");
     }
     if(route==="/api/v4/control"){
+     if(d.classicOnly&&input.action==="start")return send(410,{ok:false,error:"仅保留经典模拟工作台，旧策略不可启动"});
      if(input.expectedStrategy&&input.expectedStrategy!==x.type)throw Error("服务器策略已变更，请刷新后重试");const action=input.action;if(action==="pause"){d.running(a.id,false);x.st.running=false;if(x.compound)d.compound.stop(a);return send(200,{ok:true,message:"停止新开与补仓，已有持仓继续接受风险保护"});}
      if(action==="start"){if(!P.CORE.has(x.type))throw Error(P.classify(a,x.st,x.t).status+"：不支持新交易");if(a.tradeMode!=="simulation"||a.simulationEnabled!==true)throw Error("V3与4H只支持Paper");if(x.t.riskLock||x.compound?.book.riskLock)throw Error("风控锁定，不能启动");if(x.type==="trend_only_v3"&&d.trend.runtimeDiagnostic(a).versionMismatch)throw Error("配置策略和实际引擎不一致");d.running(a.id,true);x.st.running=true;return send(200,{ok:true});}
      if(action==="close"){if(input.confirm!==true)throw Error("手动退出必须明确二次确认");if(!P.CORE.has(x.type)&&!x.type.startsWith("trend_only_"))throw Error("旧Live仓位请使用既有交易所退出流程；不推断未知仓位方向");if(x.compound)await d.compound.tick(a,x.st,{manualClose:true});else await d.trend.tick(a,x.st,"manual_close");return send(200,{ok:true});}

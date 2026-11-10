@@ -25,10 +25,10 @@ function accountRow(account, st, classic) {
   return {
     id: account.id, name: account.name, symbol: account.symbol, quoteAsset: account.quoteAsset,
     platform: account.platform, paper: account.tradeMode === "simulation" && account.simulationEnabled === true,
-    strategy: classic ? "经典补仓" : account.strategyType === "connection_only" ? "未绑定" :
-      account.strategyType === "classic" ? "经典账户" : "历史策略",
+    strategy: C.eligible(account) ? "经典补仓" : "归档账户",
     ready: !!classic, eligible: C.eligible(account), running: classic?.running ?? !!st?.running,
     hasPosition: classic ? !!classic.position : Number(st?.positionQty || st?.realPositionSize || 0) > 0,
+    floating: classic?.floating ?? null, realized: classic?.realized ?? null,
     error: classic?.blocked ? classic.notice : st?.activeError || null
   };
 }
