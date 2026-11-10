@@ -17,6 +17,56 @@ function setup(t,env={}){
  }
  return{ctx,call,directory};
 }
+test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及重启保留账本", async t => {
+ const f=setup(t), route="/api/v4/desk", settings={side:"long",leverage:1,baseAmount:100,addAmount:100,maxAdds:1,addTrigger:.01,takeProfit:.01};
+ fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");
+ assert.equal((await f.call(route,undefined,false)).code,401);
+ assert.equal((await f.call(route+"/settings",{id:"legacy",settings})).code,200);
+ assert.equal((await f.call(route)).data.selected.running,false);
+ assert.equal((await f.call(route+"/control",{id:"legacy",action:"start"})).code,200);
+ await vm.runInContext('getMarketPrice=async()=>100;tickAccount(config.accounts[0])',f.ctx);
+ const open=(await f.call(route)).data.snapshot;
+ assert.equal(open.position.qty,1);assert.ok(open.position.takeProfit>100);
+ assert.equal((await f.call('/api/manual-order',{reduceOnly:true,confirm:true,size:1})).code,409);
+ assert.equal((await f.call(route+"/settings",{id:"legacy",settings})).code,400);
+ assert.equal((await f.call(route+"/control",{id:"legacy",action:"close"})).code,400);
+ const stored=require("../terminal/classic-paper").create(f.directory);
+ assert.equal(stored.get("legacy").position.qty,1);
+ await f.call("/api/stop",{});
+ await vm.runInContext('getMarketPrice=async()=>98;tickAccount(config.accounts[0])',f.ctx);
+ assert.equal((await f.call(route)).data.snapshot.position.adds,0);
+ await vm.runInContext('getMarketPrice=async()=>103;tickAccount(config.accounts[0])',f.ctx);
+ const closed=(await f.call(route)).data.snapshot;
+ assert.equal(closed.position,null);assert.equal(closed.running,false);assert.ok(closed.realized>0);
+ const history=(await f.call(route+"/history")).data;
+ assert.equal(history.total,1);assert.equal(history.items[0].reason,"策略止盈");
+ assert.equal(JSON.parse(fs.readFileSync(path.join(f.directory,"simulation_orders.json"),"utf8")).legacy.length,0);
+});
+test("经典后台拒绝 Live、模式不明确或有旧订单证据的账户接入",async t=>{
+ for(const condition of ["live","ambiguous","ledger"]){
+  const f=setup(t);fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");
+  if(condition==="live")vm.runInContext('Object.assign(config.accounts[0],{tradeMode:"live",simulationEnabled:false})',f.ctx);
+  if(condition==="ambiguous")vm.runInContext('config.accounts[0].simulationEnabled=false',f.ctx);
+  if(condition==="ledger")fs.writeFileSync(path.join(f.directory,"simulation_orders.json"),'{"legacy":[{"status":"UNKNOWN"}]}');
+  const result=await f.call("/api/v4/desk/settings",{id:"legacy",settings:{}});assert.equal(result.code,400,condition);
+  assert.equal(fs.existsSync(path.join(f.directory,"classic_paper_runtime.json")),false);
+ }
+});
+test("经典模拟固定金额补仓、次数上限及双向成交成本",()=>{
+ const C=require("../terminal/classic-paper"), start=Date.now();
+ for(const side of ["long","short"]){
+  const book={settings:{...C.defaults,side,maxAdds:1},cost:{entryFee:.0005,exitFee:.0005,slippage:.0005},running:true,balance:10000,realized:0,lastActionAt:0,position:null,trades:[]};
+  const opened=C.step(book,100,start).book;
+  const adverse=side==="long"?98:102;
+  assert.equal(C.step(opened,adverse,start+59999).book,opened);
+  const added=C.step(opened,adverse,start+60000).book;assert.equal(added.position.adds,1);
+  assert.ok(Math.abs((added.position.qty-opened.position.qty)*adverse-100)<1e-7);
+  assert.equal(C.step(added,side==="long"?95:105,start+120000).book,added);
+  const closed=C.step(added,100,start+121000,true).book;
+  assert.equal(closed.running,false);assert.equal(closed.position,null);assert.ok(closed.trades[0].tradingFee>0);
+  assert.equal(closed.realized,closed.trades[0].netPnl);
+ }
+});
 test('危险删除接口永久拒绝，不修改Legacy账户、历史、Smart或模拟账本',async t=>{const f=setup(t);vm.runInContext('historyMap.legacy=[{id:"retained",netPnl:8}];smartRuntimeMap.legacy={riskLock:true};simulationOrdersMap.legacy=[{status:"UNKNOWN"}]',f.ctx);const before=vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx);const r=await f.call('/api/account/delete',{id:'legacy',force:true});assert.equal(r.code,410);assert.equal(r.data.code,'ACCOUNT_DELETE_DISABLED');assert.equal(vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx),before);assert.equal((await f.call('/api/account/delete',{},false)).code,401);});
 test('V5研究接口必须登录，读取不会改生产账户/运行时/历史',async t=>{const f=setup(t),before=vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx);assert.equal((await f.call('/api/v5/status',undefined,false)).code,401);for(const page of ['/legacy-terminal.html','/safety-console.html','/intelligent-trend.html'])assert.match((await f.call(page,undefined,false)).headers.Location,/login/);assert.equal((await f.call('/api/v4/connections',undefined,false)).code,401);const connections=await f.call('/api/v4/connections');assert.equal(connections.code,200);assert.equal(connections.data.accounts[0].hasPrivateKey,true);assert.equal(JSON.stringify(connections.data).includes('stark-secret'),false);const r=await f.call('/api/v5/status');assert.equal(r.code,200);assert.equal(r.data.allowLive,false);assert.equal(r.data.accounts.length,0);assert.equal(vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx),before);assert.equal(fs.existsSync(path.join(f.directory,'.v5-research')),false);});
 async function migrate(f,config){const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,200,r.text);return config?f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config}):r;}

@@ -49,16 +49,15 @@ test("H01 main gateway uses server credential and the same isolated book", async
 test("Research lab removes retired strategy menus and distinguishes planning from execution", () => {
   const root = path.resolve(__dirname, "../public");
   const main = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(main, /策略研究台/);
+  assert.match(main, /量化交易后台/);
   assert.doesNotMatch(main, /Trend V3|Short-Term V1|4H Compound V1|\/terminal\/app.js/);
-  assert.match(main, /data-view="archive"/);
-  assert.deepEqual([...main.matchAll(/data-view="([^"]+)"/g)].slice(0, 7).map(x => x[1]), ["overview", "plan", "connections", "experiments", "history", "analysis", "archive"]);
+  assert.deepEqual([...main.matchAll(/data-view="([^"]+)"/g)].slice(0, 4).map(x => x[1]), ["overview", "strategy", "history", "connections"]);
   assert.match(main, /JUST AGENT/);
   assert.doesNotMatch(main, /SUPER AGENT/);
   assert.match(main, /id="newConnection"/);
-  assert.match(main, /尚无新策略执行引擎/);
-  assert.match(main, /H01 仅作为现有参考基线/);
-  assert.equal(main.replace(/\r\n/g, "\n"), fs.readFileSync(path.join(root, "intelligent-trend.html"), "utf8").replace(/\r\n/g, "\n"));
+  assert.match(main, /\/intelligent-trend.html/);
+  assert.match(main, /经典规则没有自动止损/);
+  assert.match(fs.readFileSync(path.join(root, "intelligent-trend.html"), "utf8"), /H01 仅作为现有参考基线/);
   assert.match(fs.readFileSync(path.join(root, "legacy-terminal.html"), "utf8"), /url=\/#archive/);
   const safety = fs.readFileSync(path.join(root, "safety-console.html"), "utf8");
   assert.match(safety, /\/terminal\/retired-safety.js/);

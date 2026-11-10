@@ -13,6 +13,7 @@ async function handle(req,res,parsed,d){
  try{
   if(req.method==="GET"){
    const a=d.getAccountById(q.id||d.getCurrentAccount().id);if(!a)return send(404,{ok:false,error:"账户参数无效，未改变当前账户"});
+   if(route==="/api/v4/terminal"&&d.classicPaper?.get(a.id))return send(409,{ok:false,error:"这个账户已接入经典模拟，请回到量化后台查看真实仓位与运行状态。"});
    if(route==="/api/v4/legacy-diagnostics"){
     const accounts=q.all==="true"?d.accounts().filter(v=>P.LEGACY.has(P.type(v))):[a],items=[];
     for(const target of accounts){let native;if(q.verifyExchange==="true"&&!(target.tradeMode==="simulation"&&target.simulationEnabled===true)){try{await d.verifyLiveFlat(target);native={verified:true,at:Date.now(),scope:"all_positions_and_open_orders"};}catch(error){native={verified:false,error:error.message};}}items.push(legacyDiagnosis(d,target,{native}));}
@@ -28,6 +29,10 @@ async function handle(req,res,parsed,d){
    let lock=null,mutatingState=null;try{const input=JSON.parse(body||"{}");
     if(route==="/api/v4/accounts"){const type=input.strategyType;if(!P.CORE.has(type))throw Error(type==="short_term_v1"?"Short-Term仅支持V3伴随Shadow，不能创建虚假Paper账户":"只允许创建当前可执行核心策略");const cfg=d.configuration(),platform=input.platform||"hyperliquid",symbol=String(input.symbol||"ETH").toUpperCase();if(!["hyperliquid","extended","binance"].includes(platform)||!['ETH','BTC','SOL','BNB'].includes(symbol))throw Error("平台或研究品种不支持");if(type===C.ID&&symbol!=="ETH")throw Error("4H V1当前只提供ETH研究账户");const balance=Number(input.initialEquity||10000);if(!(balance>=100&&balance<=10000000))throw Error("模拟资金超范围");const a={id:crypto.randomUUID(),name:String(input.name||"新Paper账户").trim().slice(0,60),platform,symbol,quoteAsset:platform==="binance"?"USDT":type===C.ID&&platform==="extended"?"USD":"USDC",side:"long",strategyType:type,strategyMode:type===C.ID?"4H Compound Reversal V1":"Trend Only V3",tradeMode:"simulation",simulationEnabled:true,simulationBalance:balance,simulationSlippageBps:5,leverage:type===C.ID?1:10,baseAmount:100,addAmount:100,takeProfit:.01,addTrigger:.01,maxAdds:type===C.ID?3:0,interval:15000,running:false,...(type===C.ID?{compoundConfig:C.normalize({initialEquity:balance})}:{trendOnlyConfig:V3.normalizeConfig({})})};cfg.accounts.push(a);d.save(cfg);if(type===C.ID){d.compound.get(a);d.compound.save();}return send(200,{ok:true,id:a.id});}
     const a=d.getAccountById(input.id||d.getCurrentAccount().id);if(!a)throw Error("账户不存在");lock=d.lock(a.id);if(!lock)throw Error("账户正在执行，请稍后重试");const x=context(d,a);if(x.st.tickRunning)throw Error("账户正在执行，请稍后重试");x.st.terminalMutating=true;mutatingState=x.st;
+    if(d.classicPaper?.get(a.id)){
+     if(route==="/api/v4/control"&&input.action==="pause"){d.classicPaper.control(a,"pause");return send(200,{ok:true,message:"经典模拟已暂停新增交易"});}
+     throw Error("经典模拟账户请在量化后台管理，避免混用历史策略");
+    }
     if(route==="/api/v4/control"){
      if(input.expectedStrategy&&input.expectedStrategy!==x.type)throw Error("服务器策略已变更，请刷新后重试");const action=input.action;if(action==="pause"){d.running(a.id,false);x.st.running=false;if(x.compound)d.compound.stop(a);return send(200,{ok:true,message:"停止新开与补仓，已有持仓继续接受风险保护"});}
      if(action==="start"){if(!P.CORE.has(x.type))throw Error(P.classify(a,x.st,x.t).status+"：不支持新交易");if(a.tradeMode!=="simulation"||a.simulationEnabled!==true)throw Error("V3与4H只支持Paper");if(x.t.riskLock||x.compound?.book.riskLock)throw Error("风控锁定，不能启动");if(x.type==="trend_only_v3"&&d.trend.runtimeDiagnostic(a).versionMismatch)throw Error("配置策略和实际引擎不一致");d.running(a.id,true);x.st.running=true;return send(200,{ok:true});}

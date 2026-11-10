@@ -41,7 +41,7 @@ async function handle(req, res, parsed, d) {
   const send = (code, data) => d.json(res, code, data);
   const route = parsed.pathname;
   if (req.method === "GET" && route === "/api/v4/connections") {
-    return send(200, {ok: true, currentAccountId: d.getCurrentAccount()?.id, accounts: d.accounts().map(account => project(account, d.state(account.id)?.running))});
+    return send(200, {ok: true, currentAccountId: d.getCurrentAccount()?.id, accounts: d.accounts().map(account => project(account, d.classicPaper?.get(account.id)?.running ?? d.state(account.id)?.running))});
   }
   if (req.method !== "POST" || !["/api/v4/connections/create", "/api/v4/connections/update", "/api/v4/connections/check"].includes(route)) {
     return send(405, {ok: false, error: "连接管理操作不支持"});
@@ -88,6 +88,8 @@ async function handle(req, res, parsed, d) {
     st = d.state(account.id);
     const trend = /^trend_only_v[123]$/.test(account.strategyType || "") ? d.trend?.get(account) || {} : {};
     const compoundBusy = account.strategyType === "compound_4h_v1" && d.compound?.busy(account);
+    const classic = d.classicPaper?.get(account.id);
+    if (classic?.running || classic?.position) throw Error("请暂停并结清经典模拟仓位后更新连接");
     if (!st || st.running || st.tickRunning || st.placingOrder || st.pendingOrder || st.smartExitPending || Number(st.positionQty) > 0 || trend.position || trend.pendingOrder || compoundBusy) throw Error("请先停止监控并完成现有仓位与订单核对，再更改连接");
     lock = d.lock(account.id);
     if (!lock) throw Error("账户正在执行，请稍后重试");

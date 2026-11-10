@@ -92,6 +92,7 @@
    await request("/api/account/select", {id});
    state.current = id;
    $("connectionSwitcher").value = id;
+   document.dispatchEvent(new CustomEvent("just-account-selected", {detail: id}));
    message("当前交易所账户已切换。策略未自动启动，Shadow 基线账户仍独立管理。");
   } catch (error) {
    $("connectionSwitcher").value = state.current;

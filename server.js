@@ -3361,20 +3361,61 @@ async function tickSmartStrategy(acc, st) {
   addLog(acc.id, `智能策略条件补仓 #${st.addCount} ${acc.symbol} ${fillSize} @ ${fillPrice}`);
 }
 
+const classicPaper = require("./terminal/classic-paper").create(__dirname);
+function verifyDeskLegacyFlat(account, st) {
+  const trend = account.strategyType === "classic" ? trendRuntime.get(account) : {};
+  if (account.running || st.running || Number(st.positionQty) || Number(st.realPositionSize) ||
+      st.pendingOrder || st.smartExitPending || st.riskLock || trend.position || trend.pendingOrder || trend.riskLock ||
+      Object.values(trend.shortTermBooks || {}).some(book => book.position || book.pendingOrder)) {
+    throw Error("原账户仍有运行、仓位、订单或风险状态，暂不能接入经典模拟");
+  }
+  for (const file of ["simulation_orders.json", "profit_history.json"]) {
+    const data = JSON.parse(fs.readFileSync(path.join(__dirname, file), "utf8"));
+    if (!data || typeof data !== "object" || Array.isArray(data) ||
+        Object.hasOwn(data, account.id) && (!Array.isArray(data[account.id]) || data[account.id].length)) {
+      throw Error("原账户有历史账本或证据不足，请使用新的模拟账户");
+    }
+  }
+  if (simulationOrdersMap[account.id]?.length || st.profitHistory?.length) throw Error("原账户有未归档的交易记录，请使用新的模拟账户");
+}
+function deskReadOnlyStatus(account, st) {
+  const model = require("./terminal/model");
+  const overview = model.overview(account, st, isTrendOnly(account) ? trendRuntime.get(account) : {}, isCompound(account) ? compoundRuntime.report(account) : null);
+  const paper = account.tradeMode === "simulation" && account.simulationEnabled === true;
+  const quoted = Number(st?.currentPrice) > 0 && !st?.activeError;
+  const legacyEmpty = ["classic", "connection_only"].includes(account.strategyType) && !overview.position &&
+    !st.profitHistory?.length && !simulationOrdersMap[account.id]?.length;
+  return {
+    equity: quoted || paper && (isTrendOnlyV3(account) || isCompound(account)) ? overview.equity : paper && legacyEmpty ? model.number(st.simBalance) : null,
+    realized: paper ? overview.realized : null, floating: overview.netFloating,
+    available: quoted ? model.number(st.available) : null, margin: quoted ? model.number(st.marginUsedU) : null,
+    position: overview.position, mark: quoted ? Number(st.currentPrice) : null, updatedAt: st?.updatedAt || null,
+    market: quoted ? "最近行情" : "等待行情", running: !!st?.running,
+    notice: st?.activeError || (paper && ["classic", "connection_only"].includes(account.strategyType) ? "保存经典参数后，可启动模拟交易" : "原账户状态只读；风险操作在历史控制台处理"),
+    lastAction: st?.lastAction || null
+  };
+}
+
 async function tickAccount(acc) {
   const st = stateMap[acc.id];
   if (!st) return;
   if(st.terminalMutating)return;
   if (st.tickRunning) return;
   const activeStrategyType = getStrategyType(acc);
-  const tradeLock = activeStrategyType !== "classic" ? acquireAccountTradeLock(acc.id) : null;
-  if (activeStrategyType !== "classic" && !tradeLock) return;
+  const needsLock = activeStrategyType !== "classic" || !!classicPaper.get(acc.id);
+  const tradeLock = needsLock ? acquireAccountTradeLock(acc.id) : null;
+  if (needsLock && !tradeLock) return;
   st.tickRunning = true;
   let accountSyncOk = true;
 
   try {
     // 每轮只清除“当前异常”；lastError 保留最近一次错误供排查。
     st.activeError = "";
+    if (classicPaper.get(acc.id)) {
+      const price = await getMarketPrice(acc);
+      classicPaper.mark(getAccountById(acc.id), price);
+      return;
+    }
     if(!STRATEGY_TYPES.has(activeStrategyType)){st.lastAction="UNSUPPORTED_STRATEGY：禁止交易，请核对配置";return;}
     if(isCompound(acc)){await compoundRuntime.tick(acc,st);return;}
     if (["trend_only_v1", "trend_only_v2", "trend_only_v3"].includes(activeStrategyType)) { await trendRuntime.tick(acc, st); return; }
@@ -4839,6 +4880,10 @@ const server = http.createServer((req, res) => {
   if (needsAuthPage && !isAuthenticated(req)) {
     return redirect(res, `/login.html?next=${encodeURIComponent(pathname === "/index.html" ? "/" : pathname)}`);
   }
+  if (pathname === "/safety-console.html") {
+    const account = getAccountById(String(parsed.query.account || getCurrentAccount()?.id || ""));
+    if (account && classicPaper.get(account.id)) return redirect(res, "/?account=" + encodeURIComponent(account.id) + "#overview");
+  }
   if(pathname==="/compound.html"||pathname==="/mobile.html"){
     const id=String(parsed.query.id||""),valid=id&&getAccountById(id);
     const tab=pathname==="/compound.html"?"strategies":"overview";
@@ -4881,9 +4926,18 @@ const server = http.createServer((req, res) => {
     hypothesisResearchService ||= research.createService({directory:path.join(__dirname,".v5-research","integrated")});
     research.handle(req,res,{pathname},hypothesisResearchService);return;
   }
+  if (pathname === "/api/v4/desk" || pathname.startsWith("/api/v4/desk/")) {
+    if (!isAuthenticated(req)) return jsonRes(res, 401, {ok: false, error: "请先登录"});
+    return require("./terminal/desk").handle(req, res, parsed, {
+      classicPaper, getAccountById, getCurrentAccount, accounts: () => config.accounts, state: id => stateMap[id],
+      json: jsonRes, verifyLegacyFlat: verifyDeskLegacyFlat, readOnlyStatus: deskReadOnlyStatus,
+      legacyHistory: account => isCompound(account) ? compoundRuntime.get(account).history.filter(row => row.filledQty > 0) : stateMap[account.id]?.profitHistory,
+      price: getMarketPrice, lock: acquireAccountTradeLock, unlock: releaseAccountTradeLock
+    });
+  }
   if(pathname.startsWith("/api/v4/")){
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
-    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:checkAccountConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
+    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,classicPaper,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:checkAccountConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
   }
 
   if(pathname.startsWith("/api/compound")){
@@ -5183,6 +5237,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/api/config" && req.method === "POST") {
+    if (classicPaper.get(getCurrentAccount()?.id)) return jsonRes(res, 409, {ok: false, error: "请在量化后台修改经典策略参数"});
     let body = "";
     req.on("data", chunk => body += chunk);
     req.on("end", async () => {
@@ -5195,6 +5250,7 @@ const server = http.createServer((req, res) => {
         if (idx === -1) return jsonRes(res, 404, { ok: false, error: "当前账户不存在" });
 
         const current = cfg.accounts[idx];
+        if (classicPaper.get(current.id)) throw Error("请在量化后台修改经典策略参数");
         require("./terminal/migration-audit").authorize({account:current,next});
         const currentState = stateMap[current.id];
         if(currentState.tickRunning)throw Error("账户正在执行，请稍后重试");
@@ -5423,6 +5479,7 @@ const server = http.createServer((req, res) => {
     ensureAccountStates();
 
     for (const current of cfg.accounts || []) {
+      if (classicPaper.get(current.id)) classicPaper.control(current, "pause");
       const st = stateMap[current.id];
       current.running = false;
       if (!st) continue;
@@ -5521,6 +5578,7 @@ const server = http.createServer((req, res) => {
 
   if (pathname === "/api/stop" && req.method === "POST") {
     const current = getCurrentAccount();
+    if (classicPaper.get(current.id)) classicPaper.control(current, "pause");
     stateMap[current.id].running = false;
     persistAccountRunning(current.id, false);
     if(isCompound(current))compoundRuntime.stop(current);
@@ -5534,12 +5592,14 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/api/manual-order" && req.method === "POST") {
+    if (classicPaper.get(getCurrentAccount()?.id)) return jsonRes(res, 409, {ok: false, error: "经典模拟仓位请在量化后台管理"});
     let body = "";
     req.on("data", chunk => body += chunk);
     req.on("end", async () => {
       try {
         const current = getCurrentAccount();
         const data = JSON.parse(body || "{}");
+        if (classicPaper.get(current.id)) throw Error("经典模拟仓位请在量化后台管理");
         if(isCompound(current))return jsonRes(res,400,{ok:false,error:"4H独立Paper策略禁止手动加仓，请使用4H工作台"});
         if(data.reduceOnly&&data.confirm!==true)return jsonRes(res,400,{ok:false,error:"手动减仓必须明确确认"});
         if (isTrendOnly(current)) throw new Error("独立策略禁止手动加仓，请使用对应工作台平仓");
