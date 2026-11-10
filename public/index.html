@@ -3,105 +3,120 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>JUST AGENT · 经典交易工作台</title>
-<link rel="stylesheet" href="/hypothesis/workbench.css?v=onepage1">
-<link rel="stylesheet" href="/quant/desk.css?v=onepage1">
+<link rel="stylesheet" href="/hypothesis/workbench.css?v=core2">
+<link rel="stylesheet" href="/quant/desk.css?v=core2">
 </head>
 <body>
 <div class="trade-shell">
-<aside class="account-rail">
-  <a class="brand" href="/"><span class="brand-mark">J</span><span>JUST AGENT<small>经典交易工作台</small></span></a>
-  <div class="rail-heading"><strong>我的账户</strong><button id="openConnections" class="icon-button">管理</button></div>
-  <label class="sr-only" for="deskSearch">搜索账户</label><input id="deskSearch" type="search" placeholder="搜索账户 / 平台 / 币种">
+<button id="railBackdrop" class="rail-backdrop" aria-label="关闭账户列表" hidden></button>
+<aside id="accountRail" class="account-rail" aria-label="账户切换">
+  <a class="brand" href="/"><span class="brand-mark">J</span><span>JUST AGENT<small>经典交易管理</small></span></a>
+  <div class="rail-heading"><strong>我的账户</strong><button id="openConnections" class="icon-button">管理账户</button></div>
+  <label class="sr-only" for="deskSearch">搜索账户</label><input id="deskSearch" type="search" placeholder="搜索名称、交易所、币种">
   <div class="rail-filters"><button data-filter="all" aria-pressed="true">全部</button><button data-filter="running" aria-pressed="false">运行中</button><button data-filter="position" aria-pressed="false">有仓位</button></div>
   <small id="deskCount" class="rail-count">正在读取账户</small>
   <div id="deskAccounts" class="rail-accounts" aria-label="账户列表"></div>
-  <p class="rail-note">经典补仓 · Paper 模拟<br>配置、行情与持仓在同一页查看</p>
+  <p class="rail-note">经典补仓策略<br>选择账户后查看对应持仓与参数</p>
 </aside>
 <div class="trade-workspace">
 <header class="desk-header">
-  <div class="desk-title"><span class="eyebrow">CLASSIC TRADING</span><h1 id="deskAccount">正在读取账户</h1><p id="deskInstrument">—</p></div>
-  <div class="desk-top-actions"><select id="connectionSwitcher" aria-label="快速切换账户"><option>读取账户…</option></select><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button><button id="openConnectionsTop" class="icon-button">账户 / API</button></div>
+  <button id="toggleAccounts" class="icon-button" aria-controls="accountRail" aria-expanded="true">账户列表</button>
+  <div class="desk-title"><span class="eyebrow">JUST AGENT / CLASSIC</span><h1 id="deskAccount">正在读取账户</h1><p id="deskInstrument">—</p></div>
+  <div class="desk-top-actions"><select id="connectionSwitcher" aria-label="快速切换账户"><option>读取账户…</option></select><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button></div>
 </header>
+<nav class="core-nav" aria-label="核心功能">
+  <button data-page="trading" aria-current="page" aria-controls="page-trading">交易总览</button>
+  <button data-page="parameters" aria-controls="page-parameters">策略参数<span id="parameterDirty" class="dirty-dot" hidden aria-label="有未保存参数"></span></button>
+  <button data-page="accounts" aria-controls="page-accounts">账户管理</button>
+</nav>
 <main>
 <p id="deskMessage" class="notice" role="status" hidden></p>
+<section id="page-trading" data-core-page="trading" aria-label="交易总览">
 <div class="workspace-status"><div class="account-badges"><span id="deskMode" class="tag">—</span><span id="deskRun" class="tag">—</span><span id="deskMarket" class="tag">等待行情</span></div><small id="deskUpdated">等待同步</small></div>
 <div class="status-grid desk-metrics">
-  <article class="metric"><span>账户权益</span><strong id="deskEquity">—</strong><small>含预计浮动净盈亏</small></article>
-  <article class="metric"><span>浮动净盈亏</span><strong id="deskFloating">—</strong><small>预计扣除退出成本</small></article>
-  <article class="metric"><span>已实现净盈亏</span><strong id="deskRealized">—</strong><small>已结算交易</small></article>
+  <article class="metric"><span>账户权益</span><strong id="deskEquity">—</strong><small>包含浮动净盈亏</small></article>
+  <article class="metric"><span>浮动净盈亏</span><strong id="deskFloating">—</strong><small>预计扣除平仓成本</small></article>
+  <article class="metric"><span>累计净收益</span><strong id="deskRealized">—</strong><small>已结算交易</small></article>
   <article class="metric"><span>可用资金</span><strong id="deskAvailable">—</strong><small id="deskMargin">占用保证金 —</small></article>
 </div>
-<div class="trading-grid">
-<div class="trading-main">
 <article class="panel price-panel">
-  <div class="panel-heading"><div><h2>成交与执行计划</h2><small>实际成交与下一步触发条件</small></div><span id="deskPositionBadge" class="tag">—</span></div>
-  <div class="market-price"><span>最新行情</span><strong id="deskPrice">—</strong><small id="deskPriceUnit">—</small></div>
+  <div class="panel-heading"><h2>当前交易</h2><div class="heading-actions"><span id="deskPositionBadge" class="tag">—</span><button class="text-button" data-go="parameters">修改策略参数 →</button></div></div>
+  <div class="market-price"><span>最新价格</span><strong id="deskPrice">—</strong><small id="deskPriceUnit">—</small></div>
   <div class="price-cards">
-    <section><span class="card-kicker">01 · 首仓</span><strong id="deskOpenPrice">—</strong><small id="deskOpenStatus">等待参数</small><dl><dt>首仓名义金额</dt><dd id="deskOpenAmount">—</dd><dt>持仓均价</dt><dd id="deskAverage">—</dd></dl></section>
-    <section class="add-card"><span class="card-kicker">02 · 下次补仓</span><strong id="deskAddPrice">—</strong><small id="deskAddStatus">等待首仓</small><dl><dt>补仓名义金额</dt><dd id="deskAddAmount">—</dd><dt>预计补仓数量</dt><dd id="deskAddQty">—</dd></dl></section>
-    <section><span class="card-kicker">03 · 整仓止盈</span><strong id="deskTargetPrice">—</strong><small id="deskExitStatus">暂无持仓</small><dl><dt>距目标幅度</dt><dd id="deskTargetDistance">—</dd><dt>毛收益目标</dt><dd id="deskTargetReturn">—</dd></dl></section>
+    <section><span class="card-kicker">首仓价格</span><strong id="deskOpenPrice">—</strong><small id="deskOpenStatus">等待参数</small><dl><dt>首仓金额</dt><dd id="deskOpenAmount">—</dd><dt>当前持仓均价</dt><dd id="deskAverage">—</dd></dl></section>
+    <section class="add-card"><span class="card-kicker">下次补仓价格</span><strong id="deskAddPrice">—</strong><small id="deskAddStatus">等待首仓</small><dl><dt>本次补多少</dt><dd id="deskAddAmount">—</dd><dt>预计补仓数量</dt><dd id="deskAddQty">—</dd></dl></section>
+    <section><span class="card-kicker">整仓止盈价格</span><strong id="deskTargetPrice">—</strong><small id="deskExitStatus">暂无持仓</small><dl><dt>距止盈价</dt><dd id="deskTargetDistance">—</dd><dt>保证金毛收益目标</dt><dd id="deskTargetReturn">—</dd></dl></section>
   </div>
   <div id="deskPosition" class="position-strip"></div>
   <p id="deskNext" class="next-action">等待账户状态。</p>
+  <div class="control-row"><div><strong id="deskStrategy">经典补仓</strong><p id="deskLast" class="muted"></p></div><div class="desk-actions"><button class="primary" data-action="start" disabled>启动模拟</button><button data-action="pause" disabled>暂停新增</button><button class="exit-button" data-action="close" disabled>平掉模拟仓</button></div></div>
+  <p id="deskSetupPrompt" class="setup-prompt" hidden></p>
 </article>
-<article class="panel execution-panel">
-  <div class="panel-heading"><h2>本轮成交明细</h2><small>实际模拟成交价</small></div>
+<details class="panel execution-panel"><summary>本轮成交明细<span>首仓与每次补仓的实际价格</span></summary>
   <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>时间</th><th>动作</th><th>成交价</th><th>成交数量</th><th>成交金额</th></tr></thead><tbody id="deskFills"></tbody></table></div>
-</article>
+</details>
 <article class="panel history-panel">
-  <div class="panel-heading"><div><h2>已结算交易</h2><small id="deskHistoryAccount">当前账户</small></div><button id="deskExport" class="icon-button" disabled>导出 CSV</button></div>
+  <div class="panel-heading"><div><h2>交易记录</h2><small id="deskHistoryAccount">当前账户 · 已结算记录</small></div><button id="deskExport" class="icon-button" disabled>导出本页</button></div>
   <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>平仓时间</th><th>方向</th><th>开仓 → 平仓</th><th>净盈亏</th><th>手续费</th><th>原因</th></tr></thead><tbody id="deskTrades"></tbody></table></div>
   <div class="desk-pager"><button id="deskPrev" disabled>上一页</button><small id="deskHistoryCount">—</small><button id="deskNextPage" disabled>下一页</button></div>
 </article>
-</div>
-<aside class="trade-settings">
-<article class="panel control-panel">
-  <div class="panel-heading"><h2>运行控制</h2><span id="deskStrategy" class="tag">经典补仓</span></div>
-  <div class="desk-actions"><button class="primary" data-action="start" disabled>启动模拟</button><button data-action="pause" disabled>暂停新增</button><button class="exit-button" data-action="close" disabled>平掉模拟仓</button></div>
-  <p id="deskLast" class="muted"></p><a id="deskSafety" class="research-link" href="/safety-console.html" hidden>原账户风险处理 ↗</a>
-</article>
-<article class="panel settings-panel">
-  <div class="panel-heading"><h2>经典参数</h2><span class="tag">Paper</span></div><p id="deskConfigAccount" class="sr-only"></p><p id="deskConfigHint" class="muted">保存后保持停止。</p>
-  <form id="deskSettings">
-      <label>方向<select name="side"><option value="long">做多</option><option value="short">做空</option></select></label>
-      <label>杠杆倍数<input name="leverage" type="number" min="1" max="10" step="1" required></label>
-      <label>首仓名义金额<input name="baseAmount" type="number" min="1" step="any" required></label>
-      <label>每次补仓名义金额<input name="addAmount" type="number" min="1" step="any" required></label>
-      <label>补仓触发幅度 %<input name="addTrigger" type="number" min=".01" max="99" step="any" required></label>
-      <label>止盈目标（保证金收益率 %）<input name="takeProfit" type="number" min=".01" max="99" step="any" required></label>
-      <label>最多补仓次数<input name="maxAdds" type="number" min="0" max="10" step="1" required></label>
-      <p id="deskBudget" class="muted"></p>
-      <button id="deskSave" class="primary" type="submit" disabled>保存参数</button>
-    </form>
-  <details class="strategy-note"><summary>规则与风险说明</summary><p>启动后按选定方向开首仓，反向达到触发幅度后按固定金额补仓。达到保证金毛收益目标时整仓止盈，净盈亏再扣手续费与滑点。</p><p>经典规则没有自动止损。暂停只停止新增和补仓，已有仓位继续检查止盈。</p></details>
-</article>
-</aside>
-</div>
+</section>
+<section id="page-parameters" data-core-page="parameters" aria-label="经典策略参数" hidden>
+  <div class="page-heading"><div><h2>经典策略参数</h2><p id="deskConfigAccount">当前账户</p></div><button id="deskSaveTop" class="primary" type="submit" form="deskSettings" disabled>保存参数</button></div>
+  <p id="deskConfigHint" class="config-hint" role="status">正在读取参数…</p>
+  <div id="deskConfigChoice" class="config-choice" hidden><button id="deskUseClassicAccount" class="primary">切换到可配置模拟账户</button><button class="icon-button" data-go="accounts">前往账户管理</button></div>
+  <div class="parameter-layout">
+  <form id="deskSettings" class="parameter-form">
+    <fieldset class="panel parameter-group"><legend><span>01</span> 首仓设置</legend><p class="group-intro">启动后，按选定方向和金额开第一笔模拟仓位。</p><div class="field-grid">
+      <label>交易方向<select name="side"><option value="long">做多 · 看涨</option><option value="short">做空 · 看跌</option></select><small>做多等价格上涨，做空等价格下跌。</small></label>
+      <label>杠杆倍数<div class="input-unit"><input name="leverage" type="number" min="1" max="10" step="1" required><span>倍</span></div><small>影响保证金用量；金额填写的是名义仓位。</small></label>
+      <label class="field-wide">首仓金额<div class="input-unit"><input name="baseAmount" type="number" min="1" max="100000000" step="any" required><span data-quote>U</span></div><small id="baseAmountHelp">第一笔仓位的名义金额，不是保证金。</small></label>
+    </div></fieldset>
+    <fieldset class="panel parameter-group"><legend><span>02</span> 补仓设置</legend><p class="group-intro">按固定金额补仓，不翻倍；每次相对最近成交价计算。</p><div class="field-grid">
+      <label>每次补仓金额<div class="input-unit"><input name="addAmount" type="number" min="1" max="100000000" step="any" required><span data-quote>U</span></div><small id="addAmountHelp">每次补仓使用相同的名义金额。</small></label>
+      <label>最多补仓次数<div class="input-unit"><input name="maxAdds" type="number" min="0" max="10" step="1" required><span>次</span></div><small>不包含首仓；填 0 表示不补仓。</small></label>
+      <label class="field-wide">反向波动多少后补仓<div class="input-unit"><input name="addTrigger" type="number" min=".01" max="99" step="any" required><span>%</span></div><small id="addTriggerHelp">相对最近成交价，做多下跌补仓，做空上涨补仓。</small></label>
+    </div></fieldset>
+    <fieldset class="panel parameter-group"><legend><span>03</span> 止盈设置</legend><div class="field-grid">
+      <label class="field-wide">整仓止盈目标<div class="input-unit"><input name="takeProfit" type="number" min=".01" max="99" step="any" required><span>%</span></div><small id="takeProfitHelp">以保证金毛收益率计算，不是币价涨跌幅。手续费与滑点会减少净收益。</small></label>
+    </div><p class="risk-note">经典规则没有自动止损。暂停新增后，已有模拟仓位仍检查止盈；需要退出时请在总览手动平仓。</p></fieldset>
+    <div class="save-bar"><div><strong id="deskSaveState">参数尚未修改</strong><small>仅保存参数，不自动启动。</small></div><button id="deskResetDraft" type="button" class="icon-button" disabled>撤销修改</button><button id="deskSave" class="primary" type="submit" disabled>保存策略参数</button></div>
+  </form>
+  <aside class="parameter-preview" aria-label="参数效果预览">
+    <article class="panel"><div class="panel-heading"><h2>资金用量</h2><span class="tag">参数预览</span></div><dl class="budget-facts"><dt>首仓预计保证金</dt><dd id="previewFirstMargin">—</dd><dt>每次补仓预计保证金</dt><dd id="previewAddMargin">—</dd><dt>最多开仓笔数</dt><dd id="previewOrderCount">—</dd><dt>最大名义仓位</dt><dd id="previewNotional">—</dd><dt>最大计划保证金</dt><dd id="previewMargin">—</dd></dl><p id="deskBudget" class="muted">填写参数后自动计算。</p><small>不含交易成本，不表示账户最大亏损。</small></article>
+    <article class="panel"><h2>补仓价格举例</h2><p id="previewReference" class="muted">等待最新报价</p><div class="desk-table-wrap"><table class="desk-table preview-table"><thead><tr><th>笔次</th><th>参考价格</th><th>名义金额</th></tr></thead><tbody id="previewLadder"></tbody></table></div><p class="preview-disclaimer">仅按当前报价和填写参数演示，不是实际成交或挂单；未含手续费与滑点。实际价格以总览为准。</p></article>
+  </aside>
+  </div>
+</section>
+<section id="page-accounts" data-core-page="accounts" aria-label="账户管理" hidden>
+  <div class="page-heading"><div><h2>账户管理</h2><p>添加账户、配置交易所连接。已保存的密钥不会显示在页面。</p></div><button id="newConnection" class="primary">新增账户</button></div>
+  <p id="connectionStatus" class="connection-status" role="status">正在读取账户配置…</p>
+  <div class="connections-grid">
+  <article class="panel connection-editor"><h2 id="connectionFormTitle">账户配置</h2><p id="connectionMode" class="muted"></p>
+  <form id="connectionForm" autocomplete="off">
+    <label>账户名称<input name="name" maxlength="60" required></label>
+    <label>交易所<select name="platform"><option value="hyperliquid">Hyperliquid</option><option value="binance">Binance USD-M</option><option value="extended">Extended</option></select></label>
+    <label>币种<select name="symbol"><option>ETH</option><option>BTC</option><option>SOL</option><option>BNB</option></select></label>
+    <label id="connectionEquityLabel">初始模拟资金<input name="initialEquity" type="number" min="100" max="10000000" value="10000"></label>
+    <label data-exchanges="hyperliquid">账户地址<input name="address" placeholder="0x…" autocomplete="off"></label>
+    <label data-exchanges="hyperliquid">Private Key<input name="privateKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
+    <label data-exchanges="binance extended">API Key<input name="apiKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
+    <label data-exchanges="binance">API Secret<input name="apiSecret" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
+    <label data-exchanges="extended">Stark Private Key<input name="starkPrivateKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
+    <label data-exchanges="extended">Public Key<input name="publicKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
+    <label data-exchanges="extended">Vault<input name="vault" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
+    <div class="connection-actions"><button type="submit" class="primary">保存账户配置</button><button id="selectConnection" type="button">切换到此账户</button></div>
+    <details class="connection-test"><summary>连接测试</summary><p class="muted">只读取交易所账户信息，不提交订单。</p><button id="checkConnection" type="button">测试已保存连接</button></details>
+  </form><p class="muted">密钥留空则保留原值。新账户为模拟、停止状态；保存后到策略参数页配置经典策略。</p>
+  <button class="text-button" id="connectionToSettings" disabled>为此账户配置策略 →</button>
+  </article></div>
+</section>
 </main>
-<footer>JUST AGENT <span>经典补仓 · 单页交易工作台</span></footer>
+<footer>JUST AGENT <span>经典补仓 · 清楚交易，简单管理</span></footer>
 </div>
 </div>
-<dialog id="connectionDialog" class="connection-dialog"><div class="dialog-top"><strong>账户与交易所连接</strong><div><button id="newConnectionQuick" class="icon-button">新增账户</button><button id="closeConnections" class="icon-button" aria-label="关闭账户管理">关闭</button></div></div><section>
-<div class="page-heading"><div><span class="eyebrow">EXCHANGE ACCOUNTS</span><h1>账户与交易所连接</h1><p>保留已接通的交易所 API。账户选择与策略运行分别管理。</p></div><button id="newConnection" class="primary">新增账户</button></div>
-<p id="connectionStatus" role="status">正在读取账户配置…</p>
-<div class="connections-grid"><article class="panel"><label>搜索账户<input id="connectionSearch" type="search" placeholder="名称、平台或币种"></label><div id="connectionList" class="connection-list"></div></article>
-<article class="panel"><h2 id="connectionFormTitle">连接配置</h2><p id="connectionMode" class="muted"></p>
-<form id="connectionForm" autocomplete="off">
-<label>账户名称<input name="name" maxlength="60" required></label>
-<label>交易所<select name="platform"><option value="hyperliquid">Hyperliquid</option><option value="binance">Binance USD-M</option><option value="extended">Extended</option></select></label>
-<label>标的<select name="symbol"><option>ETH</option><option>BTC</option><option>SOL</option><option>BNB</option></select></label>
-<label id="connectionEquityLabel">初始模拟权益<input name="initialEquity" type="number" min="100" max="10000000" value="10000"></label>
-<label data-exchanges="hyperliquid">账户地址<input name="address" placeholder="0x…" autocomplete="off"></label>
-<label data-exchanges="hyperliquid">Private Key<input name="privateKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
-<label data-exchanges="binance extended">API Key<input name="apiKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
-<label data-exchanges="binance">API Secret<input name="apiSecret" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
-<label data-exchanges="extended">Stark Private Key<input name="starkPrivateKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
-<label data-exchanges="extended">Public Key<input name="publicKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
-<label data-exchanges="extended">Vault<input name="vault" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
-<div class="connection-actions"><button type="submit" class="primary">保存连接</button><button id="checkConnection" type="button">测试已保存连接</button><button id="selectConnection" type="button">设为当前账户</button></div>
-</form><p class="muted">已配置的密钥仅显示配置状态。更新凭据前需要停止监控并核对仓位，Live 账户还需原生核验。连接测试只读取账户，不提交订单。</p>
-</article></div></section></dialog>
-<script src="/quant/desk.js?v=onepage1"></script>
-<script src="/hypothesis/connections.js?v=onepage1"></script>
+<script src="/quant/settings-preview.js?v=core2"></script>
+<script src="/quant/desk.js?v=core2"></script>
+<script src="/hypothesis/connections.js?v=core2"></script>
 </body>
 </html>
