@@ -1,0 +1,38 @@
+{
+  "sampleType": "NUMERICAL_VALIDATION_NOT_PERFORMANCE",
+  "seed": "first_close_recursive",
+  "histogramMultiplier": 2,
+  "limitation": "Verified against independent high-precision formula on Binance native candles, not a synchronized screenshot reading of Binance chart UI. Chart warmup/MA settings must match.",
+  "results": [
+    {
+      "symbol": "ETHUSDT",
+      "lastBarOpenTime": 1581433200000,
+      "actual": {
+        "dif": 0.5061410194929294,
+        "dea": -0.3588916910417407,
+        "histogram": 1.7300654210693402
+      },
+      "independentDecimalReference": {
+        "dif": 0.506141019492976,
+        "dea": -0.3588916910417393,
+        "histogram": 1.7300654210694304
+      },
+      "maxAbsoluteError": 9.015010959956271e-14
+    },
+    {
+      "symbol": "BTCUSDT",
+      "lastBarOpenTime": 1581433200000,
+      "actual": {
+        "dif": 14.317488922439225,
+        "dea": -25.185352344921707,
+        "histogram": 79.00568253472187
+      },
+      "independentDecimalReference": {
+        "dif": 14.317488922440294,
+        "dea": -25.1853523449205,
+        "histogram": 79.00568253472159
+      },
+      "maxAbsoluteError": 1.2079226507921703e-12
+    }
+  ]
+}

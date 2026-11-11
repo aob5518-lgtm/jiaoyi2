@@ -7,6 +7,7 @@ const REQUIRED="LEGACY_MIGRATION_REQUIRED：旧账户只允许通过系统设置
 function authorize({account,next={},entryPoint="compatibility",confirm=false}){
  // Explicit null/empty values are not omissions: accepting them could erase the
  // configured type and reactivate the legacy default resolver after a save.
+ if(P.type(account)==="macd_scale_in_v1")throw Error("H06_CONFIG_ENDPOINT：H06仅使用专用配置接口，禁止兼容接口改写身份或交易模式");
  const from=P.type(account),to=next.strategyType===undefined?from:next.strategyType;
  if(P.LEGACY.has(from)){
   if(entryPoint!=="formal"||to!=="trend_only_v3"||confirm!==true)throw Error(REQUIRED);

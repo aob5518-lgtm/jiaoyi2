@@ -1,0 +1,123 @@
+{
+  "sampleType": "SYNTHETIC_MECHANICS_VALIDATION_NOT_HISTORICAL_NOT_PAPER",
+  "success": true,
+  "events": [
+    {
+      "n": 1,
+      "price": 2000,
+      "side": "long",
+      "phase": "POSITION_OPEN",
+      "decision": "ORDER_FILLED",
+      "entries": 1,
+      "partialTpDone": false,
+      "settled": 0,
+      "equity": 10000
+    },
+    {
+      "n": 2,
+      "price": 1970,
+      "side": "short",
+      "phase": "POSITION_OPEN",
+      "decision": "SIGNAL_USED",
+      "entries": 1,
+      "partialTpDone": false,
+      "settled": 0,
+      "equity": 10000
+    },
+    {
+      "n": 3,
+      "price": 1950,
+      "side": "long",
+      "phase": "POSITION_OPEN",
+      "decision": "ORDER_FILLED",
+      "entries": 2,
+      "partialTpDone": false,
+      "settled": 0,
+      "equity": 10000
+    },
+    {
+      "n": 4,
+      "price": 1930,
+      "side": "short",
+      "phase": "POSITION_OPEN",
+      "decision": "SIGNAL_USED",
+      "entries": 2,
+      "partialTpDone": false,
+      "settled": 0,
+      "equity": 10000
+    },
+    {
+      "n": 5,
+      "price": 1900,
+      "side": "long",
+      "phase": "POSITION_OPEN",
+      "decision": "ORDER_FILLED",
+      "entries": 3,
+      "partialTpDone": false,
+      "settled": 0,
+      "equity": 10000
+    },
+    {
+      "n": 6,
+      "price": 1880,
+      "side": "short",
+      "phase": "POSITION_OPEN",
+      "decision": "SIGNAL_USED",
+      "entries": 3,
+      "partialTpDone": false,
+      "settled": 0,
+      "equity": 10000
+    },
+    {
+      "n": 7,
+      "price": 1850,
+      "side": "long",
+      "phase": "POSITION_OPEN",
+      "decision": "ORDER_FILLED",
+      "entries": 4,
+      "partialTpDone": false,
+      "settled": 0,
+      "equity": 10000
+    },
+    {
+      "n": 8,
+      "price": 4200,
+      "side": null,
+      "phase": "WAIT_REVERSE_EXIT",
+      "decision": "ORDER_FILLED",
+      "entries": 4,
+      "partialTpDone": true,
+      "settled": 0,
+      "equity": 10000
+    },
+    {
+      "n": 9,
+      "price": 4100,
+      "side": "short",
+      "phase": "SETTLED",
+      "decision": "ORDER_FILLED",
+      "entries": 0,
+      "partialTpDone": false,
+      "settled": 1,
+      "equity": 10700.2545255375
+    },
+    {
+      "n": 11,
+      "price": 2000,
+      "side": "long",
+      "phase": "POSITION_OPEN",
+      "decision": "ORDER_FILLED",
+      "entries": 1,
+      "partialTpDone": false,
+      "settled": 1,
+      "equity": 10700.2545255375
+    }
+  ],
+  "closedCycle": {
+    "netPnl": 700.2545255375,
+    "entries": 4,
+    "exits": 2,
+    "equityAfter": 10700.2545255375
+  },
+  "newCycleBase": 10700.2545255375
+}
