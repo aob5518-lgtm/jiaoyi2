@@ -1,6 +1,6 @@
 """Public Binance USD-M archives only; never loads account credentials."""
 import argparse,concurrent.futures,csv,hashlib,io,json,pathlib,urllib.request,zipfile,time
-p=argparse.ArgumentParser();p.add_argument('--start',type=int,default=2020);p.add_argument('--end',type=int,default=2025);p.add_argument('--output',default='.audit/h06-data');a=p.parse_args();root=pathlib.Path(a.output);root.mkdir(parents=True,exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('--start',type=int,default=2020);p.add_argument('--end',type=int,default=2025);p.add_argument('--output',default='.audit/h06-data');p.add_argument('--through',default='',help='Optional last included month YYYY-MM');a=p.parse_args();root=pathlib.Path(a.output);root.mkdir(parents=True,exist_ok=True)
 base='https://data.binance.vision/data/futures/um/monthly/'
 def request(url):
  for retry in range(3):
@@ -22,7 +22,7 @@ def one(item):
   with zipfile.ZipFile(io.BytesIO(data)) as z:rows=list(csv.reader(io.TextIOWrapper(z.open(z.namelist()[0]),encoding='utf-8-sig')))
   return { 'symbol':symbol,'kind':kind,'month':month,'url':url,'sha256':actual,'rows':rows,'verified':True }
  except Exception as e:return {'symbol':symbol,'kind':kind,'month':month,'url':url,'error':str(e)}
-jobs=[(s,k,f'{y}-{m:02}') for s in ['ETHUSDT','BTCUSDT'] for y in range(a.start,a.end+1) for m in range(1,13) for k in ['klines','fundingRate','markPriceKlines']]
+jobs=[(s,k,f'{y}-{m:02}') for s in ['ETHUSDT','BTCUSDT'] for y in range(a.start,a.end+1) for m in range(1,13) for k in ['klines','fundingRate','markPriceKlines'] if not a.through or f'{y}-{m:02}'<=a.through]
 results=[]
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
  for n,r in enumerate(pool.map(one,jobs)):

@@ -17,7 +17,7 @@ function nextLayer(p){return p.layers.find(l=>l.status==='WAIT_SIGNAL');}
 function qtyFloor(v,step){return Math.floor((v+1e-12)/step)*step;}
 function submit(b,kind,side,qty,signal,e,meta={}){
  const number=++b.sequence,id=[b.accountId,b.cycle?.cycleId||'new',signal?.id||e.time,kind,number].join('|');
- const o={id,kind,side,qty,filledQty:0,status:'SUBMITTED',submittedAt:e.time,executeAfter:e.time+(b.cycle?.config.executionDelayMs||meta.config.executionDelayMs),signalId:signal?.id||null,cycleId:b.cycle?.cycleId||null,referencePrice:e.price,meta};
+ const o={id,kind,side,qty,filledQty:0,status:'SUBMITTED',submittedAt:e.time,executeAfter:e.time+(b.cycle?.config.executionDelayMs||meta.config.executionDelayMs),signalId:signal?.id||null,triggerSignalId:signal?.id||(['opposite_profit','opposite_max_adds','reverse_after_partial'].includes(meta.reason)?e.signal?.id:null)||null,cycleId:b.cycle?.cycleId||null,referencePrice:e.price,meta};
  if(kind==='partial'&&!b.cycle.partialTpStarted){b.cycle.partialTpStarted=true;b.cycle.partialTargetQty=qty;b.cycle.partialFilledQty=0;}
  b.pending=o;b.orders.push(o);b.phase=kind==='open'?'ENTRY_PENDING':kind==='add'?'ADD_PENDING':kind==='partial'?'PARTIAL_TP_PENDING':meta.risk?'RISK_STOP':'EXIT_PENDING';
  if(signal)consume(b,signal);return decision(b,'ORDER_SUBMITTED',kind==='add'?'新同向信号补仓订单已提交':kind==='open'?'首仓模拟订单已提交':'保护退出订单已提交');
@@ -63,7 +63,7 @@ function stageEntry(b,e,c,layer){const p=b.cycle,side=p?.side||e.signal.side,bas
 function advance(input,event,config){const b=clone(input),e=event,c=b.cycle?.config||C.normalize(config);b.lastEvaluatedAt=e.time;beginDay(b,e.time);
  if(!(e.price>0&&Number.isFinite(e.time)))return decision(b,'QUOTE_INVALID','无法获取合法报价；不伪造成交');
  if(e.unknownOrder){b.riskLock=true;b.riskLockReason='UNKNOWN_ORDER：订单无法核验';b.phase='RECONCILING';}
- funding(b,e.funding,e.time);mark(b,e);b.lastQuote={price:e.price,time:e.time};
+ funding(b,e.funding,e.time);mark(b,e);b.lastQuote={price:e.price,time:e.time,quoteTime:e.quoteTime??e.time};
  const p=b.cycle;
  if(p){
   const dailyNet=b.day.realized+netAt(p,e.price)-(b.day.cycleBaseline||0);
@@ -113,6 +113,7 @@ function execute(input,event,result={}){const b=clone(input),o=b.pending;if(!o)r
  if(result.status==='REJECTED'||entry&&(!event.marketOK||!event.running||b.riskLock||event.time-o.submittedAt>c.signalMaxAgeMs)){
   o.status='REJECTED';o.reason=result.reason||'执行时行情、时效或运行许可已变化';b.pending=null;return decision(b,'ORDER_REJECTED',o.reason);
  }
+ if(event.quoteId&&(o.consumedQuoteIds||[]).includes(event.quoteId))return decision(b,'QUOTE_EVIDENCE_USED','同一报价证据已使用，等待新的模拟成交证据');
  if(!(event.price>0))return decision(b,'QUOTE_INVALID','没有有效报价，不模拟成交');
  const actualSlippage=result.slippageBps??c.slippageBps;
  if(entry&&actualSlippage>c.maxSlippageBps){o.status='REJECTED';b.pending=null;return decision(b,'SLIPPAGE_BLOCK','执行滑点超过上限');}
@@ -133,6 +134,7 @@ function execute(input,event,result={}){const b=clone(input),o=b.pending;if(!o)r
   p.exits.push({time:event.time,qty:close,price,fee,reason:o.meta.reason,orderId:o.id,slippageBps:actualSlippage});
   if(o.kind==='partial'){p.partialTpStarted=true;p.partialFilledQty=(p.partialFilledQty||0)+close;b.phase='PARTIAL_TP_PENDING';}
  }
+ if(event.quoteId){o.consumedQuoteIds||=[];o.consumedQuoteIds.push(event.quoteId);}
  o.filledQty+=qty;o.lastFillTime=event.time;
  // Entries use one bounded fill and cancel the unfilled remainder. Polling never creates more entry evidence.
  const terminal=entry||o.filledQty>=o.qty-1e-10||p.qty<=1e-10;

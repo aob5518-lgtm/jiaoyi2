@@ -17,7 +17,7 @@ const indicatorCodeHash=crypto.createHash('sha256').update(fs.readFileSync(path.
 function run(data,config,{from,to,stress=false,experimentId='H06_RESEARCH'}={}){
  const c=C.normalize({tradeDirection:'BOTH',...config,...(stress?{entryFeeRate:.001,exitFeeRate:.001}: {})}),account={id:experimentId,platform:'binance',symbol:data.symbol.replace('USDT',''),quoteAsset:'USDT',strategyType:C.ID,tradeMode:'simulation',simulationEnabled:true,simulationBalance:10000,h06Mode:'Research'};
  let book=B.initial(account),fundingIndex=0,closed=[],decisions={},signals=0,gapBars=0,index=0;const curve=[],rows=[],orders=[],rules={qtyStep:account.symbol==='BTC'?.001:.001,minQty:.001,minNotional:5,maxQty:1000};
- const bars=data.candles,funding=data.funding,days=new Set();let evaluatedBars=0;let cache=analysisCache.get(data);if(!cache){cache=new Map();analysisCache.set(data,cache);}const indicatorKey=[c.fastPeriod,c.slowPeriod,c.signalPeriod,c.signalMode,c.crossConfirmBars,c.momentumConfirmBars,c.atrPeriod].join(':');let dataHash=dataHashes.get(data);if(!dataHash){dataHash=crypto.createHash('sha256').update(JSON.stringify(data.candles)).digest('hex');dataHashes.set(data,dataHash);}const cacheDir=path.resolve('.audit/h06-indicators'),cachePath=path.join(cacheDir,crypto.createHash('sha256').update(dataHash+indicatorCodeHash+indicatorKey).digest('hex')+'.json');if(!cache.has(indicatorKey)){cache.set(indicatorKey,fs.existsSync(cachePath)?new Map(JSON.parse(fs.readFileSync(cachePath))):new Map());}const signalsCache=cache.get(indicatorKey);let cacheDirty=false;
+ const bars=data.candles,funding=data.funding,days=new Set(),higherBars=c.higherTimeframeFilter?require('../strategy/macd_scale_in/higher').aggregateHourly(bars):[];let higherIndex=0;let evaluatedBars=0;let cache=analysisCache.get(data);if(!cache){cache=new Map();analysisCache.set(data,cache);}const indicatorKey=[c.fastPeriod,c.slowPeriod,c.signalPeriod,c.signalMode,c.crossConfirmBars,c.momentumConfirmBars,c.atrPeriod].join(':');let dataHash=dataHashes.get(data);if(!dataHash){dataHash=crypto.createHash('sha256').update(JSON.stringify(data.candles)).digest('hex');dataHashes.set(data,dataHash);}const cacheDir=path.resolve('.audit/h06-indicators'),cachePath=path.join(cacheDir,crypto.createHash('sha256').update(dataHash+indicatorCodeHash+indicatorKey).digest('hex')+'.json');if(!cache.has(indicatorKey)){cache.set(indicatorKey,fs.existsSync(cachePath)?new Map(JSON.parse(fs.readFileSync(cachePath))):new Map());}const signalsCache=cache.get(indicatorKey);let cacheDirty=false;
  const capture=()=>{if(book.history.length){for(const r of book.history){r.experimentId=experimentId;rows.push(r);curve.push({time:r.exitTime,equity:r.equityAfter});}book.history=[];}if(book.orders.length>20){orders.push(...book.orders.slice(0,-20));book.orders=book.orders.slice(-20);}book.consumed=book.consumed.slice(-100);};
  for(let i=0;i<bars.length;i++){
   const bar=bars[i];if(bar.time>=to)break;closed.push(bar);if(closed.length>500)closed.shift();if(bar.time<from)continue;
@@ -28,7 +28,9 @@ function run(data,config,{from,to,stress=false,experimentId='H06_RESEARCH'}={}){
   let fundingCoverage=true;for(let f=fundingIndex-1;f>=0&&funding[f].time>=bar.time-9*S.HOUR;f--)if(!(funding[f].markPrice>0))fundingCoverage=false;
   if(!fundingCoverage)gapBars++;
   const healthy=fundingCoverage&&!['WARMUP','CANDLE_GAP','CANDLE_STALE'].includes(analyzed.code);
-  const e={time:bar.time+10,price:bar.open,signal,running:true,marketOK:healthy,marketReason:'研究数据缺口',rules,account,funding:periodFunding,permit:()=>({allowed:true})};
+  while(higherIndex<higherBars.length&&higherBars[higherIndex].time+4*S.HOUR<=bar.time)higherIndex++;
+  const higherDirection=c.higherTimeframeFilter?require('../strategy/macd_scale_in/higher').closedDirection(higherBars.slice(Math.max(0,higherIndex-300),higherIndex),bar.time):'none';
+  const e={time:bar.time+10,price:bar.open,signal,higherDirection,running:true,marketOK:healthy,marketReason:'研究数据缺口',rules,account,funding:periodFunding,permit:()=>({allowed:true})};
   if(book.pending){book=B.advance(book,{...e,signal:null},c);book=B.execute(book,e,{status:stress&&i%17===0?'REJECTED':undefined,fillFraction:stress?.5:1,slippageBps:stress?10:5});capture();}
   book=B.advance(book,e,c);decisions[book.decision.code]=(decisions[book.decision.code]||0)+1;
   // Filled after the signal is available. Open+1s is an OHLC proxy, never claimed a real quote.
@@ -39,7 +41,9 @@ function run(data,config,{from,to,stress=false,experimentId='H06_RESEARCH'}={}){
    book=B.advance(book,adverse,c);if(book.pending&&['exit','partial'].includes(book.pending.kind)){book=B.execute(book,{...adverse,time:adverse.time+1000},{slippageBps:stress?20:5});capture();}
    if(book.cycle){const favorable={...adverse,time:bar.time+S.HOUR-2000,price:side==='long'?bar.high:bar.low};book=B.advance(book,favorable,c);if(book.pending&&['exit','partial'].includes(book.pending.kind)){book=B.execute(book,{...favorable,time:favorable.time+1000},{slippageBps:stress?20:5});capture();}}
   }
-  const equity=book.equity+(book.cycle?B.netAt(book.cycle,bar.close):0);curve.push({time:bar.time+S.HOUR-1,equity});capture();
+  const equity=book.equity+(book.cycle?B.netAt(book.cycle,bar.close):0);
+  // The closing mark is known before the next UTC-day baseline; do not carry the synthetic intrabar high/low into tomorrow.
+  book.lastQuote={price:bar.close,time:bar.time+S.HOUR-1};curve.push({time:bar.time+S.HOUR-1,equity});capture();
   if(book.equity<=0||book.riskLock)break;
  }
  if(cacheDirty){fs.mkdirSync(cacheDir,{recursive:true});fs.writeFileSync(cachePath,JSON.stringify([...signalsCache]));}

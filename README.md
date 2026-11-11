@@ -177,3 +177,5 @@ npm test
 
 本机隔离前向研究：`node scripts/h06_forward.js --directory .h06-research --mode Shadow --symbol ETH --port 3376 --start`。
 该服务仅绑定本机，需独立认证，无真实交易接口；原生行情不可用时保持阻断和空仓。
+
+H06第二轮优化与独立验证见 [optimization/REPORT.md](docs/h06/optimization/REPORT.md)：执行证据去重、准确的机会/提交/成交统计、陈旧浮盈保护、4H回放一致性及按补仓层数的亏损复盘。默认交易参数保持不变，候选研究不自动晋升为默认。
