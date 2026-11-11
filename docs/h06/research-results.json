@@ -2,9 +2,9 @@
   "protocol": "Frozen before viewing performance; no automatic best-mode promotion; historical research, not Paper.",
   "dataSource": "Binance USD-M monthly archives with official SHA256 checksums",
   "engineHashes": {
-    "config.js": "20fa4e0b9620000c448f317029b6c1bcc3d5ac2f4539efcd0acf00614b441d15",
-    "signal.js": "8c115de08be5275cd2b344ba4b3ca47efaab3d173e5f733d4bfda307ba6f2f57",
-    "book.js": "b44a5e3363995af9643bc3c1ad3aea8599c28623e00e55fc3e21a40ac0a39d6b"
+    "config.js": "bbc7af462a72ddf79a4f60a0ba97ffa691cfb6e639adc50411d62a90ed4cdbeb",
+    "signal.js": "3b5ad219c6b62d572b7056ca4d26ce1711a318ac65248cb939b18f6e9fcc48cd",
+    "book.js": "20b8850a5fa18af8a7b0a0a12a4c327524ecbc9a45d9625470e0da2c67b2fae7"
   },
   "limitations": [
     "1H OHLC execution proxy at next open + 1s; no historical orderbook evidence",
@@ -16,7 +16,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "train",
-      "name": "交叉不补仓",
+      "name": "\u4ea4\u53c9\u4e0d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_A_ETHUSDT_train",
@@ -104,12 +104,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "train",
-      "name": "交叉+一次等额补仓",
+      "name": "\u4ea4\u53c9+\u4e00\u6b21\u7b49\u989d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_B_ETHUSDT_train",
@@ -199,12 +199,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "train",
-      "name": "交叉+两次补仓",
+      "name": "\u4ea4\u53c9+\u4e24\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_C_ETHUSDT_train",
@@ -294,12 +294,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "train",
-      "name": "交叉+三次补仓（默认结构）",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\uff08\u9ed8\u8ba4\u7ed3\u6784\uff09",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_D_ETHUSDT_train",
@@ -389,12 +389,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "train",
-      "name": "柱体拐点+三次补仓",
+      "name": "\u67f1\u4f53\u62d0\u70b9+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_E_ETHUSDT_train",
@@ -486,12 +486,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "train",
-      "name": "交叉+三次补仓、不分批止盈",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\u3001\u4e0d\u5206\u6279\u6b62\u76c8",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_F_ETHUSDT_train",
@@ -581,12 +581,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "train",
-      "name": "交叉与柱体组合+三次补仓",
+      "name": "\u4ea4\u53c9\u4e0e\u67f1\u4f53\u7ec4\u5408+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_G_ETHUSDT_train",
@@ -677,12 +677,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "train",
-      "name": "交叉+ATR保护实验",
+      "name": "\u4ea4\u53c9+ATR\u4fdd\u62a4\u5b9e\u9a8c",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_H_ETHUSDT_train",
@@ -772,12 +772,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "validation",
-      "name": "交叉不补仓",
+      "name": "\u4ea4\u53c9\u4e0d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_A_ETHUSDT_validation",
@@ -870,7 +870,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "validation",
-      "name": "交叉+一次等额补仓",
+      "name": "\u4ea4\u53c9+\u4e00\u6b21\u7b49\u989d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_B_ETHUSDT_validation",
@@ -965,7 +965,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "validation",
-      "name": "交叉+两次补仓",
+      "name": "\u4ea4\u53c9+\u4e24\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_C_ETHUSDT_validation",
@@ -1054,12 +1054,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "validation",
-      "name": "交叉+三次补仓（默认结构）",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\uff08\u9ed8\u8ba4\u7ed3\u6784\uff09",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_D_ETHUSDT_validation",
@@ -1148,12 +1148,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "validation",
-      "name": "柱体拐点+三次补仓",
+      "name": "\u67f1\u4f53\u62d0\u70b9+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_E_ETHUSDT_validation",
@@ -1243,12 +1243,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "validation",
-      "name": "交叉+三次补仓、不分批止盈",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\u3001\u4e0d\u5206\u6279\u6b62\u76c8",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_F_ETHUSDT_validation",
@@ -1337,12 +1337,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "validation",
-      "name": "交叉与柱体组合+三次补仓",
+      "name": "\u4ea4\u53c9\u4e0e\u67f1\u4f53\u7ec4\u5408+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_G_ETHUSDT_validation",
@@ -1432,12 +1432,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "validation",
-      "name": "交叉+ATR保护实验",
+      "name": "\u4ea4\u53c9+ATR\u4fdd\u62a4\u5b9e\u9a8c",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_H_ETHUSDT_validation",
@@ -1526,12 +1526,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "ETHUSDT",
       "split": "out_of_sample",
-      "name": "交叉不补仓",
+      "name": "\u4ea4\u53c9\u4e0d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_A_ETHUSDT_out_of_sample",
@@ -1626,7 +1626,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "out_of_sample",
-      "name": "交叉+一次等额补仓",
+      "name": "\u4ea4\u53c9+\u4e00\u6b21\u7b49\u989d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_B_ETHUSDT_out_of_sample",
@@ -1723,7 +1723,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "out_of_sample",
-      "name": "交叉+两次补仓",
+      "name": "\u4ea4\u53c9+\u4e24\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_C_ETHUSDT_out_of_sample",
@@ -1820,7 +1820,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "out_of_sample",
-      "name": "交叉+三次补仓（默认结构）",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\uff08\u9ed8\u8ba4\u7ed3\u6784\uff09",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_D_ETHUSDT_out_of_sample",
@@ -1917,7 +1917,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "out_of_sample",
-      "name": "柱体拐点+三次补仓",
+      "name": "\u67f1\u4f53\u62d0\u70b9+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_E_ETHUSDT_out_of_sample",
@@ -2015,7 +2015,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "out_of_sample",
-      "name": "交叉+三次补仓、不分批止盈",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\u3001\u4e0d\u5206\u6279\u6b62\u76c8",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_F_ETHUSDT_out_of_sample",
@@ -2112,7 +2112,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "out_of_sample",
-      "name": "交叉与柱体组合+三次补仓",
+      "name": "\u4ea4\u53c9\u4e0e\u67f1\u4f53\u7ec4\u5408+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_G_ETHUSDT_out_of_sample",
@@ -2210,7 +2210,7 @@
     {
       "symbol": "ETHUSDT",
       "split": "out_of_sample",
-      "name": "交叉+ATR保护实验",
+      "name": "\u4ea4\u53c9+ATR\u4fdd\u62a4\u5b9e\u9a8c",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_H_ETHUSDT_out_of_sample",
@@ -2307,7 +2307,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "train",
-      "name": "交叉不补仓",
+      "name": "\u4ea4\u53c9\u4e0d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_A_BTCUSDT_train",
@@ -2395,12 +2395,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "train",
-      "name": "交叉+一次等额补仓",
+      "name": "\u4ea4\u53c9+\u4e00\u6b21\u7b49\u989d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_B_BTCUSDT_train",
@@ -2490,12 +2490,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "train",
-      "name": "交叉+两次补仓",
+      "name": "\u4ea4\u53c9+\u4e24\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_C_BTCUSDT_train",
@@ -2585,12 +2585,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "train",
-      "name": "交叉+三次补仓（默认结构）",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\uff08\u9ed8\u8ba4\u7ed3\u6784\uff09",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_D_BTCUSDT_train",
@@ -2680,12 +2680,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "train",
-      "name": "柱体拐点+三次补仓",
+      "name": "\u67f1\u4f53\u62d0\u70b9+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_E_BTCUSDT_train",
@@ -2776,12 +2776,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "train",
-      "name": "交叉+三次补仓、不分批止盈",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\u3001\u4e0d\u5206\u6279\u6b62\u76c8",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_F_BTCUSDT_train",
@@ -2871,12 +2871,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "train",
-      "name": "交叉与柱体组合+三次补仓",
+      "name": "\u4ea4\u53c9\u4e0e\u67f1\u4f53\u7ec4\u5408+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_G_BTCUSDT_train",
@@ -2967,12 +2967,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "train",
-      "name": "交叉+ATR保护实验",
+      "name": "\u4ea4\u53c9+ATR\u4fdd\u62a4\u5b9e\u9a8c",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_H_BTCUSDT_train",
@@ -3062,12 +3062,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "validation",
-      "name": "交叉不补仓",
+      "name": "\u4ea4\u53c9\u4e0d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_A_BTCUSDT_validation",
@@ -3163,7 +3163,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "validation",
-      "name": "交叉+一次等额补仓",
+      "name": "\u4ea4\u53c9+\u4e00\u6b21\u7b49\u989d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_B_BTCUSDT_validation",
@@ -3252,12 +3252,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "validation",
-      "name": "交叉+两次补仓",
+      "name": "\u4ea4\u53c9+\u4e24\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_C_BTCUSDT_validation",
@@ -3346,12 +3346,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "validation",
-      "name": "交叉+三次补仓（默认结构）",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\uff08\u9ed8\u8ba4\u7ed3\u6784\uff09",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_D_BTCUSDT_validation",
@@ -3449,7 +3449,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "validation",
-      "name": "柱体拐点+三次补仓",
+      "name": "\u67f1\u4f53\u62d0\u70b9+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_E_BTCUSDT_validation",
@@ -3539,12 +3539,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "validation",
-      "name": "交叉+三次补仓、不分批止盈",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\u3001\u4e0d\u5206\u6279\u6b62\u76c8",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_F_BTCUSDT_validation",
@@ -3642,7 +3642,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "validation",
-      "name": "交叉与柱体组合+三次补仓",
+      "name": "\u4ea4\u53c9\u4e0e\u67f1\u4f53\u7ec4\u5408+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_G_BTCUSDT_validation",
@@ -3731,12 +3731,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "validation",
-      "name": "交叉+ATR保护实验",
+      "name": "\u4ea4\u53c9+ATR\u4fdd\u62a4\u5b9e\u9a8c",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_H_BTCUSDT_validation",
@@ -3825,12 +3825,12 @@
         "fullFundingMarkCoverage": false
       },
       "activeCycle": null,
-      "blocked": "研究资金费标记价缺失，终止该实验"
+      "blocked": "\u7814\u7a76\u8d44\u91d1\u8d39\u6807\u8bb0\u4ef7\u7f3a\u5931\uff0c\u7ec8\u6b62\u8be5\u5b9e\u9a8c"
     },
     {
       "symbol": "BTCUSDT",
       "split": "out_of_sample",
-      "name": "交叉不补仓",
+      "name": "\u4ea4\u53c9\u4e0d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_A_BTCUSDT_out_of_sample",
@@ -3926,7 +3926,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "out_of_sample",
-      "name": "交叉+一次等额补仓",
+      "name": "\u4ea4\u53c9+\u4e00\u6b21\u7b49\u989d\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_B_BTCUSDT_out_of_sample",
@@ -4024,7 +4024,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "out_of_sample",
-      "name": "交叉+两次补仓",
+      "name": "\u4ea4\u53c9+\u4e24\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_C_BTCUSDT_out_of_sample",
@@ -4122,7 +4122,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "out_of_sample",
-      "name": "交叉+三次补仓（默认结构）",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\uff08\u9ed8\u8ba4\u7ed3\u6784\uff09",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_D_BTCUSDT_out_of_sample",
@@ -4220,7 +4220,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "out_of_sample",
-      "name": "柱体拐点+三次补仓",
+      "name": "\u67f1\u4f53\u62d0\u70b9+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_E_BTCUSDT_out_of_sample",
@@ -4316,7 +4316,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "out_of_sample",
-      "name": "交叉+三次补仓、不分批止盈",
+      "name": "\u4ea4\u53c9+\u4e09\u6b21\u8865\u4ed3\u3001\u4e0d\u5206\u6279\u6b62\u76c8",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_F_BTCUSDT_out_of_sample",
@@ -4414,7 +4414,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "out_of_sample",
-      "name": "交叉与柱体组合+三次补仓",
+      "name": "\u4ea4\u53c9\u4e0e\u67f1\u4f53\u7ec4\u5408+\u4e09\u6b21\u8865\u4ed3",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_G_BTCUSDT_out_of_sample",
@@ -4513,7 +4513,7 @@
     {
       "symbol": "BTCUSDT",
       "split": "out_of_sample",
-      "name": "交叉+ATR保护实验",
+      "name": "\u4ea4\u53c9+ATR\u4fdd\u62a4\u5b9e\u9a8c",
       "strategyVersion": "macd_scale_in_v1",
       "strategyRevision": "H06_MACD_SCALE_IN_V1_20261111",
       "experimentId": "H06_H_BTCUSDT_out_of_sample",
@@ -4605,5 +4605,11 @@
       "activeCycle": null,
       "blocked": null
     }
-  ]
+  ],
+  "executedWorkingTreeHashes": {
+    "config.js": "20fa4e0b9620000c448f317029b6c1bcc3d5ac2f4539efcd0acf00614b441d15",
+    "signal.js": "8c115de08be5275cd2b344ba4b3ca47efaab3d173e5f733d4bfda307ba6f2f57",
+    "book.js": "b44a5e3363995af9643bc3c1ad3aea8599c28623e00e55fc3e21a40ac0a39d6b"
+  },
+  "engineHashEncoding": "UTF-8 with LF line endings (Git blob canonical representation)"
 }

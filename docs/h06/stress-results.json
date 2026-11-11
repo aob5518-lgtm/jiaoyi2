@@ -10,9 +10,9 @@
   },
   "limitations": "No calibrated historical orderbook or measured rejection distribution. Stress demonstrates sensitivity, not expected performance.",
   "engineHashes": {
-    "config.js": "20fa4e0b9620000c448f317029b6c1bcc3d5ac2f4539efcd0acf00614b441d15",
-    "signal.js": "8c115de08be5275cd2b344ba4b3ca47efaab3d173e5f733d4bfda307ba6f2f57",
-    "book.js": "b44a5e3363995af9643bc3c1ad3aea8599c28623e00e55fc3e21a40ac0a39d6b"
+    "config.js": "bbc7af462a72ddf79a4f60a0ba97ffa691cfb6e639adc50411d62a90ed4cdbeb",
+    "signal.js": "3b5ad219c6b62d572b7056ca4d26ce1711a318ac65248cb939b18f6e9fcc48cd",
+    "book.js": "20b8850a5fa18af8a7b0a0a12a4c327524ecbc9a45d9625470e0da2c67b2fae7"
   },
   "results": [
     {
@@ -393,5 +393,11 @@
       "activeCycle": null,
       "blocked": null
     }
-  ]
+  ],
+  "executedWorkingTreeHashes": {
+    "config.js": "20fa4e0b9620000c448f317029b6c1bcc3d5ac2f4539efcd0acf00614b441d15",
+    "signal.js": "8c115de08be5275cd2b344ba4b3ca47efaab3d173e5f733d4bfda307ba6f2f57",
+    "book.js": "b44a5e3363995af9643bc3c1ad3aea8599c28623e00e55fc3e21a40ac0a39d6b"
+  },
+  "engineHashEncoding": "UTF-8 with LF line endings (Git blob canonical representation)"
 }
