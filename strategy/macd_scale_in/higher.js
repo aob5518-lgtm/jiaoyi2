@@ -1,0 +1,5 @@
+"use strict";
+const {ema,HOUR}=require('./signal');
+function closedDirection(candles,now){const rows=candles.filter(v=>v.time+4*HOUR<=now).slice(-300);if(rows.length<50)return'none';for(let i=0;i<rows.length;i++)if(!Number.isFinite(rows[i].close)||rows[i].time%(4*HOUR)!==0||i&&rows[i].time-rows[i-1].time!==4*HOUR)return'none';const prices=rows.map(v=>v.close),fast=ema(prices,20).at(-1),slow=ema(prices,50).at(-1);return fast>slow?'long':fast<slow?'short':'none';}
+function aggregateHourly(rows){const result=[];let bucket=[];for(const row of rows){const time=Math.floor(row.time/(4*HOUR))*4*HOUR;if(bucket.length&&Math.floor(bucket[0].time/(4*HOUR))*4*HOUR!==time)bucket=[];bucket.push(row);if(bucket.length===4){if(bucket[0].time===time&&bucket.every((v,i)=>v.time===time+i*HOUR))result.push({time,open:bucket[0].open,high:Math.max(...bucket.map(v=>v.high)),low:Math.min(...bucket.map(v=>v.low)),close:bucket[3].close,volume:bucket.reduce((s,v)=>s+v.volume,0)});bucket=[];}}return result;}
+module.exports={closedDirection,aggregateHourly};

@@ -1,13 +1,14 @@
 "use strict";
-const LEGACY=new Set(["classic","smart_regime_v1","trend_only_v1","trend_only_v2"]),CORE=new Set(["trend_only_v3","compound_4h_v1"]);
+const LEGACY=new Set(["classic","smart_regime_v1","trend_only_v1","trend_only_v2"]),CORE=new Set(["trend_only_v3","compound_4h_v1","macd_scale_in_v1"]);
 const catalog=()=>[
+ {id:"macd_scale_in_v1",name:"H06 MACD 分层补仓",mode:"Paper / Shadow",independentAccount:true,description:"1H已收盘MACD信号驱动，独立四层保证金、净ROI半仓止盈与强制风险退出。仅Binance USDT永续模拟。",revision:require("../strategy/macd_scale_in/config").REVISION},
  {id:"trend_only_v3",name:"Trend V3",mode:"Paper",independentAccount:true,description:"趋势环境、入场质量、成本与风险控制",revision:require("../strategy/trend_v3/scope").REVISION},
  {id:"short_term_v1",name:"Short-Term V1",mode:"Shadow",independentAccount:false,description:"Shadow研究模式，暂不支持实际Paper下单。随V3监控评估的隔离伴随引擎，不是独立账户。",revision:require("../strategy/short_term_v1/engine").REVISION},
  {id:"compound_4h_v1",name:"4H Compound V1",mode:"Paper",independentAccount:true,description:"4H结构、四层限价、分段止盈与逐轮复利。Paper研究版，收益尚未验证。",revision:require("../strategy/compound_4h/config").REVISION}
 ];
 const type=a=>a.strategyType||"classic";
 const restricted=a=>!CORE.has(type(a));
-function assertEntry(a,reduceOnly=false){if(!reduceOnly&&restricted(a))throw Error(LEGACY.has(type(a))?"LEGACY_RESTRICTED：旧策略只管理已有仓位，禁止新开与补仓":"UNSUPPORTED_STRATEGY：未知策略禁止新开仓");if(!CORE.has(type(a))&&!LEGACY.has(type(a)))throw Error("UNSUPPORTED_STRATEGY：无法推断未知引擎的订单语义");}
+function assertEntry(a,reduceOnly=false){if(type(a)==="macd_scale_in_v1")throw Error("H06_NO_REAL_ORDER：H06不允许调用交易所下单或杠杆接口");if(!reduceOnly&&restricted(a))throw Error(LEGACY.has(type(a))?"LEGACY_RESTRICTED：旧策略只管理已有仓位，禁止新开与补仓":"UNSUPPORTED_STRATEGY：未知策略禁止新开仓");if(!CORE.has(type(a))&&!LEGACY.has(type(a)))throw Error("UNSUPPORTED_STRATEGY：无法推断未知引擎的订单语义");}
 function classify(a,st={},runtime={}){
  const id=type(a),legacy=LEGACY.has(id),unsupported=!legacy&&!CORE.has(id),busy=!!st.legacyLedgerBlocked||!!st.tickRunning||Math.abs(Number(st.positionQty))>0||Math.abs(Number(st.realPositionSize))>0||!!st.pendingOrder||!!st.placingOrder||!!runtime.position||!!runtime.pendingOrder||!!st.smartExitPending||Object.values(runtime.shortTermBooks||{}).some(b=>b.position||b.pendingOrder);
  const restrictionReasons=[];

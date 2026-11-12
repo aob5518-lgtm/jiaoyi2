@@ -20,3 +20,6 @@ __pycache__/
 .env.*
 !.env.example
 
+
+macd_scale_in_runtime.json
+.h06-research/

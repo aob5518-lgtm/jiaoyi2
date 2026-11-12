@@ -1,0 +1,263 @@
+{
+  "startedAt": 1794489805906,
+  "environment": "isolated local finite process",
+  "root": "C:\\Users\\look2\\.codex\\visualizations\\2026\\09\\13\\01a09a11-308e-7620-9165-ca8663aab6c1\\jiaoyi2-h06\\.audit\\h06-r3-native-1794489805905",
+  "source": "https://fapi.binance.com",
+  "realOrderCalls": 0,
+  "authenticatedCalls": 0,
+  "accounts": [
+    {
+      "id": "591d3ade-f282-428c-b85f-8f8a6ab99983",
+      "symbol": "ETHUSDT",
+      "mode": "Shadow",
+      "hasTradingCredentials": false,
+      "directory": "C:\\Users\\look2\\.codex\\visualizations\\2026\\09\\13\\01a09a11-308e-7620-9165-ca8663aab6c1\\jiaoyi2-h06\\.audit\\h06-r3-native-1794489805905\\ETH",
+      "requests": [
+        {
+          "url": "https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1h&limit=500",
+          "method": "GET",
+          "startedAt": 1794489805909,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10005
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=ETHUSDT",
+          "method": "GET",
+          "startedAt": 1794489805953,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10007
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=ETHUSDT&startTime=1794403405909&limit=1000",
+          "method": "GET",
+          "startedAt": 1794489805954,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10006
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+          "method": "GET",
+          "startedAt": 1794489805954,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10006
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1h&limit=500",
+          "method": "GET",
+          "startedAt": 1794489815963,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10009
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=ETHUSDT",
+          "method": "GET",
+          "startedAt": 1794489815965,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10011
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=ETHUSDT&startTime=1794403415963&limit=1000",
+          "method": "GET",
+          "startedAt": 1794489815966,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10010
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+          "method": "GET",
+          "startedAt": 1794489815966,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10010
+        }
+      ],
+      "rounds": [
+        {
+          "round": 0,
+          "afterRestart": false,
+          "error": "The operation was aborted due to timeout",
+          "marketFresh": false,
+          "decision": {
+            "code": "MARKET_UNAVAILABLE",
+            "reason": "原生行情读取失败，禁止新增风险：The operation was aborted due to timeout",
+            "at": 1794489815914
+          },
+          "quoteTime": null,
+          "quoteReceivedAt": null,
+          "candleCount": 0,
+          "continuous": false,
+          "rules": null,
+          "fundingEvents": null,
+          "fundingComplete": false,
+          "persistedAccountId": "591d3ade-f282-428c-b85f-8f8a6ab99983",
+          "orderCount": 0
+        },
+        {
+          "round": 1,
+          "afterRestart": true,
+          "error": "The operation was aborted due to timeout",
+          "marketFresh": false,
+          "decision": {
+            "code": "MARKET_UNAVAILABLE",
+            "reason": "原生行情读取失败，禁止新增风险：The operation was aborted due to timeout",
+            "at": 1794489825972
+          },
+          "quoteTime": null,
+          "quoteReceivedAt": null,
+          "candleCount": 0,
+          "continuous": false,
+          "rules": null,
+          "fundingEvents": null,
+          "fundingComplete": false,
+          "persistedAccountId": "591d3ade-f282-428c-b85f-8f8a6ab99983",
+          "orderCount": 0
+        }
+      ],
+      "persistenceVerified": true,
+      "nativeForwardPassed": false
+    },
+    {
+      "id": "eef98116-1567-4800-baa9-9821c8a2a764",
+      "symbol": "BTCUSDT",
+      "mode": "Shadow",
+      "hasTradingCredentials": false,
+      "directory": "C:\\Users\\look2\\.codex\\visualizations\\2026\\09\\13\\01a09a11-308e-7620-9165-ca8663aab6c1\\jiaoyi2-h06\\.audit\\h06-r3-native-1794489805905\\BTC",
+      "requests": [
+        {
+          "url": "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1h&limit=500",
+          "method": "GET",
+          "startedAt": 1794489825979,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10011
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=BTCUSDT",
+          "method": "GET",
+          "startedAt": 1794489825980,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10018
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&startTime=1794403425979&limit=1000",
+          "method": "GET",
+          "startedAt": 1794489825981,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10017
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+          "method": "GET",
+          "startedAt": 1794489825981,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10017
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1h&limit=500",
+          "method": "GET",
+          "startedAt": 1794489836000,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10004
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=BTCUSDT",
+          "method": "GET",
+          "startedAt": 1794489836001,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10007
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&startTime=1794403435999&limit=1000",
+          "method": "GET",
+          "startedAt": 1794489836001,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10007
+        },
+        {
+          "url": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+          "method": "GET",
+          "startedAt": 1794489836001,
+          "ok": false,
+          "error": "The operation was aborted due to timeout",
+          "cause": null,
+          "elapsedMs": 10007
+        }
+      ],
+      "rounds": [
+        {
+          "round": 0,
+          "afterRestart": false,
+          "error": "The operation was aborted due to timeout",
+          "marketFresh": false,
+          "decision": {
+            "code": "MARKET_UNAVAILABLE",
+            "reason": "原生行情读取失败，禁止新增风险：The operation was aborted due to timeout",
+            "at": 1794489835991
+          },
+          "quoteTime": null,
+          "quoteReceivedAt": null,
+          "candleCount": 0,
+          "continuous": false,
+          "rules": null,
+          "fundingEvents": null,
+          "fundingComplete": false,
+          "persistedAccountId": "eef98116-1567-4800-baa9-9821c8a2a764",
+          "orderCount": 0
+        },
+        {
+          "round": 1,
+          "afterRestart": true,
+          "error": "The operation was aborted due to timeout",
+          "marketFresh": false,
+          "decision": {
+            "code": "MARKET_UNAVAILABLE",
+            "reason": "原生行情读取失败，禁止新增风险：The operation was aborted due to timeout",
+            "at": 1794489846004
+          },
+          "quoteTime": null,
+          "quoteReceivedAt": null,
+          "candleCount": 0,
+          "continuous": false,
+          "rules": null,
+          "fundingEvents": null,
+          "fundingComplete": false,
+          "persistedAccountId": "eef98116-1567-4800-baa9-9821c8a2a764",
+          "orderCount": 0
+        }
+      ],
+      "persistenceVerified": true,
+      "nativeForwardPassed": false
+    }
+  ],
+  "completed": false,
+  "finishedAt": 1794489846010,
+  "status": "BLOCKED_NATIVE_PUBLIC_DATA"
+}
