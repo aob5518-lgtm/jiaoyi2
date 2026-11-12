@@ -1,5 +1,5 @@
 "use strict";
-const C=require('./config'),{HOUR}=require('./signal');
+const C=require('./config'),{HOUR}=require('./signal'),Audit=require('./audit');
 const clone=structuredClone,sign=side=>side==='long'?1:-1,round=v=>Number(v.toFixed(10));
 function initial(account){C.assertAccount(account);const n=Number(account.simulationBalance);if(!Number.isFinite(n)||n<100)throw Error('H06 初始权益无效');return{schema:1,accountId:account.id,identity:[account.platform,account.symbol,account.quoteAsset,account.h06Mode,n].join(':'),initialEquity:n,equity:n,realizedNetPnl:0,cycle:null,pending:null,phase:'IDLE',orders:[],history:[],signals:[],consumed:[],riskLock:false,riskLockReason:'',cooldownUntil:0,lastSignalTime:0,sequence:0,day:null,lastQuote:null,lastEvaluatedAt:null};}
 function netAt(p,price,exitSlippage=true){if(!p)return 0;const c=p.config,fill=price*(1-(exitSlippage?c.slippageBps/10000:0)*sign(p.side));return p.realizedGross+(fill-p.averagePrice)*p.qty*sign(p.side)-p.entryFees-p.exitFees+p.fundingPnl-fill*p.qty*c.exitFeeRate;}
@@ -10,20 +10,22 @@ function refreshStop(p){if(!p.qty)return;const tick=p.priceTick||1e-8,fixed=p.si
 function used(b,signal){return b.consumed.includes(signal.id);}
 function consume(b,signal){if(!used(b,signal))b.consumed.push(signal.id);b.lastSignalTime=Math.max(b.lastSignalTime,signal.closedTime);}
 function decision(b,code,reason){b.decision={code,reason,at:b.lastEvaluatedAt};return b;}
-function mark(b,e){if(!b.cycle)return;const p=b.cycle,n=netAt(p,e.price);p.maximumAdverseExcursion=Math.max(p.maximumAdverseExcursion,-n,0);p.maximumFavorableExcursion=Math.max(p.maximumFavorableExcursion,n,0);p.highestPrice=Math.max(p.highestPrice,e.price);p.lowestPrice=Math.min(p.lowestPrice,e.price);p.netPnl=n;p.roi=roiAt(p,e.price);}
+function mark(b,e){if(!b.cycle)return;const p=b.cycle,n=netAt(p,e.price);p.maximumAdverseExcursion=Math.max(p.maximumAdverseExcursion,-n,0);p.maximumFavorableExcursion=Math.max(p.maximumFavorableExcursion,n,0);p.highestPrice=Math.max(p.highestPrice,e.price);p.lowestPrice=Math.min(p.lowestPrice,e.price);p.netPnl=n;p.roi=roiAt(p,e.price);Audit.observe(p,e.price,n);}
 function funding(b,rows,time){const p=b.cycle;if(!p)return;for(const f of rows||[]){if(f.time<=p.openedAt||f.time>time||p.fundingEvents.some(v=>v.time===f.time))continue;if(!Number.isFinite(f.rate)||!(f.markPrice>0))throw Error('FUNDING_DATA_INVALID');const qty=p.entries.filter(v=>v.time<f.time).reduce((n,v)=>n+v.qty,0)-p.exits.filter(v=>v.time<f.time).reduce((n,v)=>n+v.qty,0);if(qty<=1e-10)continue;const amount=-sign(p.side)*qty*f.markPrice*f.rate;p.fundingPnl+=amount;p.fundingEvents.push({...f,qty,amount});}refreshStop(p);}
 function beginDay(b,time){const day=new Date(time).toISOString().slice(0,10);if(b.day?.day!==day){const baseline=b.cycle&&b.lastQuote?.price?netAt(b.cycle,b.lastQuote.price):0;b.day={day,equity:Math.max(0,b.equity+baseline),cycleBaseline:baseline,realized:0,locked:false};}}
 function nextLayer(p){return p.layers.find(l=>l.status==='WAIT_SIGNAL');}
 function qtyFloor(v,step){return Math.floor((v+1e-12)/step)*step;}
 function submit(b,kind,side,qty,signal,e,meta={}){
  const number=++b.sequence,id=[b.accountId,b.cycle?.cycleId||'new',signal?.id||e.time,kind,number].join('|');
- const o={id,kind,side,qty,filledQty:0,status:'SUBMITTED',submittedAt:e.time,executeAfter:e.time+(b.cycle?.config.executionDelayMs||meta.config.executionDelayMs),signalId:signal?.id||null,triggerSignalId:signal?.id||(['opposite_profit','opposite_max_adds','reverse_after_partial'].includes(meta.reason)?e.signal?.id:null)||null,cycleId:b.cycle?.cycleId||null,referencePrice:e.price,meta};
+ const locked=b.cycle?.config||meta.config;meta={...meta,config:clone(locked),scope:meta.scope||b.cycle?.scope};
+ const o={id,kind,side,qty,fills:[],filledQty:0,status:'SUBMITTED',submittedAt:e.time,executeAfter:e.time+(b.cycle?.config.executionDelayMs||meta.config.executionDelayMs),signalId:signal?.id||null,triggerSignalId:signal?.id||(['opposite_profit','opposite_max_adds','reverse_after_partial'].includes(meta.reason)?e.signal?.id:null)||null,cycleId:b.cycle?.cycleId||null,referencePrice:e.price,meta};
  if(kind==='partial'&&!b.cycle.partialTpStarted){b.cycle.partialTpStarted=true;b.cycle.partialTargetQty=qty;b.cycle.partialFilledQty=0;}
+ if(kind==='partial'&&b.cycle.audit&&!b.cycle.audit.partialOrderIds.includes(id))b.cycle.audit.partialOrderIds.push(id);
  b.pending=o;b.orders.push(o);b.phase=kind==='open'?'ENTRY_PENDING':kind==='add'?'ADD_PENDING':kind==='partial'?'PARTIAL_TP_PENDING':meta.risk?'RISK_STOP':'EXIT_PENDING';
  if(signal)consume(b,signal);return decision(b,'ORDER_SUBMITTED',kind==='add'?'新同向信号补仓订单已提交':kind==='open'?'首仓模拟订单已提交':'保护退出订单已提交');
 }
 function settle(b,time,reason){const p=b.cycle;if(!p||p.qty>1e-10||b.pending)return;if(p.costDataIncomplete){b.phase='RECONCILING';b.riskLock=true;b.riskLockReason='COST_REVIEW_REQUIRED：仓位已退出，成本证据未完整核对，不结算或重开';return;}const net=round(realized(p));b.equity=round(b.equity+net);b.realizedNetPnl=round(b.realizedNetPnl+net);b.day.realized+=net;
- b.history.push({...clone(p),...p.scope,accountingStatus:p.costDataIncomplete?'COST_REVIEW_REQUIRED':'RECONCILED',accountId:b.accountId,symbol:p.symbol,exitTime:time,holdingDurationMs:time-p.openedAt,closeReason:reason,netPnl:net,grossPnl:p.realizedGross,tradingFee:p.entryFees+p.exitFees,roi:p.marginUsed?100*net/p.marginUsed:0,netR:p.riskBudget?net/p.riskBudget:null,equityAfter:b.equity,actualRiskAmount:p.riskBudget,entryPrice:p.averagePrice,exitPrice:p.lastExitPrice,MAE_R:p.maximumAdverseExcursion/p.riskBudget,MFE_R:p.maximumFavorableExcursion/p.riskBudget});
+ Audit.finalize(p);b.history.push({...clone(p),...p.scope,accountingStatus:p.costDataIncomplete?'COST_REVIEW_REQUIRED':'RECONCILED',accountId:b.accountId,symbol:p.symbol,exitTime:time,holdingDurationMs:time-p.openedAt,closeReason:reason,netPnl:net,grossPnl:p.realizedGross,tradingFee:p.entryFees+p.exitFees,roi:p.marginUsed?100*net/p.marginUsed:0,netR:p.riskBudget?net/p.riskBudget:null,equityAfter:b.equity,actualRiskAmount:p.riskBudget,entryPrice:p.averagePrice,exitPrice:p.lastExitPrice,MAE_R:p.maximumAdverseExcursion/p.riskBudget,MFE_R:p.maximumFavorableExcursion/p.riskBudget});
  b.cooldownUntil=time+p.config.cooldownBars*HOUR;b.cycle=null;b.phase='SETTLED';if(b.equity<=0){b.riskLock=true;b.riskLockReason='模拟权益耗尽';}decision(b,'SETTLED','本轮已完整结算，等待冷却与新信号');}
 function guard(b,e,c){
  if(b.riskLock)return['RISK_LOCK',b.riskLockReason||'风险锁定'];
@@ -60,7 +62,7 @@ function stageEntry(b,e,c,layer){const p=b.cycle,side=p?.side||e.signal.side,bas
  if(!permit.allowed)return decision(b,'PORTFOLIO_BLOCK',permit.reason||'组合风险禁止新增仓位');
  return submit(b,p?'add':'open',side,qty,e.signal,e,{layer:layer?.index||0,config:c,scope:C.scope(c,e.account),baseEquity:base,riskBudget:budget,atr:e.signal.atr||null,structureLow:e.signal.structureLow??null,structureHigh:e.signal.structureHigh??null,symbol:e.account.symbol,step:rules.qtyStep,priceTick:rules.priceTick||1e-8});
 }
-function advance(input,event,config){const b=clone(input),e=event,c=b.cycle?.config||C.normalize(config);b.lastEvaluatedAt=e.time;beginDay(b,e.time);
+function advance(input,event,config){const b=clone(input),e=event,c=b.cycle?.config||b.pending?.meta?.config||C.normalize(config);b.lastEvaluatedAt=e.time;beginDay(b,e.time);
  if(!(e.price>0&&Number.isFinite(e.time)))return decision(b,'QUOTE_INVALID','无法获取合法报价；不伪造成交');
  if(e.unknownOrder){b.riskLock=true;b.riskLockReason='UNKNOWN_ORDER：订单无法核验';b.phase='RECONCILING';}
  funding(b,e.funding,e.time);mark(b,e);b.lastQuote={price:e.price,time:e.time,quoteTime:e.quoteTime??e.time};
@@ -71,11 +73,11 @@ function advance(input,event,config){const b=clone(input),e=event,c=b.cycle?.con
   if(dailyNet<=-b.day.equity*c.maxDailyLossPct)b.day.locked=true;
   if(risk){
    // Unknown/partially filled requests must reconcile, never pretend an exit was filled.
-   if(b.pending&&b.pending.status!=='UNKNOWN'&&['open','add','partial'].includes(b.pending.kind)){b.pending.status='CANCELLED';b.pending=null;}
+   if(b.pending&&b.pending.status!=='UNKNOWN'&&['open','add','partial'].includes(b.pending.kind)){b.pending.status='CANCELLED';b.pending.terminalAt=e.time;b.pending=null;}
    if(!b.pending&&p.qty>0)return submit(b,'exit',p.side,p.qty,null,e,{risk:true,reason:b.riskLock?'risk_lock':b.day.locked?'daily_loss':'hard_stop'});
   }
  }
- if(e.manualClose&&b.pending&&['open','add','partial'].includes(b.pending.kind)&&b.pending.status!=='UNKNOWN'){b.pending.status='CANCELLED';b.pending=null;}
+ if(e.manualClose&&b.pending&&['open','add','partial'].includes(b.pending.kind)&&b.pending.status!=='UNKNOWN'){b.pending.status='CANCELLED';b.pending.terminalAt=e.time;b.pending=null;}
  if(b.pending)return decision(b,'ORDER_PENDING','订单待处理或核对，禁止重复提交');
  if(p?.qty===0){settle(b,e.time,p.lastExitReason);return b;}
  if(p){
@@ -111,12 +113,12 @@ function execute(input,event,result={}){const b=clone(input),o=b.pending;if(!o)r
  if(o.status==='UNKNOWN')return decision(b,'RECONCILING','未知订单须审计核验，不自动清空');
  const c=b.cycle?.config||o.meta.config,entry=['open','add'].includes(o.kind);
  if(result.status==='REJECTED'||entry&&(!event.marketOK||!event.running||b.riskLock||event.time-o.submittedAt>c.signalMaxAgeMs)){
-  o.status='REJECTED';o.reason=result.reason||'执行时行情、时效或运行许可已变化';b.pending=null;return decision(b,'ORDER_REJECTED',o.reason);
+  o.status='REJECTED';o.terminalAt=event.time;o.reason=result.reason||'执行时行情、时效或运行许可已变化';b.pending=null;return decision(b,'ORDER_REJECTED',o.reason);
  }
  if(event.quoteId&&(o.consumedQuoteIds||[]).includes(event.quoteId))return decision(b,'QUOTE_EVIDENCE_USED','同一报价证据已使用，等待新的模拟成交证据');
  if(!(event.price>0))return decision(b,'QUOTE_INVALID','没有有效报价，不模拟成交');
  const actualSlippage=result.slippageBps??c.slippageBps;
- if(entry&&actualSlippage>c.maxSlippageBps){o.status='REJECTED';b.pending=null;return decision(b,'SLIPPAGE_BLOCK','执行滑点超过上限');}
+ if(entry&&actualSlippage>c.maxSlippageBps){o.status='REJECTED';o.terminalAt=event.time;b.pending=null;return decision(b,'SLIPPAGE_BLOCK','执行滑点超过上限');}
  const executePrice=result.price||event.price;
  const allocation=o.meta.baseEquity*C.layers(c)[o.meta.layer]*c.leverage;
  const cap=entry?Math.min(o.qty-o.filledQty,allocation/(executePrice*(1+sign(o.side)*actualSlippage/10000))):o.qty-o.filledQty;
@@ -128,19 +130,19 @@ function execute(input,event,result={}){const b=clone(input),o=b.pending;if(!o)r
  if(entry){
   const prior=p.qty;p.averagePrice=(p.averagePrice*prior+price*qty)/(prior+qty);p.qty+=qty;p.entryFees+=fee;p.marginUsed+=price*qty/c.leverage;p.lastEntryPrice=price;
   const layer=p.layers[o.meta.layer];Object.assign(layer,{filledQty:layer.filledQty+qty,price,signalId:o.signalId,orderId:o.id,status:qty<o.qty?'PARTIALLY_FILLED_FINAL':'FILLED',executedAt:event.time});
-  p.entries.push({layer:o.meta.layer,time:event.time,qty,price,notional:price*qty,margin:price*qty/c.leverage,fee,signalId:o.signalId,orderId:o.id,netPnlBeforeAdd:netAt(input.cycle,event.price),slippageBps:actualSlippage});refreshStop(p);b.phase='POSITION_OPEN';
+  p.entries.push({layer:o.meta.layer,time:event.time,qty,price,notional:price*qty,margin:price*qty/c.leverage,fee,signalId:o.signalId,orderId:o.id,netPnlBeforeAdd:netAt(input.cycle,event.price),slippageBps:actualSlippage});refreshStop(p);Audit.entry(p,event.price,event.time,netAt(p,event.price),Math.max(0,-netAt({...p,config:{...c,slippageBps:c.maxSlippageBps}},p.stopPrice)));b.phase='POSITION_OPEN';
  }else{
   const close=Math.min(qty,p.qty);p.realizedGross+=(price-p.averagePrice)*close*sign(p.side);p.exitFees+=fee;p.qty=round(p.qty-close);p.lastExitPrice=price;p.lastExitReason=o.meta.reason;
   p.exits.push({time:event.time,qty:close,price,fee,reason:o.meta.reason,orderId:o.id,slippageBps:actualSlippage});
   if(o.kind==='partial'){p.partialTpStarted=true;p.partialFilledQty=(p.partialFilledQty||0)+close;b.phase='PARTIAL_TP_PENDING';}
  }
  if(event.quoteId){o.consumedQuoteIds||=[];o.consumedQuoteIds.push(event.quoteId);}
- o.filledQty+=qty;o.lastFillTime=event.time;
+ o.filledQty+=qty;o.lastFillTime=event.time;o.fills||=[];o.fills.push({id:o.id+':fill:'+o.fills.length,time:event.time,qty,price,fee,cumulativeQty:o.filledQty,quoteId:event.quoteId||null});
  // Entries use one bounded fill and cancel the unfilled remainder. Polling never creates more entry evidence.
  const terminal=entry||o.filledQty>=o.qty-1e-10||p.qty<=1e-10;
  if(o.kind==='partial'&&terminal){p.partialTpDone=true;b.phase='WAIT_REVERSE_EXIT';}
  o.status=o.filledQty>=o.qty-1e-10?'FILLED':terminal?'PARTIALLY_FILLED_CANCELLED':'PARTIALLY_FILLED';
- if(terminal)b.pending=null;
+ if(terminal){o.terminalAt=event.time;b.pending=null;}
  mark(b,event);if(p.qty<=1e-10){b.pending=null;settle(b,event.time,p.lastExitReason);}else refreshStop(p);
  return decision(b,'ORDER_FILLED',entry?'模拟成交已记录；按真实模拟数量管理风险':'模拟退出成交已记录');
 }

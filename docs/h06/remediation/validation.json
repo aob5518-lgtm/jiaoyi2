@@ -1,0 +1,24 @@
+{
+  "baseline": "9c6d356a59fe61e6e76f06de491ca5b2a740ec14",
+  "experiments": 48,
+  "completedCycleEvidence": 7276,
+  "baselineParityGroups": 12,
+  "engineHashesVerified": true,
+  "layerAttributionVerified": true,
+  "compressedEvidenceVerified": true,
+  "defaultConfigAndSignalsUnchanged": true,
+  "tests": {
+    "pass": 436,
+    "fail": 0,
+    "skipped": 0
+  },
+  "chrome": {
+    "pass": 30,
+    "fail": 0,
+    "browserExceptions": 0
+  },
+  "nativeAcceptance": "BLOCKED_NATIVE_PUBLIC_DATA",
+  "nativeRequests": 16,
+  "productionTouched": false,
+  "liveStarted": false
+}

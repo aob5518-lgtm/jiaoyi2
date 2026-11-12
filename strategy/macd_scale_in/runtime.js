@@ -12,7 +12,7 @@ function createRuntime(d){
   try{
    C.assertAccount(a);if(failure)throw Error(failure);let b=get(a);if(!st.running&&!b.cycle&&!b.pending)return;
    const beforeOrders=new Map(b.orders.slice(-50).map(o=>[o.id,JSON.stringify(o)]));
-   const c=b.cycle?.config||C.normalize(a.h06Config),from=b.cycle?.openedAt||Date.now()-24*S.HOUR;
+   const c=b.cycle?.config||b.pending?.meta?.config||C.normalize(a.h06Config),from=b.cycle?.openedAt||Date.now()-24*S.HOUR;
    let data;try{data=await provider.load(a,c,from);}catch(e){const failed=structuredClone(b);failed.lastError=e.message;failed.marketFresh=false;failed.decision={code:'MARKET_UNAVAILABLE',reason:'原生行情读取失败，禁止新增风险：'+e.message,at:Date.now()};commit(a,failed);throw e;}
    const now=d.now?d.now():Date.now(),problem=Provider.validate(data,a,c,now),analysis=S.analyze(data.candles,c,now,a);
    if(analysis.signal){const structure=data.candles.filter(v=>v.time+S.HOUR<=now).slice(-c.atrPeriod);analysis.signal={...analysis.signal,structureLow:Math.min(...structure.map(v=>v.low)),structureHigh:Math.max(...structure.map(v=>v.high))};}
@@ -23,8 +23,9 @@ function createRuntime(d){
    if(!problem&&b.cycle?.costDataIncomplete){b=structuredClone(b);b.cycle.costDataIncomplete=false;}
    const event={time:now,price,quoteTime:data.quote.timestamp,quoteId:[data.quote.symbol,data.quote.timestamp,data.quote.bid,data.quote.ask].join(':'),signal:analysis.signal,running:!!st.running,marketOK,marketReason:problem?.[1]||analysis.reason,manualClose,account:a,rules:data.rules,funding:validFunding,fundingComplete:data.fundingComplete,externalRiskLock:!!st.riskLock,unknownOrder:!!st.pendingOrder||!!st.placingOrder,higherDirection,permit:(risk,side)=>d.permit?d.permit(a,risk,side):{allowed:false,reason:'组合风险未接入'}};
    // Persist submission first. A crash before fill leaves an auditable pending order, never a duplicate.
+   const hadPending=!!b.pending;
    if(b.pending){
-    b=B.advance(b,{...event,signal:null,manualClose},a.h06Config);commit(a,b);
+    b=B.advance(b,{...event,signal:null,manualClose},c);commit(a,b);
     if(b.pending){
     const p=b.pending,entry=['open','add'].includes(p.kind),side=p.side;
     const liquidity=entry?(side==='long'?data.quote.askQty:data.quote.bidQty):p.qty;
@@ -35,15 +36,18 @@ function createRuntime(d){
     b=B.execute(b,event,{fillFraction:participation,price:entry?(side==='long'?data.quote.ask:data.quote.bid):(side==='long'?data.quote.bid:data.quote.ask)});commit(a,b);
     }
    }
-   b=B.advance(b,event,a.h06Config);b.lastAnalysis=analysis;b.lastError=problem?.[1]||'';b.marketFresh=marketOK;b.updatedAt=now;b.lastFundingCoverage={from,to:now,complete:data.fundingComplete};
+   // After a pending order ends flat, evaluate the next configuration on a fresh tick.
+   // Never feed indicators calculated from the old snapshot into a new configuration.
+   if(!hadPending||b.cycle||b.pending)b=B.advance(b,event,c);
+   b.lastAnalysis=analysis;b.lastError=problem?.[1]||'';b.marketFresh=marketOK;b.updatedAt=now;b.lastFundingCoverage={from,to:now,complete:data.fundingComplete};
    const record={...C.scope(c,a),evaluatedAt:now,time:analysis.closedTime||now,signalId:analysis.signal?.id||null,direction:analysis.signal?.side||'none',signalPermission:analysis.signal?'allowed':'blocked',executionDecision:b.decision?.code,reason:b.decision?.reason,indicators:analysis.indicators};
    D.update(b,record,b.orders.slice(-50).filter(o=>beforeOrders.get(o.id)!==JSON.stringify(o)));
    commit(a,b);st.currentPrice=price;st.activeError='';st.updatedAt=new Date(now).toLocaleString('zh-CN');
   }catch(e){st.activeError=st.lastError=e.message;st.lastErrorAt=Date.now();throw e;}finally{publish(a,st);locks.delete(a.id);}
  }
- function report(a){const b=get(a),c=C.normalize(a.h06Config),p=b.cycle,now=d.now?d.now():Date.now(),fresh=b.marketFresh&&now-Number(b.lastQuote?.quoteTime||b.updatedAt)<=(p?.config||c).quoteMaxAgeMs,price=b.lastQuote?.price||null,lastTotal=p?.costDataIncomplete?null:p&&price?B.netAt(p,price):p?null:0,total=p&&!fresh?null:lastTotal;
-  const scope=C.scope(c,a),currentSignals=b.signals.filter(v=>v.configHash===scope.configHash&&v.strategyRevision===scope.strategyRevision);
-  return{...scope,lastKnown:{price,cycleNetPnl:lastTotal,updatedAt:b.updatedAt||null},signalStats24h:D.stats(currentSignals,now-24*S.HOUR,now),signalStats72h:D.stats(currentSignals,now-72*S.HOUR,now),configMetadata:{limits:C.limits,choices:C.choices,bools:C.bools},signalUsed:b.lastAnalysis?.signal?b.consumed.includes(b.lastAnalysis.signal.id):false,config:c,activeConfig:p?.config||null,allowLive:false,realOrderPermission:false,mode:a.h06Mode,book:{initialEquity:b.initialEquity,equity:b.equity,realizedNetPnl:b.realizedNetPnl,riskLock:b.riskLock||!!failure,riskLockReason:failure||b.riskLockReason},phase:b.phase,cycle:p,pending:b.pending,decision:b.decision||{code:'WAIT_SIGNAL',reason:'启动后等待新的已收盘 MACD 信号'},market:{fresh:!!fresh,price:fresh?price:null,updatedAt:b.updatedAt||null,error:b.lastError||failure||null},analysis:b.lastAnalysis||null,totalNetPnl:total,roi:p&&total!==null?100*total/p.marginUsed:null,equity:total===null?null:b.equity+total,remainingRisk:p&&total!==null?Math.max(0,p.riskBudget+total):null,history:b.history.slice(-50),signals:b.signals.slice(-50),orders:b.orders.slice(-50),day:b.day};
+ function report(a){const b=get(a),c=C.normalize(a.h06Config),p=b.cycle,now=d.now?d.now():Date.now(),fresh=b.marketFresh&&Number.isFinite(b.lastQuote?.quoteTime)&&now>=b.lastQuote.quoteTime-2000&&now-b.lastQuote.quoteTime<=(p?.config||b.pending?.meta?.config||c).quoteMaxAgeMs,price=b.lastQuote?.price||null,lastTotal=p?.costDataIncomplete?null:p&&price?B.netAt(p,price):p?null:0,total=p&&!fresh?null:lastTotal;
+  const scope=C.scope(c,a),currentSignals=b.signals.filter(v=>v.configHash===scope.configHash&&v.strategyRevision===scope.strategyRevision),currentOrders=b.orders.filter(o=>o.meta?.scope?.configHash===scope.configHash),activeConfig=p?.config||b.pending?.meta?.config||null;
+  return{...scope,lastKnown:{price,cycleNetPnl:lastTotal,updatedAt:b.updatedAt||null},signalStats24h:D.stats(currentSignals,now-24*S.HOUR,now,{orders:currentOrders,currentOrders:b.orders}),signalStats72h:D.stats(currentSignals,now-72*S.HOUR,now,{orders:currentOrders,currentOrders:b.orders}),configMetadata:{limits:C.limits,choices:C.choices,bools:C.bools},signalUsed:b.lastAnalysis?.signal?b.consumed.includes(b.lastAnalysis.signal.id):false,config:c,activeConfig,configuration:{activeSource:p?'cycle':b.pending?'pending_order':'next_cycle',different:!!activeConfig&&JSON.stringify(activeConfig)!==JSON.stringify(c),next:c,current:activeConfig},allowLive:false,realOrderPermission:false,mode:a.h06Mode,book:{initialEquity:b.initialEquity,equity:b.equity,realizedNetPnl:b.realizedNetPnl,riskLock:b.riskLock||!!failure,riskLockReason:failure||b.riskLockReason},phase:b.phase,cycle:p,pending:b.pending,decision:b.decision||{code:'WAIT_SIGNAL',reason:'启动后等待新的已收盘 MACD 信号'},market:{fresh:!!fresh,price:fresh?price:null,updatedAt:b.updatedAt||null,error:b.lastError||failure||null},analysis:b.lastAnalysis||null,totalNetPnl:total,roi:p&&total!==null?100*total/p.marginUsed:null,equity:total===null?null:b.equity+total,remainingRisk:p&&total!==null?Math.max(0,p.riskBudget+total):null,history:b.history.slice(-50),signals:b.signals.slice(-50),orders:b.orders.slice(-50),day:b.day};
  }
  function publish(a,st){try{const r=report(a),p=r.cycle;st.h06={phase:r.phase,decision:r.decision,mode:r.mode,market:r.market,allowLive:false};st.balance=r.equity;st.available=r.equity===null?null:r.equity-(p?.marginUsed||0);st.positionQty=p?.qty||0;st.entryPrice=p?.averagePrice||0;st.pnl=r.totalNetPnl;st.roi=r.roi;st.lastAction=r.decision.reason;}catch(e){st.activeError=e.message;}}
  return{get,commit,save,tick,report,publish,busy:a=>!!get(a).cycle||!!get(a).pending,exposure:a=>B.exposure(get(a)),failure:()=>failure};
