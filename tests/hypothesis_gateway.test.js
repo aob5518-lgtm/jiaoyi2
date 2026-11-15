@@ -49,12 +49,13 @@ test("H01 main gateway uses server credential and the same isolated book", async
 test("Research lab removes retired strategy menus and distinguishes planning from execution", () => {
   const root = path.resolve(__dirname, "../public");
   const main = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(main, /经典交易工作台/);
+  assert.match(main, /JUST AGENT · 交易工作台/);
   assert.doesNotMatch(main, /Trend V3|Short-Term V1|4H Compound V1|\/terminal\/app.js/);
   assert.equal((main.match(/data-view=/g)||[]).length,0);
-  assert.equal((main.match(/data-core-page=/g)||[]).length,3);
-  assert.match(main,/data-page="parameters"/);
-  assert.match(main,/data-core-page="parameters"[\s\S]*id="deskSettings"/);
+  assert.equal((main.match(/data-core-page=/g)||[]).length,0);
+  assert.match(main,/<dialog id="page-parameters"[\s\S]*id="deskSettings"/);
+  assert.match(main,/<dialog id="page-accounts"/);
+  assert.match(main,/id="deskTurtlePane"/);
   assert.doesNotMatch(main,/策略分析|安全迁移|核对清单|href="\/safety-console|id="connectionDialog"/);
   assert.match(main, /id="deskSettings"/);
   assert.match(main, /id="deskFills"/);

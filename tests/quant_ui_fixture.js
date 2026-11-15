@@ -1,22 +1,67 @@
 "use strict";
 const http = require("http"), fs = require("fs"), path = require("path");
+const turtleConfig=require("../strategy/turtle_4h/config");
 const root = path.resolve(__dirname, "../public");
-const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js"]);
+const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css"]);
 function start(port = 0) {
  let count = 64, scenario = "";
- const saved = new Map(), submissions = [];
+ const saved = new Map(), submissions = [], controls=[], turtleAccounts=new Map();
  let accounts = [];
  const makeAccounts = () => Array.from({length: count}, (_, i) => ({
   id: "sample-" + i, name: i === 0 ? "经典模拟 · ETH" : i === 1 ? "超长账户名称测试".repeat(9) : "模拟账户 " + (i + 1),
   symbol: i % 2 ? "BTC" : "ETH", quoteAsset: "USDT", platform: "binance", paper: i < 50, eligible: i < 50 && !(i===0 && scenario==="readonly"),
-  ready: i === 0, running: i === 0 && !scenario, hasPosition: i === 0 && !scenario, strategy: i === 0 ? "经典补仓" : "未绑定"
+  ready: i === 0 && scenario!=="readonly", running: i === 0 && !scenario, hasPosition: i === 0 && !scenario, strategy: i === 0 && scenario==="readonly"?"归档账户":i === 0 ? "经典补仓" : "未绑定",
+  strategyType:i===0&&scenario==="readonly"?"trend_only_v3":"classic"
  }));
  accounts = makeAccounts();
  let selected = accounts[0].id;
  const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   const json = (code, data) => {res.writeHead(code, {"Content-Type": "application/json"});res.end(JSON.stringify(data));};
-  if (url.pathname === "/") {scenario = url.searchParams.get("scenario") || "";server.scenario = scenario;saved.clear();submissions.length=0;if ([64,100,150].includes(Number(url.searchParams.get("count")))) count=Number(url.searchParams.get("count"));accounts=makeAccounts();selected=accounts[0].id;}
+  if (url.pathname === "/") {scenario = url.searchParams.get("scenario") || "";server.scenario = scenario;saved.clear();submissions.length=0;controls.length=0;turtleAccounts.clear();if ([64,100,150].includes(Number(url.searchParams.get("count")))) count=Number(url.searchParams.get("count"));accounts=makeAccounts();selected=accounts[0].id;}
+  const requestBody=async()=>{
+   let body="";
+   for await(const part of req)body+=part;
+   return JSON.parse(body);
+  };
+  const turtleSnapshot=a=>{
+   const config=turtleAccounts.get(a.id);
+   return {id:a.id,name:a.name,symbol:a.symbol,mode:"Paper",config,configHash:turtleConfig.hash(config),history:[],decision:{code:"WAIT_BREAKOUT",reason:"等待收盘"},market:{state:"fresh",quoteTime:Date.now()},fresh:true,balance:10000,equity:10000,floating:0,realized:0,price:2500,running:a.running,nextEntry:{upper:2520,lower:2400,direction:config.direction,closesAt:Date.now()+3600000}};
+  };
+  if(url.pathname.startsWith("/api/v4/turtle/")){
+   const route=url.pathname.split("/").at(-1);
+   if(req.method==="GET"&&route==="accounts")return json(200,{ok:true,accounts,defaults:turtleConfig.defaults});
+   if(req.method==="GET"&&route==="status"){
+    const a=accounts.find(x=>x.id===url.searchParams.get("id"));
+    return json(200,{ok:true,snapshot:turtleSnapshot(a)});
+   }
+   return requestBody().then(input=>{
+    if(route==="accounts"){
+     const a={...input,id:"new-turtle",strategyType:"turtle_4h_v1",strategy:"海龟趋势 4H",platform:"binance",quoteAsset:"USDT",paper:true,running:false};
+     turtleAccounts.set(a.id,turtleConfig.normalize(input.config));accounts.push(a);
+     return json(200,{ok:true,id:a.id,message:"独立模拟账户已创建"});
+    }
+    const a=accounts.find(x=>x.id===input.id);
+    if(route==="preflight"){
+     const snapshot=turtleSnapshot(a);
+     return json(200,{ok:true,snapshot,preflight:{allowed:true,configHash:snapshot.configHash,blockers:[],checkedAt:Date.now()}});
+    }
+    if(route==="config"){turtleAccounts.set(a.id,input.config);return json(200,{ok:true,message:"参数已保存"});}
+    if(route==="control"){
+     controls.push(input);
+     if(input.action==="start"&&input.confirm!==true)return json(400,{ok:false,error:"必须确认启动"});
+     a.running=input.action==="start";return json(200,{ok:true,message:a.running?"已启动":"已暂停"});
+    }
+    return json(404,{ok:false});
+   }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
+  }
+  if (req.method==="POST"&&url.pathname==="/api/v4/connections/create"){
+   return requestBody().then(input=>{
+    const a={...input,id:"new-classic",quoteAsset:"USDT",strategyType:"connection_only",strategy:"未绑定",paper:true,eligible:true,ready:false,running:false};
+    accounts.push(a);
+    return json(200,{ok:true,account:a,message:"模拟账户已创建"});
+   }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
+  }
   if (req.method === "POST" && url.pathname === "/api/account/select") {
    let body = "";req.on("data", chunk => body += chunk);req.on("end", () => {
     const id = JSON.parse(body).id;if (accounts.some(a => a.id === id)) selected = id;json(200,{ok:true});
@@ -31,8 +76,20 @@ function start(port = 0) {
     saved.set(account.id,input.settings);account.ready=true;json(200,{ok:true});
    });return;
   }
+  if(req.method==="POST"&&url.pathname==="/api/v4/desk/control"){
+   return requestBody().then(input=>{
+    const a=accounts.find(x=>x.id===input.id);
+    if(!a?.eligible||!a.ready)return json(409,{ok:false,error:"当前账户不能启动"});
+    controls.push(input);a.running=input.action==="start";return json(200,{ok:true});
+   }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
+  }
   if (req.method !== "GET") return json(405, {ok: false, error: "合成验收，不执行交易"});
   if (url.pathname === "/api/v4/connections") return json(200, {ok: true, currentAccountId: selected, accounts: accounts.map(a => ({...a, tradeMode: a.paper ? "simulation" : "live", simulationEnabled: a.paper, hasApiKey: a.id === "sample-0", hasApiSecret: a.id === "sample-0"}))});
+  if(url.pathname==="/api/v4/desk/preflight"){
+   const a=accounts.find(x=>x.id===url.searchParams.get("id"));
+   const allowed=!!(a?.eligible&&a.ready&&scenario!=="blocked");
+   return json(200,{ok:true,allowed,settings:saved.get(a?.id),blockers:allowed?[]:["模拟行情报价暂不可用"]});
+  }
   if (url.pathname === "/api/v4/desk") {
    if (server.scenario === "offline") return json(503,{ok:false,error:"合成行情断流"});
    const a = accounts.find(x => x.id === (url.searchParams.get("id") || selected));
@@ -51,6 +108,7 @@ function start(port = 0) {
  });
  server.listen(port,"127.0.0.1");
  server.submissions=submissions;
+ server.controls=controls;
  return server;
 }
 module.exports = {start};

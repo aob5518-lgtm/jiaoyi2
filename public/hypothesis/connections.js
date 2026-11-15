@@ -2,6 +2,7 @@
  "use strict";
  const $ = id => document.getElementById(id);
  const form = $("connectionForm");
+ const desk=!!$("deskStarter");
  const keys = ["address", "privateKey", "apiKey", "apiSecret", "starkPrivateKey", "publicKey", "vault"];
  const state = {accounts: [], current: "", editing: "", busy: false, loaded: false, dirty: false};
  const field = name => form.elements.namedItem(name);
@@ -38,6 +39,10 @@
   $("selectConnection").disabled = !account || state.busy;
   if ($("connectionToSettings")) $("connectionToSettings").disabled = !account || state.busy;
   $("connectionFormTitle").textContent = account ? account.name + " · 连接配置" : "新增交易所账户";
+  if(desk){
+   form.querySelector('[type="submit"]').textContent=account?"保存账户配置":"创建并配置策略";
+   form.querySelector(".connection-credentials").open=false;
+  }
   $("connectionMode").textContent = account
    ? (account.simulationEnabled && account.tradeMode === "simulation" ? "Paper" : "Live") + " · " + (account.running ? "监控运行中，更新连接前需停止并核对风险" : "已停止") + (account.connectionOnly ? " · 未绑定交易策略" : "")
    : "新增账户默认 Paper、停止状态，未绑定交易策略。";
@@ -70,7 +75,7 @@
    box.append(button);
   }
  }
- async function load() {
+ async function load(preferredId) {
   const data = await request("/api/v4/connections");
   state.accounts = data.accounts;
   state.current = data.currentAccountId;
@@ -82,9 +87,10 @@
    option.value = account.id;
    select.append(option);
   }
-  select.value = state.current;
+  const currentView=desk?(preferredId||new URLSearchParams(location.search).get("account")||state.current):state.current;
+  select.value = state.accounts.some(a=>a.id===currentView)?currentView:state.current;
   renderList();
-  if (!state.dirty) selectEditor(state.editing || state.current || state.accounts[0]?.id || "", true);
+  if (!state.dirty && (state.editing || !$("page-accounts")?.open)) selectEditor(state.editing || currentView || state.accounts[0]?.id || "", true);
   message("已加载 " + state.accounts.length + " 个账户。密钥仅显示配置状态，留空保存会保留原值。");
  }
  async function chooseCurrent(id) {
@@ -122,6 +128,8 @@
   event.preventDefault();
   if (state.busy || !form.reportValidity()) return;
   const button = form.querySelector('[type="submit"]');
+  const creating=!state.editing;
+  let createdId;
   state.busy = true;button.disabled = true;
   try {
    const input = {name: field("name").value.trim()};
@@ -130,12 +138,14 @@
    else Object.assign(input, {platform: field("platform").value, symbol: field("symbol").value, initialEquity: Number(field("initialEquity").value)});
    const data = await request("/api/v4/connections/" + (state.editing ? "update" : "create"), input);
    state.editing = data.account.id;
+   if(creating)createdId=data.account.id;
    state.dirty = false;
    for (const key of keys.filter(key => key !== "address")) field(key).value = "";
    await load();
    message(data.message);
   } catch (error) {message(error.message);}
   finally {state.busy = false;button.disabled = false;$("checkConnection").disabled = !state.editing;$("selectConnection").disabled = !state.editing;if ($("connectionToSettings")) $("connectionToSettings").disabled = !state.editing;}
+  if(desk&&createdId&&await chooseCurrent(createdId))document.dispatchEvent(new CustomEvent("just-go-page",{detail:"parameters"}));
  };
  $("checkConnection").onclick = async () => {
   if (!state.editing || state.busy) return;
@@ -147,7 +157,12 @@
   } catch (error) {message(error.message);}
   finally {state.busy = false;$("checkConnection").disabled = false;}
  };
- document.addEventListener("workspacepage", event => {if (event.detail === "connections" && !state.loaded) load().catch(error => message(error.message));});
+ document.addEventListener("workspacepage", event => {
+  if(event.detail!=="connections")return;
+  if(!state.loaded)load().catch(error=>message(error.message));
+  else if(desk&&!state.dirty)selectEditor($("connectionSwitcher").value||state.current,true);
+ });
+ document.addEventListener("just-reload-accounts",event=>load(event.detail).catch(error=>message(error.message)));
  document.addEventListener("just-account-selecting", event => {
   if (state.busy || state.dirty && !confirm("有未保存的账户配置，确认放弃修改并切换账户？")) event.preventDefault();
  });

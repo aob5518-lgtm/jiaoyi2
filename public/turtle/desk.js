@@ -1,8 +1,10 @@
 (function(){
  "use strict";
- const $=id=>document.getElementById(id),node=(tag,text,cls)=>{const e=document.createElement(tag);e.textContent=text??"";if(cls)e.className=cls;return e;};
+ function mount(root, {accountId, embedded=false, onCreated, onBusy=()=>{}}={}){
+ const $=id=>root.getElementById(id),node=(tag,text,cls)=>{const e=document.createElement(tag);e.textContent=text??"";if(cls)e.className=cls;return e;};
  const keys=["entryBars","exitBars","atrPeriod","stopAtr","riskPerTrade","leverage","direction"],form=$("config-form");
- const state={id:new URLSearchParams(location.search).get("account")||"",accounts:[],defaults:null,data:null,busy:false,dirty:false,editBase:null,hash:null,confirmHash:null,confirmAllowed:false,online:false,loaded:false,ticket:0,filter:"all"};
+ const state={id:accountId??new URLSearchParams(location.search).get("account")??"",accounts:[],defaults:null,data:null,busy:false,dirty:false,editBase:null,hash:null,confirmHash:null,confirmAllowed:false,online:false,loaded:false,ticket:0,filter:"all"};
+ let disposed=false;
  const fmt=(x,n=2)=>x==null||!Number.isFinite(Number(x))?"—":Number(x).toLocaleString("zh-CN",{maximumFractionDigits:n}),time=x=>x?new Date(x).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}):"—",percent=x=>fmt(x*100,6)+"%";
  const direction={both:"双向",long:"仅做多",short:"仅做空"};
  const labels={riskPerTrade:"单笔计划风险",leverage:"模拟杠杆",direction:"方向",entryBars:"入场通道",exitBars:"退出通道",atrPeriod:"ATR 周期",stopAtr:"初始止损倍数"};
@@ -25,6 +27,8 @@
   $("preview").textContent=valid?"按当前已结算权益，草稿的单笔计划风险为 "+amount(state.data?.balance*c.riskPerTrade)+"（"+percent(c.riskPerTrade)+"）。":"请填写有效参数。退出通道须短于入场通道。";
   list("config-changes",valid?changes:[]);
   $("save").disabled=state.busy||!state.online||!valid||!state.dirty;
+  $("save-start").hidden=!!(state.data?.running||state.data?.pending||state.data?.riskLock);
+  $("save-start").disabled=$("save").disabled;
  }
  function details(target,entries){const box=$(target);box.replaceChildren();for(const [label,value] of entries){const section=node("section");section.append(node("span",label),node("strong",value));box.append(section);}}
  function rail(){
@@ -56,13 +60,15 @@
   state.ticket++;state.id=a.id;state.data=null;state.dirty=false;state.hash=null;closeRail();rememberAccount();render();await load();
  }
  function render(){
-  for(const e of document.querySelectorAll("#config-form input,#config-form select,#config-form button,#create-form input,#create-form select,#create-form button"))e.disabled=state.busy;
+  for(const e of root.querySelectorAll("#config-form input,#config-form select,#config-form button,#create-form input,#create-form select,#create-form button"))e.disabled=state.busy;
   if($("parameters").open)preview();
   $("recheck-start").disabled=state.busy;
   $("confirm-start").disabled=state.busy||!state.online||!state.confirmAllowed||state.confirmHash!==state.data?.configHash;
   if($("confirm").open&&state.confirmHash!==state.data?.configHash)$("start-error").textContent="已保存参数发生变化，请取消并重新检查后确认。";
-  const s=state.data;$("empty").hidden=!state.loaded||!!state.id;$("desk").hidden=!s;rail();if(!s)return;
-  $("title").textContent=s.name;$("instrument").textContent="Binance 永续 · "+s.symbol+" / USDT";
+  const s=state.data;$("empty").hidden=!state.loaded||!!state.id;$("desk").hidden=!s;
+  if(!embedded)rail();
+  if(!s)return;
+  if(!embedded){$("title").textContent=s.name;$("instrument").textContent="Binance 永续 · "+s.symbol+" / USDT";}
   $("run").textContent=s.running?"RUNNING · 运行中":"PAUSED · 已暂停";$("run").className="tag"+(s.running?" healthy":"");
   const marketText={fresh:"原生行情新鲜",unchecked:"等待原生行情",stale:"原生报价过期",unavailable:"原生行情不可用"};
   $("market").textContent=state.online?marketText[s.market?.state]||"等待原生行情":"页面连接中断";
@@ -89,26 +95,43 @@
   const trades=$("trades");trades.replaceChildren();for(const t of s.history){const tr=node("tr");const entries=[time(t.time),t.side==="long"?"多 LONG":"空 SHORT",fmt(t.entryPrice,6)+" → "+fmt(t.exitPrice,6),fmt(t.netPnl)+" USDT",reasons[t.reason]||t.reason];entries.forEach((v,i)=>{const td=node("td",v,i===3?(t.netPnl>0?"positive":t.netPnl<0?"negative":""):"");td.dataset.label=["时间","方向","开仓 → 平仓","净收益","退出原因"][i];tr.append(td);});trades.append(tr);}
   if(!s.history.length){const tr=node("tr"),td=node("td","暂无已结算模拟交易","empty-cell");td.colSpan=5;tr.append(td);trades.append(tr);}
   if($("parameters").open){
-   if(state.hash!==s.configHash){$("config-error").textContent="已保存参数发生变化。草稿已保留，请关闭编辑后重新核对。";$("save").disabled=true;}
+   if(state.hash!==s.configHash){$("config-error").textContent="已保存参数发生变化。草稿已保留，请关闭编辑后重新核对。";$("save").disabled=$("save-start").disabled=true;}
   }
  }
  async function load(){
+  if(disposed)return;
   const ticket=++state.ticket;
   try{const a=await api("accounts");if(ticket!==state.ticket)return;state.accounts=a.accounts;state.defaults=a.defaults;
-   if(!state.id||!a.accounts.some(v=>v.id===state.id&&v.strategyType==="turtle_4h_v1"))state.id=a.accounts.find(v=>v.strategyType==="turtle_4h_v1")?.id||"";
+   if(!embedded&&(!state.id||!a.accounts.some(v=>v.id===state.id&&v.strategyType==="turtle_4h_v1")))state.id=a.accounts.find(v=>v.strategyType==="turtle_4h_v1")?.id||"";
    const data=state.id?await api("status?id="+encodeURIComponent(state.id)):null;if(ticket!==state.ticket)return;state.data=data?.snapshot||null;state.online=true;state.loaded=true;render();
   }catch(e){if(ticket!==state.ticket)return;state.online=false;if(state.data)state.data={...state.data,fresh:false,price:null,nextEntry:null,floating:state.data.position?null:0,equity:state.data.position?null:state.data.equity,decision:{code:"MARKET_UNAVAILABLE",reason:e.message}};msg(e.message);render();}
  }
- async function run(fn,errorId){if(state.busy)return;state.ticket++;state.busy=true;render();try{await fn();}catch(e){if(e.snapshot?.id===state.id)state.data=e.snapshot;if(errorId)$(errorId).textContent=e.message;else msg(e.message);}finally{state.busy=false;render();}}
+ async function run(fn,errorId){if(state.busy||disposed)return;state.ticket++;state.busy=true;onBusy(true);render();try{await fn();}catch(e){if(e.snapshot?.id===state.id)state.data=e.snapshot;if(errorId)$(errorId).textContent=e.message;else msg(e.message);}finally{state.busy=false;onBusy(false);if(!disposed)render();}}
  function edit(){if(!state.data)return;state.hash=state.data.configHash;state.editBase=state.data.config;setFields(state.data.config);$("config-error").textContent="";$("config-title").textContent=state.data.name;$("config-note").textContent=state.data.activeConfig?"当前仓位或委托使用锁定参数。本次保存从下一轮生效。":"保存后，可单独检查并启动策略。";$("parameters").showModal();}
  function cancelEdit(){if(state.busy||state.dirty&&!confirm("放弃本次尚未保存的参数修改？"))return;state.dirty=false;state.editBase=null;$("parameters").close();render();}
  $("edit").onclick=$("quick-edit").onclick=edit;$("cancel-edit").onclick=cancelEdit;$("parameters").addEventListener("cancel",e=>{e.preventDefault();cancelEdit();});
  form.oninput=()=>render();
- form.onsubmit=e=>{e.preventDefault();if($("save").disabled||!form.reportValidity())return;const c=values();run(async()=>{const r=await api("config",{id:state.id,config:c,expectedHash:state.hash});state.dirty=false;state.editBase=null;$("parameters").close();msg(r.message);await load();},"config-error");};
+ form.onsubmit=async e=>{
+  e.preventDefault();
+  if($("save").disabled||!form.reportValidity())return;
+  const c=values(),andCheck=e.submitter?.id==="save-start";
+  let saved=false;
+  await run(async()=>{
+   const r=await api("config",{id:state.id,config:c,expectedHash:state.hash});
+   state.dirty=false;state.editBase=null;$("parameters").close();
+   msg(r.message);await load();saved=true;
+  },"config-error");
+  if(saved&&andCheck&&!$("start").disabled)checkStart();
+ };
  $("reset").onclick=()=>{setFields(state.defaults);render();};
- for(const b of document.querySelectorAll("[data-create]"))b.onclick=()=>{if(state.busy)return;$("create-error").textContent="";$("create").showModal();};
+ async function openCreate(){
+  if(state.busy||disposed||$("create").open)return;
+  $("create-error").textContent="";
+  $("create").showModal();
+ }
+ for(const b of root.querySelectorAll("[data-create]"))b.onclick=openCreate;
  $("cancel-create").onclick=()=>{if(!state.busy)$("create").close();};
- $("create-form").onsubmit=e=>{e.preventDefault();if(state.busy)return;const f=e.currentTarget;run(async()=>{const r=await api("accounts",{name:f.elements.name.value,symbol:f.elements.symbol.value,initialEquity:Number(f.elements.initialEquity.value),config:state.defaults});state.id=r.id;state.dirty=false;rememberAccount();$("create").close();msg(r.message);await load();},"create-error");};
+ $("create-form").onsubmit=e=>{e.preventDefault();if(state.busy||!e.currentTarget.reportValidity())return;const f=e.currentTarget;run(async()=>{const r=await api("accounts",{name:f.elements.name.value,symbol:f.elements.symbol.value,initialEquity:Number(f.elements.initialEquity.value),config:state.defaults});state.id=r.id;state.dirty=false;if(!embedded)rememberAccount();$("create").close();msg(r.message);await load();onCreated?.(r.id);},"create-error");};
  function checkStart(){
   const open=$("confirm").open;
   state.confirmAllowed=false;
@@ -132,17 +155,14 @@
  for(const id of ["confirm","create"])$(id).addEventListener("cancel",e=>{if(state.busy)e.preventDefault();});
  $("pause").onclick=()=>run(async()=>{const r=await api("control",{id:state.id,action:"pause"});msg(r.message);await load();});
  $("close").onclick=()=>{const s=state.data;if(!s?.position||!confirm("平掉 "+s.name+" 的模拟仓位并暂停新开仓？"))return;run(async()=>{const r=await api("control",{id:s.id,action:"close",confirm:true,positionId:s.position.id});msg(r.message);await load();});};
+ if(!embedded){
  $("refresh").onclick=()=>{if(!state.busy)load();};$("search").oninput=rail;
- for(const button of document.querySelectorAll("[data-filter]"))button.onclick=()=>{
+ for(const button of root.querySelectorAll("[data-filter]"))button.onclick=()=>{
   state.filter=button.dataset.filter;
-  for(const other of document.querySelectorAll("[data-filter]"))other.setAttribute("aria-pressed",String(other===button));
+  for(const other of root.querySelectorAll("[data-filter]"))other.setAttribute("aria-pressed",String(other===button));
   rail();
  };
  const mobile=matchMedia("(max-width:760px)");
- function closeRail(){
-  document.body.classList.remove("open");$("backdrop").hidden=true;
-  $("toggle").setAttribute("aria-expanded",String(!mobile.matches&&!document.body.classList.contains("collapsed")));
- }
  $("toggle").onclick=()=>{
   if(mobile.matches){
    const open=document.body.classList.toggle("open");
@@ -158,5 +178,21 @@
  mobile.addEventListener("change",closeRail);
  closeRail();
  window.addEventListener("beforeunload",e=>{if(state.dirty){e.preventDefault();e.returnValue="";}});
- load();setInterval(()=>{if(!state.busy&&document.visibilityState==="visible")load();},10000);
+ }
+ function closeRail(){
+  if(embedded)return;
+  const mobile=matchMedia("(max-width:760px)");
+  document.body.classList.remove("open");$("backdrop").hidden=true;
+  $("toggle").setAttribute("aria-expanded",String(!mobile.matches&&!document.body.classList.contains("collapsed")));
+ }
+ load();
+ const timer=setInterval(()=>{if(!state.busy&&document.visibilityState==="visible")load();},10000);
+ return {
+  canLeave:()=>!state.busy&&(!state.dirty||confirm("放弃尚未保存的海龟 4H 参数？")),
+  refresh:()=>{if(!state.busy)load();},
+  dispose(){disposed=true;state.ticket++;clearInterval(timer);for(const dialog of root.querySelectorAll("dialog[open]"))dialog.close();}
+ };
+ }
+ window.JustTurtleDesk={mount};
+ if(document.getElementById("config-form")&&document.getElementById("rail"))mount(document);
 })();
