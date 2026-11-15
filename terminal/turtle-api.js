@@ -7,10 +7,12 @@ async function handle(req,res,parsed,d){
  try{
   const route=parsed.pathname,q=parsed.query||Object.fromEntries(parsed.searchParams||[]);
   if(req.method==="GET"){
-   if(route.endsWith("/accounts"))return send(200,{ok:true,defaults:C.defaults,accounts:d.accounts().map(a=>({id:a.id,name:a.name,symbol:a.symbol,quoteAsset:a.quoteAsset,platform:a.platform,strategyType:a.strategyType,paper:a.tradeMode==="simulation"&&a.simulationEnabled===true,running:a.strategyType===C.ID?!!d.engine.get(a)?.running:!!d.state(a.id)?.running})),revision:C.REVISION});
+   if(route==="/api/v4/turtle/accounts")return send(200,{ok:true,defaults:C.defaults,accounts:d.accounts().map(a=>({id:a.id,name:a.name,symbol:a.symbol,quoteAsset:a.quoteAsset,platform:a.platform,strategyType:a.strategyType,paper:a.tradeMode==="simulation"&&a.simulationEnabled===true,running:a.strategyType===C.ID?!!d.engine.get(a)?.running:!!d.state(a.id)?.running})),revision:C.REVISION});
+   if(route!=="/api/v4/turtle/status")return send(404,{ok:false,error:"接口不存在"});
    const a=d.getAccountById(q.id);C.assertAccount(a);return send(200,{ok:true,snapshot:d.engine.view(a,d.state(a.id))});
   }
   if(req.method!=="POST")return send(405,{ok:false,error:"操作不支持"});
+  if(!["/api/v4/turtle/accounts","/api/v4/turtle/config","/api/v4/turtle/control","/api/v4/turtle/preflight"].includes(route))return send(404,{ok:false,error:"接口不存在"});
   if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(403,{ok:false,error:"请在本站操作"});
   const input=await body(req);
   if(route.endsWith("/accounts")){
@@ -21,23 +23,39 @@ async function handle(req,res,parsed,d){
    // The independent empty book may safely precede account registration; failed registration never starts a strategy.
    d.engine.commit(a,B.initial(a));d.save(next);return send(200,{ok:true,id:a.id,message:"独立模拟账户已创建，保持停止；无需交易密钥"});
   }
-  fields(input,["id","config","expectedHash","action","confirm"]);
+  fields(input,["id","config","expectedHash","action","confirm","positionId"]);
   const a=d.getAccountById(input.id);C.assertAccount(a);st=d.state(a.id);
   if(!st||st.tickRunning||st.terminalMutating||d.engine.busy(a.id))throw Error("正在更新账户，请稍后重试");
   lock=d.lock(a.id);if(!lock)throw Error("账户操作繁忙");st.terminalMutating=true;
   if(route.endsWith("/preflight")){
-   if(input.config||input.action)throw Error("检查接口不接受参数修改");
-   await d.engine.refresh(a);st.activeError="";return send(200,{ok:true,preflight:d.engine.preflight(a,st),snapshot:d.engine.view(a,st)});
+   fields(input,["id"]);
+   // The runtime records failed market reads so they appear alongside the other blockers.
+   if(d.engine.get(a)){
+    try {await d.engine.refresh(a);} catch {}
+   }
+   const snapshot=d.engine.view(a,st);
+   return send(200,{ok:true,preflight:snapshot.preflight,snapshot});
   }
   if(route.endsWith("/config")){
    fields(input,["id","config","expectedHash"]);const c=C.normalize(input.config),meta=d.engine.configure(a,c,input.expectedHash),next=d.configuration();
    next.accounts.find(v=>v.id===a.id).turtleConfig=c;d.save(next);return send(200,{ok:true,...meta,message:meta.nextCycleOnly?"已保存为下一轮参数；持仓与待成交委托仍按原快照执行":"参数已保存，未自动启动"});
   }
   if(route.endsWith("/control")){
-   fields(input,["id","action","confirm","expectedHash"]);
-   if(input.action==="close"){if(input.confirm!==true)throw Error("请明确确认平掉模拟仓位");d.engine.control(a,st,"pause");await d.engine.tick(a,st,{manual:true});return send(200,{ok:true,message:"已暂停新增，退出委托等待模拟成交"});}
+   fields(input,["id","action","confirm","expectedHash","positionId"]);
+   if(input.action==="close"){
+    if(input.confirm!==true)throw Error("请明确确认平掉模拟仓位");
+    const book=d.engine.get(a);
+    if(!book?.position)throw Error("当前无模拟持仓");
+    if(input.positionId!==undefined&&input.positionId!==book.position.id)throw Error("持仓已变化，请刷新后重新确认");
+    if(book.pending)throw Error("已有待成交委托，请等待成交结果后再操作");
+    d.engine.control(a,st,"pause");
+    try {await d.engine.tick(a,st,{manual:true});}
+    catch(error){return send(409,{ok:false,error:"已暂停新增，退出委托未提交："+error.message,snapshot:d.engine.view(a,st)});}
+    return send(200,{ok:true,message:"已暂停新增，退出委托等待模拟成交",snapshot:d.engine.view(a,st)});
+   }
    if(input.action==="start"){
     if(input.confirm!==true||input.expectedHash!==C.hash(a.turtleConfig))throw Error("请确认当前已保存的参数后再启动");
+    if(d.engine.get(a)?.running)return send(200,{ok:true,message:"当前模拟监控已运行",snapshot:d.engine.view(a,st)});
     await d.engine.refresh(a);
    }
    d.engine.control(a,st,input.action);return send(200,{ok:true,snapshot:d.engine.view(a,st),message:input.action==="start"?"4H 模拟监控已启动；等待下一根已收盘信号":"已暂停新开仓；已有仓位继续受到止损和通道退出保护"});

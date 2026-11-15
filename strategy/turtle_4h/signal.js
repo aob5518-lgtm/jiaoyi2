@@ -14,6 +14,8 @@ function analyze(rows,input,now) {
  const upper=Math.max(...entry.map(v=>v.high)),lower=Math.min(...entry.map(v=>v.low));
  const exitLow=Math.min(...exit.map(v=>v.low)),exitHigh=Math.max(...exit.map(v=>v.high));
  const raw=b.close>upper?"long":b.close<lower?"short":null,side=raw&&(c.direction==="both"||c.direction===raw)?raw:null;
- return {code:side?"BREAKOUT":"WAIT_BREAKOUT",reason:side?(side==="long"?"4H 收盘突破前高，形成做多信号":"4H 收盘跌破前低，形成做空信号"):"等待 4H 收盘突破通道，不因盘中触价开仓",side,raw,atr,upper,lower,exitLow,exitHigh,close:b.close,closedAt:b.time+C.BAR,barTime:b.time};
+ const nextEntry=bars.slice(-c.entryBars);
+ const next={upper:Math.max(...nextEntry.map(v=>v.high)),lower:Math.min(...nextEntry.map(v=>v.low)),closesAt:b.time+2*C.BAR};
+ return {code:side?"BREAKOUT":"WAIT_BREAKOUT",reason:side?(side==="long"?"4H 收盘突破前高，形成做多信号":"4H 收盘跌破前低，形成做空信号"):"等待 4H 收盘突破通道，不因盘中触价开仓",side,raw,atr,upper,lower,exitLow,exitHigh,close:b.close,closedAt:b.time+C.BAR,barTime:b.time,next};
 }
 module.exports={analyze};

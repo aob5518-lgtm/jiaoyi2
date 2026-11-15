@@ -10,5 +10,32 @@ test("Risk or unknown orders prevent start and remain unchanged",async t=>{const
 test("Config save is constrained, conflict-safe and does not automatically start",async t=>{const x=await setup(t);const n={...C.defaults,entryBars:60};A.equal((await x.call("config",{id:"turtle-test",config:n,expectedHash:"stale"})).status,400);A.equal((await x.call("config",{id:"turtle-test",config:n,expectedHash:C.hash(C.defaults)})).status,200);A.equal(x.config().accounts[0].turtleConfig.entryBars,60);A.equal(x.d.engine.get(x.config().accounts[0]).running,false);for(const extra of [{tradeMode:"live"},{initialEquity:100},{symbol:"BTC"}])A.equal((await x.call("config",{id:"turtle-test",config:n,expectedHash:C.hash(n),...extra})).status,400);});
 test("Failed save preserves prior configuration and financial book byte-for-byte",async t=>{const x=await setup(t),before=JSON.stringify(x.config()),book=JSON.stringify(x.d.engine.get(x.config().accounts[0]));x.fail();A.equal((await x.call("config",{id:"turtle-test",config:{...C.defaults,entryBars:60},expectedHash:C.hash(C.defaults)})).status,400);A.equal(JSON.stringify(x.config()),before);A.equal(JSON.stringify(x.d.engine.get(x.config().accounts[0])),book);A.equal(x.locks(),0);});
 test("Legacy and Live accounts cannot enter new control endpoints; cross-site writes rejected",async t=>{const x=await setup(t);A.equal((await x.call("control",{id:"old",action:"start",confirm:true})).status,400);A.equal((await x.call("preflight",{id:"turtle-test"},{"Origin":"https://other.example"})).status,403);});
+test("Close requires an actual position and a matching confirmation when a position ID is supplied",async t=>{
+ const x=await setup(t),input={id:"turtle-test",action:"close",confirm:true};
+ const flat=await x.call("control",input);
+ A.equal(flat.status,400);
+ A.match(flat.data.error,/无模拟持仓/);
+ const a=x.config().accounts[0];
+ const open=B.initial(a);
+ open.running=true;
+ const submitted=B.advance(open,F.event(),C.defaults);
+ const filled=B.advance(submitted,F.event({time:F.NOW+1000,data:F.market(F.NOW+1000)}),C.defaults);
+ x.d.engine.commit(a,filled);
+ const different=await x.call("control",{...input,positionId:"previous-position"});
+ A.equal(different.status,400);
+ A.match(different.data.error,/持仓已变化/);
+ A.equal(x.d.engine.get(a).running,true);
+ A.equal(x.d.engine.get(a).pending,null);
+});
+test("Repeated start preserves the current running book and pending order",async t=>{
+ const x=await setup(t),a=x.config().accounts[0],open=B.initial(a);
+ open.running=true;
+ const submitted=B.advance(open,F.event(),C.defaults);
+ x.d.engine.commit(a,submitted);
+ const retry=await x.call("control",{id:a.id,action:"start",confirm:true,expectedHash:C.hash(C.defaults)});
+ A.equal(retry.status,200);
+ A.equal(retry.data.snapshot.pending.id,submitted.pending.id);
+ A.deepEqual(x.d.engine.get(a),submitted);
+});
 test("Classic start preflight reports missing settings and unknown orders without mutating book",async()=>{let quotes=0;const a={strategyType:"classic",tradeMode:"simulation",simulationEnabled:true},b={settings:{side:"long"}};const d={classicPaper:{get:()=>b,corrupt:()=>false,view:()=>({blocked:false})},price:async()=>{quotes++;return 100;}};A.equal((await Desk.preflight(a,{pendingOrder:{}},d)).allowed,false);A.equal(quotes,0);A.equal((await Desk.preflight(a,{},d)).allowed,true);A.equal(quotes,1);A.deepEqual(b,{settings:{side:"long"}});});
 test("Server dispatch keeps dedicated Paper engine ahead of classic retirement; all APIs require login",()=>{const src=fs.readFileSync(path.join(__dirname,"../server.js"),"utf8");A.ok(src.indexOf("if(activeStrategyType===Turtle.ID)")<src.indexOf('if (classicOnly && acc.tradeMode === "simulation"'));const block=src.slice(src.indexOf('if (pathname.startsWith("/api/v4/turtle/"))'),src.indexOf('if (pathname === "/api/v4/desk"'));A.match(block,/isAuthenticated/);A.doesNotMatch(fs.readFileSync(path.join(__dirname,"../strategy/turtle_4h/runtime.js"),"utf8"),/placeHyper|leverageSync|privateKey|signedRequest/);});

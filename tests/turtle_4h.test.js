@@ -34,6 +34,50 @@ test("Market evaluation uses completion time rather than request-start time",asy
  const x=await runtime(t);let clock=F.NOW;const engine=R.create({...x.deps,now:()=>clock,provider:{load:async()=>{clock+=5000;return F.market(clock);}}});
  await engine.refresh(a);A.equal(engine.preflight(a,{}).allowed,true);A.equal(engine.view(a).updatedAt,F.NOW+5000);
 });
+test("Next candle thresholds include the just-closed bar and differ from the evaluated signal",()=>{
+ const m=F.market(F.NOW,"long");
+ m.candles.push({time:m.candles.at(-1).time+C.BAR,open:104,high:999,low:1,close:106});
+ const s=S.analyze(m.candles,c,F.NOW);
+ A.equal(s.upper,101);
+ A.equal(s.next.upper,105);
+ A.equal(s.next.lower,99);
+ A.equal(s.next.closesAt,s.closedAt+C.BAR);
+});
+test("Native candle cache cannot promote a provisional bar across a 4H close",async()=>{
+ const boundary=Math.floor(F.NOW/C.BAR)*C.BAR;
+ let timestamp=boundary-1000,requests=0;
+ const p=P.create(async url=>{
+  if(url.includes("bookTicker"))return {bidPrice:104,askPrice:104.01,bidQty:100,askQty:100,time:timestamp};
+  if(url.includes("fundingRate"))return [];
+  if(url.includes("exchangeInfo"))return {symbols:[{symbol:"ETHUSDT",status:"TRADING",contractType:"PERPETUAL",quoteAsset:"USDT",filters:[]}]};
+  requests++;
+  return [[boundary-2*C.BAR,100,101,99,100],[boundary-C.BAR,100,107,99,requests===1?104:106]];
+ },()=>timestamp);
+ const before=await p.load(a,c,0);
+ A.equal(before.candles.length,1);
+ timestamp=boundary+1000;
+ const after=await p.load(a,c,0);
+ A.equal(requests,2);
+ A.equal(after.candles.at(-1).close,106);
+});
+test("A failed native poll immediately hides previous price, valuation and next entry before the age limit",async t=>{
+ const x=await runtime(t);
+ x.r.commit(a,opened());
+ await x.r.refresh(a);
+ A.equal(x.r.view(a).fresh,true);
+ x.fail();
+ await A.rejects(x.r.refresh(a));
+ const stopped=x.r.view(a);
+ A.equal(stopped.fresh,false);
+ A.equal(stopped.equity,null);
+ A.equal(stopped.nextEntry,null);
+ A.equal(stopped.market.state,"unavailable");
+ A.equal(stopped.preflight.checkedAt,null);
+ A.deepEqual(stopped.preflight.blockers,["native timeout"]);
+ x.recover();
+ await x.r.refresh(a);
+ A.equal(x.r.view(a).market.state,"fresh");
+});
 test("An orphan submitted order or duplicate order ID locks restoration and preserves the ledger",async t=>{
  const x=await runtime(t),b=B.initial(a);b.orders=[{id:"orphan",status:"SUBMITTED",kind:"open"}];x.r.commit(a,b);const file=path.join(x.directory,"turtle_4h_paper.json"),before=fs.readFileSync(file,"utf8");
  A.throws(()=>R.create(x.deps).get(a),/LEDGER_REVIEW/);A.equal(fs.readFileSync(file,"utf8"),before);
