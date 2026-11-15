@@ -17,6 +17,23 @@ function setup(t,env={}){
  }
  return{ctx,call,directory};
 }
+test("海龟 4H 真实服务器路由要求登录，创建独立停止账户且保留原配置",async t=>{
+ const f=setup(t),before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ assert.equal((await f.call('/api/v4/turtle/accounts',undefined,false)).code,401);
+ assert.equal((await f.call('/api/v4/turtle/control',{action:'start'},false)).code,401);
+ const created=await f.call('/api/v4/turtle/accounts',{name:'Turtle ETH',symbol:'ETH',initialEquity:10000});assert.equal(created.code,200);
+ const id=created.data.id,status=await f.call('/api/v4/turtle/status?id='+id);assert.equal(status.code,200);assert.equal(status.data.snapshot.running,false);assert.equal(status.data.snapshot.allowLive,false);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),before);
+ assert.equal((await f.call('/api/v4/desk?id='+id)).data.selected.strategy,'海龟趋势 4H');
+ assert.equal((await f.call('/api/v4/control',{id,action:'start'})).code,400);
+});
+test("海龟 Paper 账户不能从原连接入口添加密钥或通过兼容参数接口改策略",async t=>{
+ const f=setup(t),id=(await f.call('/api/v4/turtle/accounts',{name:'Turtle ETH',symbol:'ETH'})).data.id;
+ const before=vm.runInContext('JSON.stringify(config.accounts.find(a=>a.id==='+JSON.stringify(id)+'))',f.ctx);
+ assert.equal((await f.call('/api/v4/connections/update',{id,apiKey:'forbidden',apiSecret:'forbidden'})).code,400);
+ assert.equal((await f.call('/api/v4/config',{id,strategyType:'classic',config:{}})).code,400);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts.find(a=>a.id==='+JSON.stringify(id)+'))',f.ctx),before);
+});
 test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及重启保留账本", async t => {
  const f=setup(t), route="/api/v4/desk", settings={side:"long",leverage:1,baseAmount:100,addAmount:100,maxAdds:1,addTrigger:.01,takeProfit:.01};
  fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");

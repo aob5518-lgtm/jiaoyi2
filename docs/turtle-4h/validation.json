@@ -1,10 +1,10 @@
 {
   "automated": {
-    "passed": 470,
+    "passed": 472,
     "failed": 0,
     "skipped": 0
   },
-  "newStrategyTests": 40,
+  "newStrategyTests": 42,
   "browser": {
     "newStrategyScenarios": 54,
     "classicScenarios": 64,
@@ -48,5 +48,20 @@
   "productionModified": false,
   "liveStarted": false,
   "existingAccountsModified": false,
-  "profitabilityVerified": false
+  "profitabilityVerified": false,
+  "serverStage": {
+    "sha": "09ea25932594664da9e2800dcf0347579bdf11c0",
+    "node": "v22.13.1",
+    "passed": 470,
+    "failed": 0,
+    "skipped": 0,
+    "nativeVerifiedSymbols": [
+      "ETHUSDT",
+      "BTCUSDT"
+    ],
+    "orders": 0,
+    "positions": 0,
+    "researchBooksStopped": true,
+    "profitabilityVerified": false
+  }
 }

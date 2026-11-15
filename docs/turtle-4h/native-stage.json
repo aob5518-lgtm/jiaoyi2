@@ -1,0 +1,60 @@
+{
+  "sha": "09ea25932594664da9e2800dcf0347579bdf11c0",
+  "stage": "/root/app/research/turtle-4h-09ea25932594664da9e2800dcf0347579bdf11c0/source",
+  "node": "v22.13.1",
+  "passed": 470,
+  "failed": 0,
+  "skipped": 0,
+  "nativeExit": 0,
+  "native": {
+    "at": "2026-11-15T06:24:39.602Z",
+    "revision": "TURTLE_4H_PAPER_V1_20261115",
+    "configHash": "076348c83b024f8f08c526636367bcfb3d5110d72a702507ed129a616b5e9e50",
+    "kind": "public_native_connectivity_and_stopped_paper_lifecycle_check",
+    "realOrderCalls": 0,
+    "productionModified": false,
+    "profitabilityVerified": false,
+    "results": [
+      {
+        "symbol": "ETHUSDT",
+        "verified": true,
+        "source": "binance_usdm_native",
+        "quoteAsset": "USDT",
+        "marketType": "perpetual",
+        "quoteTime": 1794723878464,
+        "evaluatedAt": 1794723879291,
+        "closed4hBars": 499,
+        "signal": "WAIT_BREAKOUT",
+        "reason": "等待 4H 收盘突破通道，不因盘中触价开仓",
+        "atr": 50.6714664439655,
+        "upper": 2261.26,
+        "lower": 1726.26,
+        "persistenceRestored": true,
+        "runningAfterCheck": false,
+        "orders": 0,
+        "positions": 0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "verified": true,
+        "source": "binance_usdm_native",
+        "quoteAsset": "USDT",
+        "marketType": "perpetual",
+        "quoteTime": 1794723879277,
+        "evaluatedAt": 1794723879508,
+        "closed4hBars": 499,
+        "signal": "WAIT_BREAKOUT",
+        "reason": "等待 4H 收盘突破通道，不因盘中触价开仓",
+        "atr": 1354.521658713497,
+        "upper": 76382,
+        "lower": 63271,
+        "persistenceRestored": true,
+        "runningAfterCheck": false,
+        "orders": 0,
+        "positions": 0
+      }
+    ]
+  },
+  "productionModified": false,
+  "productionPM2Restarted": false
+}
