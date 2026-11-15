@@ -10,7 +10,8 @@
   const c = settings || {};
   const finite = n => typeof n === "number" && Number.isFinite(n);
   const valid = ["long", "short"].includes(c.side) &&
-   finite(c.leverage) && Number.isInteger(c.leverage) && c.leverage >= 1 && c.leverage <= 10 &&
+   finite(c.leverage) && c.leverage>=1 && Number.isSafeInteger(Math.round(c.leverage*10)) &&
+   c.leverage===Math.round(c.leverage*10)/10 &&
    [c.baseAmount, c.addAmount].every(n => finite(n) && n >= 1 && n <= 1e8) &&
    finite(c.maxAdds) && Number.isInteger(c.maxAdds) && c.maxAdds >= 0 && c.maxAdds <= 10 &&
    [c.addTrigger, c.takeProfit].every(n => finite(n) && n >= .0001 && n <= .99);

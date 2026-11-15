@@ -9,6 +9,8 @@ const Turtle = require("./strategy/turtle_4h/config");
 const Reversal = require("./strategy/reversal_4h/config");
 const Carry = require("./strategy/funding_carry/config");
 const Pullback = require("./strategy/pullback_15m/config");
+const marketLeverage = require("./market_leverage").create();
+const leverageRules = async account => marketLeverage.load(account).catch(()=>null);
 let hypothesisResearchService;
 const TrendOnly = require("./trend_only");
 const TrendOnlyV2 = require("./trend_only_v2");
@@ -3378,20 +3380,20 @@ async function tickSmartStrategy(acc, st) {
 }
 
 const turtlePaper = require("./strategy/turtle_4h/runtime").create({
- directory:__dirname,
+ directory:__dirname, leverageRules,
  permit:(a,risk,side)=>require("./strategy/trend_v3/portfolio").snapshot({...a,paper:true},[
   {account:{...a,paper:true},equity:turtlePaper.get(a)?.balance,state:{}}
  ],side,risk)
 });
 const reversalPaper = require("./strategy/turtle_4h/runtime").create({
- directory: __dirname, profile: Reversal, analyze: require("./strategy/reversal_4h/signal").analyze,
+ directory: __dirname, profile: Reversal, leverageRules, analyze: require("./strategy/reversal_4h/signal").analyze,
  permit:(a,risk,side)=>require("./strategy/trend_v3/portfolio").snapshot({...a,paper:true},[
   {account:{...a,paper:true},equity:reversalPaper.get(a)?.balance,state:{}}
  ],side,risk)
 });
-const carryPaper = require("./strategy/funding_carry/runtime").create({directory:__dirname});
+const carryPaper = require("./strategy/funding_carry/runtime").create({directory:__dirname,leverageRules});
 const pullbackPaper = require("./strategy/turtle_4h/runtime").create({
- directory:__dirname, profile:Pullback, analyze:require("./strategy/pullback_15m/signal").analyze,
+ directory:__dirname, profile:Pullback, leverageRules, analyze:require("./strategy/pullback_15m/signal").analyze,
  permit:(a,risk,side)=>require("./strategy/trend_v3/portfolio").snapshot({...a,paper:true},[
   {account:{...a,paper:true},equity:pullbackPaper.get(a)?.balance,state:{}}
  ],side,risk)
@@ -3452,9 +3454,10 @@ async function tickAccount(acc) {
     if(activeStrategyType===Reversal.ID){await reversalPaper.tick(acc,st);return;}
     if(activeStrategyType===Carry.ID){await carryPaper.tick(acc,st);return;}
     if(activeStrategyType===Pullback.ID){await pullbackPaper.tick(acc,st);return;}
-    if (classicPaper.get(acc.id)) {
-      const price = await getMarketPrice(acc);
-      classicPaper.mark(getAccountById(acc.id), price);
+    const classicBook = classicPaper.get(acc.id);
+    if (classicBook) {
+      const [price,spec] = await Promise.all([getMarketPrice(acc),classicBook.running&&classicBook.settings.leverage>1?leverageRules(acc):undefined]);
+      classicPaper.mark(getAccountById(acc.id),price,Date.now(),false,spec);
       return;
     }
     if (classicOnly && acc.tradeMode === "simulation" && acc.simulationEnabled === true) {
@@ -4984,7 +4987,7 @@ const server = http.createServer((req, res) => {
     return require("./terminal/turtle-api").handle(req,res,parsed,{
       engine:independentPaperEngine({strategyType:profile.ID}),profile,json:jsonRes,accounts:()=>config.accounts,getAccountById,state:id=>stateMap[id],
       configuration:()=>loadConfig(),save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},
-      lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock
+      lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock,leverageRules
     });
   }
   if (pathname === "/api/v4/desk" || pathname.startsWith("/api/v4/desk/")) {
@@ -4993,7 +4996,7 @@ const server = http.createServer((req, res) => {
       classicPaper, getAccountById, getCurrentAccount, accounts: () => config.accounts, state: id => stateMap[id],
       json: jsonRes, verifyLegacyFlat: verifyDeskLegacyFlat, readOnlyStatus: deskReadOnlyStatus,
       legacyHistory: account => isCompound(account) ? compoundRuntime.get(account).history.filter(row => row.filledQty > 0) : stateMap[account.id]?.profitHistory,
-      price: getMarketPrice, lock: acquireAccountTradeLock, unlock: releaseAccountTradeLock
+      price: getMarketPrice, lock: acquireAccountTradeLock, unlock: releaseAccountTradeLock, leverageRules
     });
   }
   if(pathname.startsWith("/api/v4/")){

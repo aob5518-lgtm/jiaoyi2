@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const {randomUUID} = require("crypto");
 const {getEstimatedTradeCost} = require("../trade_cost");
+const Leverage=require("../market_leverage");
 
 const isPaper = account => account?.tradeMode === "simulation" && account.simulationEnabled === true;
 const eligible = account => isPaper(account) && ["classic", "connection_only"].includes(account.strategyType);
@@ -10,14 +11,15 @@ const identity = account => JSON.stringify([account.platform, account.symbol, ac
 const num = (value, low, high) => typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
 const defaults = Object.freeze({side: "long", leverage: 1, baseAmount: 100, addAmount: 100, maxAdds: 3, addTrigger: .01, takeProfit: .01});
 const money = value => Number(value.toFixed(8));
+const totalNotional = cfg => cfg.baseAmount + cfg.addAmount * cfg.maxAdds;
 function normalize(input, initialEquity) {
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => !Object.hasOwn(defaults, key))) throw Error("参数字段不支持");
   const cfg = {...defaults, ...input};
-  if (!["long", "short"].includes(cfg.side) || !num(cfg.leverage, 1, 10) || !Number.isInteger(cfg.leverage) ||
+  if (!["long", "short"].includes(cfg.side) || !Leverage.valid(cfg.leverage,.1) ||
       !num(cfg.baseAmount, 1, 1e8) || !num(cfg.addAmount, 1, 1e8) ||
       !num(cfg.maxAdds, 0, 10) || !Number.isInteger(cfg.maxAdds) ||
       !num(cfg.addTrigger, .0001, .99) || !num(cfg.takeProfit, .0001, .99)) throw Error("请核对方向、杠杆、金额、次数与百分比范围");
-  if ((cfg.baseAmount + cfg.addAmount * cfg.maxAdds) / cfg.leverage > initialEquity) throw Error("计划总保证金超过模拟权益");
+  if (totalNotional(cfg) / cfg.leverage > initialEquity) throw Error("计划总保证金超过模拟权益");
   return cfg;
 }
 function targets(book, price) {
@@ -53,7 +55,7 @@ function tradePlan(book, price, now = Date.now()) {
     cooldown, fills: p?.fills || []
   };
 }
-function step(book, mark, now, manual = false) {
+function step(book, mark, now, manual = false, marketLeverage) {
   if (!num(mark, Number.MIN_VALUE, Number.MAX_VALUE)) throw Error("行情价格无效");
   const next = structuredClone(book), c = next.settings, p = next.position;
   const sign = c.side === "long" ? 1 : -1;
@@ -73,6 +75,10 @@ function step(book, mark, now, manual = false) {
     const fill = mark * (1 + sign * next.cost.slippage), qty = amount / mark;
     const fee = fill * qty * next.cost.entryFee;
     const available = next.balance + t.floating - t.margin;
+    if(marketLeverage!==undefined){
+      const issue=Leverage.leverageError(c.leverage,marketLeverage,Math.max(mark,fill)*(qty+(p?.qty||0)));
+      if(issue&&(marketLeverage||c.leverage>1))return {book,notice:issue};
+    }
     if (fill * qty / c.leverage + fee > available) return {book, notice: "可用模拟保证金不足，等待风险降低"};
     const total = qty + (p?.qty || 0);
     const fills = [...(p?.fills || []), {at: now, kind: p ? "add" : "open", price: fill, qty, notional: fill * qty}];
@@ -137,11 +143,11 @@ function create(directory) {
     const running = action === "start";
     if (book.running !== running) commit(account.id, {...book, running, lastAction: running ? "经典模拟交易已启动" : "已暂停新增交易"});
   }
-  function mark(account, price, now = Date.now(), manual = false) {
+  function mark(account, price, now = Date.now(), manual = false, marketLeverage) {
     const book = get(account.id);
     assertMatch(account, book);
     if (!book) return;
-    const result = step(book, price, now, manual);
+    const result = step(book, price, now, manual, marketLeverage);
     if (result.book !== book) commit(account.id, result.book);
     quotes.set(account.id, {price, at: now, notice: result.notice});
   }
@@ -164,4 +170,4 @@ function create(directory) {
   }
   return {get, configure, control, mark, view, corrupt: () => corrupt};
 }
-module.exports = {create, eligible, defaults, normalize, targets, step, tradePlan};
+module.exports = {create, eligible, defaults, normalize, totalNotional, targets, step, tradePlan};

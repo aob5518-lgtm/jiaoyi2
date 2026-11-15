@@ -111,6 +111,8 @@ function start(port = 0) {
    const allowed=!!(a?.eligible&&a.ready&&scenario!=="blocked");
    return json(200,{ok:true,allowed,settings:saved.get(a?.id),blockers:allowed?[]:["模拟行情报价暂不可用"]});
   }
+  if (url.pathname === "/api/v4/desk/leverage") return json(200,{ok:true,spec:{market:"USDⓈ-M",maxLeverage:150,
+   tiers:[{floor:0,cap:10000,maxLeverage:150},{floor:10000,cap:null,maxLeverage:25}]}});
   if (url.pathname === "/api/v4/desk") {
    if (server.scenario === "offline") return json(503,{ok:false,error:"合成行情断流"});
    const a = accounts.find(x => x.id === (url.searchParams.get("id") || selected));

@@ -21,7 +21,9 @@ function create(d){
   const b=get(a),c=b?.position?.config||b?.pending?.meta.config||C.normalize(a[configKey]);
   try {
    const since=b?.position?.fundingThrough||now()-24*3600000;
-   const data=await provider.load(a,c,since),evaluatedAt=now();
+   const [snapshot,leverageSpec]=await Promise.all([provider.load(a,c,since),
+    c.leverage>1&&d.leverageRules?d.leverageRules(a):undefined]);
+   const data={...snapshot,leverageSpec},evaluatedAt=now();
    // Evaluate after network completion, against the exchange timestamp.
    P.validate(data,a,evaluatedAt);
    const result={data,analysis:analyze(data.candles,c,evaluatedAt),evaluatedAt,configHash:C.hash(c)};
@@ -92,7 +94,8 @@ function create(d){
  function view(a,st={}){
   const b=get(a),c=C.normalize(a[configKey]),time=now(),m=market(a,time),r=m.record,fresh=m.state==="fresh";
   const price=fresh?(r.data.quote.bid+r.data.quote.ask)/2:null,p=b?.position,exitPrice=fresh?(p?.side==="short"?r.data.quote.ask:r.data.quote.bid):null;
-  const floating=p&&exitPrice?B.net(p,exitPrice*(1+(p.side==="long"?-1:1)*p.cost.estimatedExitSlippage)):p?null:0,activeConfig=p?.config||b?.pending?.meta.config||null;
+  const floating=p&&exitPrice?B.net(p,exitPrice*(1+(p.side==="long"?-1:1)*p.cost.estimatedExitSlippage)):p?null:0;
+  const locked=p?.config||b?.pending?.meta.config,activeConfig=locked?C.normalize(locked):null;
   const hash=C.hash(c),preview=fresh&&(r.configHash===hash?r.analysis:analyze(r.data.candles,c,time));
   const nextEntry=preview?.next?.closesAt>time?{...preview.next,direction:c.direction}:null;
   const decision=m.reason&&m.state!=="unchecked"?{code:"MARKET_UNAVAILABLE",reason:m.reason}:st.activeError?{code:"RUNTIME_ERROR",reason:st.activeError}:b?.decision||{code:"MONITOR_STOPPED",reason:"保存参数后检查并启动"};

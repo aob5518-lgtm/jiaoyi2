@@ -3,6 +3,7 @@
 const {randomUUID} = require("node:crypto");
 const C=require("./config");
 const {HOUR}=require("./market");
+const Leverage=require("../../market_leverage");
 const SLIPPAGE=.0005, SPOT_FEE=.001, PERP_FEE=.0005; // Paper assumptions, per execution.
 const SETTLEMENT_TOLERANCE=60000, HEDGE_TIMEOUT=45000;
 const round = n => Math.round(n*1e8)/1e8;
@@ -63,7 +64,12 @@ function quotePlan(data,config,balance,lockedSpot) {
   return {code:"SIZE_BLOCK",reason:"盘口深度或交易规格不足"};
  }
  const notional=Math.max(spot.price,perp.price)*qty;
- if (notional>balance*config.allocationPct+1e-8 || (spot.price+perp.price)*qty+spot.fee+perp.fee>balance*.65) {
+ const leverage=config.leverage??1,perpMargin=perp.price*qty/leverage;
+ if(data.leverageSpec!==undefined){
+  const issue=Leverage.leverageError(leverage,data.leverageSpec,qty*Math.max(perp.price,data.markPrice));
+  if(issue)return {code:"LEVERAGE_BLOCK",reason:issue};
+ }
+ if (notional>balance*config.allocationPct+1e-8 || spot.price*qty+perpMargin+spot.fee+perp.fee>balance*.65) {
   return {code:"SIZE_BLOCK",reason:"两腿所需本金与保证金超过预算"};
  }
  const cost=(spot.price-sell.price+cover.price-perp.price)*qty+spot.fee+perp.fee+sell.fee+cover.fee;
@@ -71,7 +77,7 @@ function quotePlan(data,config,balance,lockedSpot) {
  const edge=expected-cost;
  const metrics={expected,cost,edge,basisBps:(perpRef/spotRef-1)*1e4};
  if (!(edge>=notional*config.minEdgeBps/1e4)) return {code:"COST_BLOCK",reason:"保守预计资金费不足以覆盖双腿往返成本与基差余量",...metrics};
- return {code:"ENTRY_READY",reason:"两边盘口与净收益空间通过",qty,spot,perp,forecast,...metrics};
+ return {code:"ENTRY_READY",reason:"两边盘口与净收益空间通过",qty,spot,perp,forecast,perpMargin,...metrics};
 }
 function initial(a) {
  return {schema:1,identity:C.identity(a),balance:a.simulationBalance,realized:0,running:false,position:null,trades:[],nextEntryAt:0};
@@ -134,7 +140,7 @@ function advance(before,data,config,{blocker,manual=false}={}) {
   // A future leg requires a newer futures snapshot; REST spot has only a local receipt time.
   if (hedge?.code==="ENTRY_READY"&&data.perpTime>p.firstPerpTime) {
    Object.assign(p,{perp:hedge.perp,hedgedAt:time,spotAtHedge:mid(data.spot),fundingDue:data.nextFundingAt,
-    interval:hedge.forecast.interval,lastFundingAt:0,lastActionAt:time});
+    interval:hedge.forecast.interval,lastFundingAt:0,lastActionAt:time,perpMargin:hedge.perpMargin});
    decision(b,"HEDGED","已模拟做空等币量永续，两腿对冲成立",time);
    return b;
   }

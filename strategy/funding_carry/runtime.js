@@ -3,7 +3,7 @@
 const fs=require("node:fs"), path=require("node:path");
 const C=require("./config"), B=require("./book"), M=require("./market");
 
-function create({directory,now=Date.now,provider=M.create(undefined,now)}) {
+function create({directory,now=Date.now,provider=M.create(undefined,now),leverageRules}) {
  const filename=path.join(directory,"funding_carry_paper.json");
  const market=new Map(), errors=new Map(), busy=new Set();
  let books={}, failed=false;
@@ -43,9 +43,10 @@ function create({directory,now=Date.now,provider=M.create(undefined,now)}) {
   books=next;
  }
  async function refresh(a) {
-  get(a);
+  const book=get(a), config=book?.position?.config||C.normalize(a[C.configKey]);
   try {
-   const data=await provider.load(a);
+   const [raw,leverageSpec]=await Promise.all([provider.load(a),config.leverage>1&&leverageRules?leverageRules(a):undefined]);
+   const data={...raw,leverageSpec};
    M.validate(data,a,now());
    market.set(a.id,data);
    errors.delete(a.id);
@@ -119,7 +120,7 @@ function create({directory,now=Date.now,provider=M.create(undefined,now)}) {
   const perp=data?(data.perp.bids[0][0]+data.perp.asks[0][0])/2:null;
   const decision=m.reason&&b?.running?{code:"MARKET_UNAVAILABLE",reason:m.reason}:
    b?.decision||{code:"MONITOR_STOPPED",reason:"保存参数后即可启动模拟"};
-  return {id:a.id,name:a.name,symbol:a.symbol,config,configHash:C.hash(config),activeConfig:p?.config||null,
+  return {id:a.id,name:a.name,symbol:a.symbol,config,configHash:C.hash(config),activeConfig:p?C.normalize(p.config):null,
    strategyType:C.ID,revision:C.REVISION,allowLive:false,realOrderPermission:false,running:!!b?.running,riskLock:!!guard(st),
    market:{state:data?"fresh":"unavailable",quoteTime:data?.time??null},fresh:!!data,decision,preflight:preflight(a,st),
    price:spot,carry:{spot,perp,basisBps:spot?(perp/spot-1)*1e4:null,rate:data?.rate??null,nextFundingAt:data?.nextFundingAt??null,

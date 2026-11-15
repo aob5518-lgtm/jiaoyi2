@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os'),vm=require('vm'),{EventEmitter}=require('events'),{createRequire}=require('module');
 const base=path.resolve(__dirname,'..');
-function setup(t,env={}){
+function setup(t,env={},leverageSource){
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'trend-server-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
  const acc={id:'legacy',name:'legacy',platform:'hyperliquid',address:'0xabc',privateKey:'0x'+'1'.repeat(64),apiKey:'key',apiSecret:'secret',starkPrivateKey:'stark-secret',publicKey:'pub',vault:'vault',symbol:'ETH',quoteAsset:'USDC',side:'long',strategyType:'classic',tradeMode:'simulation',simulationEnabled:true,simulationBalance:10000,leverage:5,baseAmount:100,addAmount:100,takeProfit:.01,addTrigger:.01,maxAdds:2,interval:15000,running:false};
  fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify({currentAccountId:acc.id,accounts:[acc]}));
@@ -8,7 +8,8 @@ function setup(t,env={}){
  fs.writeFileSync(path.join(directory,'simulation_orders.json'),JSON.stringify({legacy:[]}));
  const raw=fs.readFileSync(path.join(base,'server.js'),'utf8').split('\ninitSdk()')[0];
  let handler;const req=createRequire(path.join(base,'server.js'));
- const ctx={require:n=>n==='http'?{createServer:fn=>{handler=fn;return{close(){}};}}:req(n),__dirname:directory,console,Buffer,URL,URLSearchParams,AbortController,fetch:()=>{throw Error('禁止测试访问网络');},setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{},process:{...process,env:{...process.env,...env},on(){}}};
+ const ctx={require:n=>n==='http'?{createServer:fn=>{handler=fn;return{close(){}};}}:
+  n==="./market_leverage"&&leverageSource?{create:()=>({load:leverageSource})}:req(n),__dirname:directory,console,Buffer,URL,URLSearchParams,AbortController,fetch:()=>{throw Error('禁止测试访问网络');},setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{},process:{...process,env:{...process.env,...env},on(){}}};
  vm.createContext(ctx);vm.runInContext(raw,ctx);vm.runInContext('ensureAccountStates()',ctx);
  async function call(url,body,auth=true){
   const sid=auth?vm.runInContext('createSession("test")',ctx):'';
@@ -95,6 +96,43 @@ test("短线顺势回踩分离模拟账户、参数、历史与旧策略权限",
  assert.equal((await f.call(route+"/status?id="+id)).data.snapshot.configHash,C.hash({riskPerTrade:.004}));
  assert.equal((await f.call(route+"/history?id="+id)).data.total,0);
  assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
+});
+test("五种工作台策略保存杠杆按具体交易所档位核验，保留旧档位和模式",async t=>{
+ let unavailable=false;
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"},async a=>{
+  if(unavailable)throw Error("no market evidence");
+  const max=a.platform==="hyperliquid"?25:150;
+  return {market:a.symbol,source:"test",maxLeverage:max,tiers:[{floor:0,cap:10000,maxLeverage:max},{floor:10000,cap:null,maxLeverage:10}]};
+ });
+ const desk="/api/v4/desk";
+ assert.equal((await f.call(desk+"/leverage?id=legacy",undefined,false)).code,401);
+ assert.equal((await f.call(desk+"/leverage?id=legacy")).data.spec.maxLeverage,25);
+ const classic={side:"long",leverage:25,maxAdds:1,baseAmount:100,addAmount:100,takeProfit:.01,addTrigger:.01};
+ assert.equal((await f.call(desk+"/settings",{id:"legacy",settings:classic})).code,200);
+ const denied=await f.call(desk+"/settings",{id:"legacy",settings:{...classic,baseAmount:9950}});
+ assert.match(denied.data.error,/最高 10 倍/);
+ assert.equal((await f.call(desk+"?id=legacy")).data.snapshot.settings.leverage,25);
+ for(const mode of ["turtle","reversal","carry","pullback"]){
+  const route="/api/v4/"+mode;
+  const created=await f.call(route+"/accounts",{name:"Leverage "+mode,symbol:"ETH"});
+  assert.equal(created.code,200);
+  const {id}=created.data;
+  const snapshot=async()=>(await f.call(route+"/status?id="+id)).data.snapshot;
+  const initial=await snapshot();
+  assert.equal(initial.config.leverage,1);
+  const payload={id,expectedHash:initial.configHash,config:{...initial.config,leverage:125}};
+  assert.equal((await f.call(route+"/config",payload)).code,200);
+  const saved=await snapshot();
+  assert.equal(saved.config.leverage,125);
+  assert.equal(saved.realOrderPermission,false);
+  assert.equal(saved.running,false);
+  const bad={...payload,expectedHash:saved.configHash,config:{...saved.config,leverage:151}};
+  assert.match((await f.call(route+"/config",bad)).data.error,/最高 150 倍/);
+  unavailable=true;
+  assert.match((await f.call(route+"/config",{...bad,config:{...saved.config,leverage:100}})).data.error,/暂未取得/);
+  unavailable=false;
+  assert.equal((await snapshot()).configHash,saved.configHash);
+ }
 });
 test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及重启保留账本", async t => {
  const f=setup(t), route="/api/v4/desk", settings={side:"long",leverage:1,baseAmount:100,addAmount:100,maxAdds:1,addTrigger:.01,takeProfit:.01};

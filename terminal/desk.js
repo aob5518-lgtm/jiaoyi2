@@ -1,5 +1,6 @@
 "use strict";
 const C = require("./classic-paper");
+const Leverage = require("../market_leverage");
 const {number, historyRows} = require("./model");
 const paperLabels = {funding_carry_v1:"资金费率对冲",reversal_4h_v1:"找底摸顶 4H",turtle_4h_v1:"海龟趋势 4H",pullback_15m_v1:"短线顺势回踩"};
 
@@ -42,6 +43,10 @@ async function preflight(account, st, d) {
   if(d.classicPaper.corrupt())blockers.push("模拟账本损坏，不能启动");
   if(book && (!d.classicPaper.view(account) || d.classicPaper.view(account).blocked))blockers.push("配置与账本不一致");
   if(!blockers.length){const price=await d.price(account);if(!(Number.isFinite(price)&&price>0))blockers.push("当前行情报价无效");}
+  if(!blockers.length&&book?.settings.leverage>1&&d.leverageRules){
+    const issue=Leverage.leverageError(book.settings.leverage,await d.leverageRules(account),C.totalNotional(book.settings));
+    if(issue)blockers.push(issue);
+  }
   return {allowed:!blockers.length,blockers,mode:"Paper",realOrderPermission:false,settings:book?.settings||null};
 }
 async function handle(req, res, parsed, d) {
@@ -52,6 +57,7 @@ async function handle(req, res, parsed, d) {
     if (req.method === "GET") {
       const account = d.getAccountById(parsed.query.id || d.getCurrentAccount()?.id);
       if (!account) return send(404, {ok: false, error: "账户不存在"});
+      if(route==="/api/v4/desk/leverage")return send(200,{ok:true,spec:await d.leverageRules(account)});
       const classic = d.classicPaper.view(account);
       if (route === "/api/v4/desk/history") {
         const book = d.classicPaper.get(account.id);
@@ -86,7 +92,9 @@ async function handle(req, res, parsed, d) {
     const book = d.classicPaper.get(account.id);
     if (settings) {
       if (!book) d.verifyLegacyFlat(account, st);
-      d.classicPaper.configure(account, input.settings);
+      const next=C.normalize(input.settings,Number(account.simulationBalance));
+      if(next.leverage>1&&d.leverageRules)Leverage.assertAllowed(next.leverage,await d.leverageRules(account),C.totalNotional(next));
+      d.classicPaper.configure(account,next);
     } else if (input.action === "close") {
       if (input.confirm !== true || !book?.position) throw Error("请明确确认平掉已有模拟仓位");
       const price = await d.price(account);

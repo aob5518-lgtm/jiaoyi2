@@ -26,6 +26,17 @@ test("Carry requires continuous funding evidence, positive net cost-adjusted edg
  assert.equal(B.quotePlan(thin,C.defaults,10000).code,"SIZE_BLOCK");
  assert.throws(()=>M.validate({...data,perpTime:start-20000},account,start),/过期/);
 });
+test("Carry uses leverage only for the perpetual margin, leaving spot principal and hedge quantity equal",()=>{
+ const data=market(), spec={market:"ETHUSDT",tiers:[{floor:0,cap:null,maxLeverage:75}]};
+ const a=B.quotePlan({...data,leverageSpec:spec},C.defaults,10000);
+ const b=B.quotePlan({...data,leverageSpec:spec},{...C.defaults,leverage:50},10000);
+ assert.equal(b.code,"ENTRY_READY");
+ assert.equal(b.qty,a.qty);
+ assert.equal(b.spot.price,a.spot.price);
+ assert.equal(b.perpMargin,a.perpMargin/50);
+ assert.equal(b.edge,a.edge);
+ assert.equal(B.quotePlan({...data,leverageSpec:spec},{...C.defaults,leverage:80},10000).code,"LEVERAGE_BLOCK");
+});
 test("The isolated spot leg persists, rejects replayed futures quotes, and unwinds if the second leg fails",()=>{
  const first=B.advance(initial(),market(),C.defaults);
  assert.ok(first.position?.spot);

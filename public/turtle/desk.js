@@ -14,13 +14,12 @@
  const carryFields=[["allocationPct","5","30","any","占账户权益的百分比，20 表示每腿 20%"],
   ["maxHoldHours","24","168","1","到期后安排匹配退出"],["minEdgeBps","5","100","any","10 个基点 = 0.10%"]];
  const pullbackFields=[["breakoutBars","12","40","1"],["setupBars","6","20","1"],["minNetR","1.5","3","any"],["maxHoldBars","4","32","1"]];
- const keys=carry?carryFields.map(([key])=>key):reversal||pullback?["riskPerTrade","direction",...(pullback?pullbackFields:reversalFields).map(([key])=>key)]:
+ const keys=carry?["leverage",...carryFields.map(([key])=>key)]:reversal||pullback?["riskPerTrade","leverage","direction",...(pullback?pullbackFields:reversalFields).map(([key])=>key)]:
   ["entryBars","exitBars","atrPeriod","stopAtr","riskPerTrade","leverage","direction"];
  if(reversal){
   $("empty").querySelector("h2").textContent="创建找底摸顶 4H 模拟账户";
-  $("empty").querySelector(".features").replaceChildren(...["极值后等收盘确认","结构止损 · 回归中轨止盈","固定 1 倍 · 单笔默认风险 0.5%"].map(value=>node("span",value)));
+  $("empty").querySelector(".features").replaceChildren(...["极值后等收盘确认","结构止损 · 回归中轨止盈","单笔默认计划风险 0.5%"].map(value=>node("span",value)));
   $("create-form").elements.name.value="找底摸顶 4H · ETH Paper";
-  form.elements.leverage.closest("label").remove();
   form.elements.direction.options[0].textContent="双向反转";
   const advanced=form.querySelector("details");
   advanced.querySelector("summary").textContent="高级参数 · 区间、成本与持仓";
@@ -44,9 +43,8 @@
  }
  if(pullback){
   $("empty").querySelector("h2").textContent="创建短线顺势回踩模拟账户";
-  $("empty").querySelector(".features").replaceChildren(...["1H 结构定方向","15m 突破后回踩确认","固定 1 倍 · 单笔默认计划风险 0.3%"].map(value=>node("span",value)));
+  $("empty").querySelector(".features").replaceChildren(...["1H 结构定方向","15m 突破后回踩确认","单笔默认计划风险 0.3%"].map(value=>node("span",value)));
   $("create-form").elements.name.value="短线顺势回踩 · ETH Paper";
-  form.elements.leverage.closest("label").remove();
   form.elements.riskPerTrade.max=".5";
   const advanced=form.querySelector("details");
   advanced.querySelector("summary").textContent="高级参数 · 形态与退出";
@@ -68,7 +66,9 @@
   $("empty").querySelector(".features").replaceChildren(...["买现货 · 空等币量永续","仅做正费率方向","分开核算资金费和双边成本"].map(value=>node("span",value)));
   $("create-form").elements.name.value="资金费率对冲 · ETH Paper";
   form.querySelector("details").remove();
-  form.querySelector(".fields").replaceChildren(...carryFields.map(([key,min,max,step,hint])=>{
+  const leverageControl=form.elements.leverage.closest("label");
+  leverageControl.firstChild.textContent="永续腿模拟杠杆";
+  form.querySelector(".fields").replaceChildren(leverageControl,...carryFields.map(([key,min,max,step,hint])=>{
    const label=node("label",labels[key]),input=node("input");
    Object.assign(input,{name:key,type:"number",min,max,step,required:true});
    label.append(input,node("small",hint));
@@ -88,7 +88,7 @@
   $("position").parentElement.querySelector("p:last-child").textContent="暂停新增后继续处理当前两腿和资金费对账。";
  }
  const state={id:accountId??new URLSearchParams(location.search).get("account")??"",accounts:[],defaults:null,data:null,busy:false,dirty:false,editBase:null,hash:null,confirmHash:null,confirmAllowed:false,online:false,loaded:false,ticket:0,filter:"all"};
- let disposed=false;
+ let disposed=false,leverageLookup=null;
  const fmt=(x,n=2)=>x==null||!Number.isFinite(Number(x))?"—":Number(x).toLocaleString("zh-CN",{maximumFractionDigits:n}),time=x=>x?new Date(x).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}):"—",percent=x=>fmt(x*100,6)+"%";
  const direction={both:"双向",long:"仅做多",short:"仅做空"};
  let railKey="";
@@ -97,7 +97,7 @@
  Object.assign(codes,{MONITORING:"监控中",HEDGED:"对冲持有",UNHEDGED:"暂有单腿敞口",RATE_BLOCK:"费率非正",BASIS_BLOCK:"基差阻断",
   FUNDING_BLOCK:"等待资金费核对",EXIT_WAIT:"等待退出盘口",RECONCILING:"结算核对中",SETTLED:"已结算",COOLDOWN:"轮次冷却"});
  Object.assign(codes,{WAIT_TREND:"等待方向",WAIT_PULLBACK:"等待回踩",WAIT_PULLBACK_CONFIRM:"等待回踩确认",
-  SETUP_INVALID:"形态失效",PULLBACK_CONFIRMED:"回踩已确认",SIGNAL_EXPIRED:"入场窗口已过"});
+  SETUP_INVALID:"形态失效",PULLBACK_CONFIRMED:"回踩已确认",SIGNAL_EXPIRED:"入场窗口已过",LEVERAGE_BLOCK:"交易所杠杆档位阻断"});
  const reasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出"};
  async function api(route,body){const r=await fetch("/api/v4/"+mode+"/"+route,{credentials:"same-origin",cache:"no-store",...(body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{})});if(r.status===401)throw Error("登录已过期，请重新登录");const v=await r.json();if(!r.ok||!v.ok){const error=Error(v.error||"请求失败");error.snapshot=v.snapshot;throw error;}return v;}
  function msg(s){$("message").textContent=s;$("message").hidden=!s;}
@@ -109,8 +109,35 @@
  function setting(key,value){if(key==="direction")return direction[value];if(percentField(key))return percent(value);if(key==="maxHoldHours")return value+" 小时";if(key==="minEdgeBps")return value+" 个基点";if(key==="leverage")return value+"x";if(key==="stopAtr")return fmt(value,6)+" ATR";if(key==="minNetR")return value+"R";if(["maxAdx","bandWidth"].includes(key))return fmt(value,4);return value+" 根";}
  function differences(from,to){return keys.filter(k=>percentField(k)?Math.abs(from[k]-to[k])>1e-15:from[k]!==to[k]).map(k=>labels[k]+" "+setting(k,from[k])+" → "+setting(k,to[k]));}
  function list(id,rows){const box=$(id);box.replaceChildren(...rows.map(value=>node("li",value)));box.hidden=!rows.length;}
+ async function loadLeverage(){
+  const lookup={id:state.id,pending:true,spec:null};
+  leverageLookup=lookup;
+  preview();
+  try {
+   const response=await fetch("/api/v4/desk/leverage?id="+encodeURIComponent(lookup.id),{credentials:"same-origin",cache:"no-store"});
+   if(response.ok)lookup.spec=(await response.json()).spec;
+  }catch {lookup.spec=null;}
+  finally{
+   lookup.pending=false;
+   if(!disposed&&lookup===leverageLookup&&state.id===lookup.id&&$("parameters").open)preview();
+  }
+ }
+ function applyLeverageHint(c){
+  const lookup=leverageLookup?.id===state.id?leverageLookup:null;
+  const notional=carry?(state.data?.balance??0)*c.allocationPct:0;
+  const tier=lookup?.spec?.tiers.find(t=>notional>=t.floor&&(t.cap===null||notional<t.cap));
+  const input=form.elements.leverage, hint=$("leverage-hint");
+  input.removeAttribute("max");
+  if(tier){
+   input.max=tier.maxLeverage;
+   hint.textContent=lookup.spec.market+" "+(carry?"永续腿当前档位最高":"交易所公开最高")+" "+tier.maxLeverage+" 倍。"+(carry?"现货腿按全额本金计。":"开仓时会按实际名义仓位复核。");
+  }else hint.textContent=lookup?.pending?"正在读取交易所杠杆档位…":lookup?.spec?
+   "计划名义仓位超出交易所分档范围。":"交易所档位暂未取得，保存时会重新校验。";
+ }
  function preview(){
-  const c=values(),valid=keys.every(k=>form.elements[k].validity.valid)&&(carry||reversal||pullback||c.exitBars<c.entryBars);
+  const c=values();
+  applyLeverageHint(c);
+  const valid=keys.every(k=>form.elements[k].validity.valid)&&(carry||reversal||pullback||c.exitBars<c.entryBars);
   const changes=state.editBase?differences(state.editBase,c):[];
   state.dirty=changes.length>0;
   const invalid=keys.find(key=>!form.elements[key].validity.valid);
@@ -206,7 +233,9 @@
    const phase={hedged:"双腿对冲",spot_only:"只有现货腿",reconciling:"已退出 · 资金费待核对",flat:"空仓"}[s.carry?.phase]||"空仓";
    $("side").textContent=$("position-state").textContent=phase;
    details("position",p?[["状态",phase],["每腿币量",fmt(p.qty,8)+" "+s.symbol],["现货开仓价",fmt(p.spot.price,6)],
-    ["永续开仓价",fmt(p.perp?.price,6)],["已确认资金费",amount(p.funding)],["开始时间",time(p.openedAt)]]:[["仓位","当前空仓"]]);
+    ["永续开仓价",fmt(p.perp?.price,6)],["永续杠杆",(p.config?.leverage??1)+"x"],
+    ["永续初始保证金",amount(p.perp?(p.perpMargin??p.perp.price*p.qty):null)],
+    ["已确认资金费",amount(p.funding)],["开始时间",time(p.openedAt)]]:[["仓位","当前空仓"]]);
    $("pending").textContent=s.pending?.status||"";
    details("config-summary",[["生效范围",s.activeConfig?"下一轮":"下次开仓"],...keys.map(key=>[labels[key],setting(key,c[key])])]);
   }
@@ -235,7 +264,7 @@
   }catch(e){if(ticket!==state.ticket)return;state.online=false;if(state.data)state.data={...state.data,fresh:false,price:null,nextEntry:null,floating:state.data.position?null:0,equity:state.data.position?null:state.data.equity,decision:{code:"MARKET_UNAVAILABLE",reason:e.message}};msg(e.message);render();}
  }
  async function run(fn,errorId){if(state.busy||disposed)return;state.ticket++;state.busy=true;render();try{await fn();}catch(e){if(e.snapshot?.id===state.id)state.data=e.snapshot;if(errorId)$(errorId).textContent=e.message;else msg(e.message);}finally{state.busy=false;if(!disposed)render();}}
- function edit(){if(!state.data)return;state.hash=state.data.configHash;state.editBase=state.data.config;setFields(state.data.config);$("config-error").textContent="";$("config-progress").textContent="";$("config-title").textContent=state.data.name;$("config-note").textContent=state.data.activeConfig?"当前仓位或委托使用锁定参数。本次保存从下一轮生效。":"保存参数后，下次开仓使用新设置。";$("parameters").showModal();}
+ function edit(){if(!state.data)return;state.hash=state.data.configHash;state.editBase=state.data.config;setFields(state.data.config);$("config-error").textContent="";$("config-progress").textContent="";$("config-title").textContent=state.data.name;$("config-note").textContent=state.data.activeConfig?"当前仓位或委托使用锁定参数。本次保存从下一轮生效。":"保存参数后，下次开仓使用新设置。";$("parameters").showModal();loadLeverage();}
  function cancelEdit(){if(state.busy||state.dirty&&!confirm("放弃本次尚未保存的参数修改？"))return;state.dirty=false;state.editBase=null;$("parameters").close();render();}
  $("edit").onclick=$("quick-edit").onclick=edit;$("cancel-edit").onclick=cancelEdit;$("parameters").addEventListener("cancel",e=>{e.preventDefault();cancelEdit();});
  form.oninput=()=>{$("config-error").textContent="";render();};

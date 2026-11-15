@@ -1,5 +1,6 @@
 "use strict";
 const crypto=require("crypto"),C=require("./config");
+const Leverage=require("../../market_leverage");
 const round=n=>Math.round(n*1e10)/1e10;
 const floorQty=(qty,step)=>round(Math.floor(qty/step+1e-9)*step);
 function initial(a,profile=C){return {schema:1,identity:profile.identity(a),initialEquity:a.simulationBalance,balance:a.simulationBalance,realized:0,running:false,riskLock:false,position:null,pending:null,orders:[],trades:[],lastSignalAt:0,lastQuoteTime:0,day:null};}
@@ -32,6 +33,10 @@ function plan(b,a,c,data,analysis,profile=C){
  const unitRisk=levels?.unitRisk??distance+price*cost.entryFeeRate+(price+distance)*(cost.exitFeeRate+cost.estimatedExitSlippage);
  const raw=Math.min(budget/unitRisk,b.balance*leverage/(price*(1+cost.entryFeeRate*leverage))),qty=floorQty(raw,data.rules.step);
  if(!(distance>0&&Number.isFinite(distance)&&qty>=data.rules.minQty&&qty<=data.rules.maxQty&&qty*price>=data.rules.minNotional))throw Error("SIZE_BLOCK：风险预算不足或数量不符合原生规格");
+ if(data.leverageSpec!==undefined){
+  const issue=Leverage.leverageError(leverage,data.leverageSpec,qty*Math.max(price,(q.bid+q.ask)/2));
+  if(issue)throw Error("LEVERAGE_BLOCK："+issue);
+ }
  return {qty,side,budget,atr:analysis.atr,distance,cost,config:{...c},configHash:profile.hash(c),signalAt:analysis.closedAt,revision:profile.REVISION,
   ...(analysis.setupAt?{setupAt:analysis.setupAt}:{}),
   ...(entry?{entry:{...entry},netR:levels.netR}:{})};
@@ -80,6 +85,12 @@ function advance(before,e,c,profile=C){
    const raw=Math.min(m.qty,m.budget/unit,b.balance*leverage/(price*(1+cost.entryFeeRate*leverage)),(m.side==="long"?q.askQty:q.bidQty)*.1),qty=floorQty(raw,e.data.rules.step);
    if(!(stop>0&&qty>=e.data.rules.minQty&&qty*price>=e.data.rules.minNotional&&qty<=e.data.rules.maxQty)){
     o.status="CANCELLED";o.finishedAt=time;b.pending=null;decide(b,"SIZE_BLOCK","实际盘口可成交数量不足或止损无效，取消余量",time);return b;
+   }
+   if(e.data.leverageSpec!==undefined){
+    const issue=Leverage.leverageError(leverage,e.data.leverageSpec,qty*Math.max(price,mid));
+    if(issue){
+     o.status="CANCELLED";o.finishedAt=time;b.pending=null;decide(b,"LEVERAGE_BLOCK",issue,time);return b;
+    }
    }
    const permission=e.permit(m.budget,m.side);if(!permission.allowed){o.status="CANCELLED";o.finishedAt=time;b.pending=null;decide(b,"PORTFOLIO_BLOCK",permission.reason||"组合风险阻断",time);return b;}
    b.position={id:o.id,side:m.side,qty,entry:price,openedAt:time,stop,initialStop:stop,atr:m.atr,budget:m.budget,actualRisk:qty*unit,entryFee:price*qty*cost.entryFeeRate,cost,config:m.config,configHash:m.configHash,funding:0,fundingThrough:time,signalAt:m.signalAt,mae:0,mfe:0};
@@ -136,8 +147,9 @@ function advance(before,e,c,profile=C){
  let m;
  try {m=plan(b,e.account,c,e.data,analysis,profile);}
  catch(error){
-  if(!analysis.entry)throw error;
-  const code=error.message.startsWith("COST_BLOCK")?"COST_BLOCK":error.message.startsWith("STRUCTURE_RISK")?"STRUCTURE_RISK":"SIZE_BLOCK";
+  const leverageBlocked=error.message.startsWith("LEVERAGE_BLOCK");
+  if(!analysis.entry&&!leverageBlocked)throw error;
+  const code=leverageBlocked?"LEVERAGE_BLOCK":error.message.startsWith("COST_BLOCK")?"COST_BLOCK":error.message.startsWith("STRUCTURE_RISK")?"STRUCTURE_RISK":"SIZE_BLOCK";
   decide(b,code,error.message,time);return b;
  }
  const permission=e.permit(m.budget,m.side);

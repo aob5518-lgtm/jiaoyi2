@@ -1,5 +1,6 @@
 "use strict";
 const crypto=require("crypto"),Turtle=require("../strategy/turtle_4h/config"),B=require("../strategy/turtle_4h/book");
+const Leverage=require("../market_leverage");
 function fields(v,keys){if(!v||typeof v!=="object"||Array.isArray(v)||Object.keys(v).some(k=>!keys.includes(k)))throw Error("请求包含不允许的身份、资金或权限字段");}
 function body(req){return new Promise((resolve,reject)=>{let text="",large=false;req.on("data",x=>{if(large)return;text+=x;if(Buffer.byteLength(text)>16384){text="";large=true;}});req.on("end",()=>{try{if(large)throw Error();resolve(JSON.parse(text||"{}"));}catch{reject(Error("请求格式无效"));}});req.on("error",reject);});}
 async function handle(req,res,parsed,d){
@@ -27,7 +28,9 @@ async function handle(req,res,parsed,d){
    fields(input,["name","symbol","initialEquity","config"]);const c=C.normalize(input.config),equity=input.initialEquity??10000;
    if(typeof input.name!=="string"||!input.name.trim()||input.name.length>60||!["ETH","BTC"].includes(input.symbol)||typeof equity!=="number"||!Number.isFinite(equity)||equity<100||equity>1e7)throw Error("账户名称、品种或初始模拟权益无效");
    const a={id:crypto.randomUUID(),name:input.name.trim(),platform:"binance",symbol:input.symbol,quoteAsset:"USDT",strategyType:C.ID,strategyMode:(C.label||"海龟趋势 4H")+" · Paper",[configKey]:c,running:false,tradeMode:"simulation",simulationEnabled:true,simulationBalance:equity,interval:15000,side:"long",leverage:c.leverage??1,maxAdds:0,baseAmount:1,addAmount:1,takeProfit:.01,addTrigger:.01};
-   C.assertAccount(a);const before=d.configuration(),next=structuredClone(before);next.accounts.push(a);
+   C.assertAccount(a);
+   if(c.leverage>1&&d.leverageRules)Leverage.assertAllowed(c.leverage,await d.leverageRules(a),c.allocationPct?equity*c.allocationPct:0);
+   const before=d.configuration(),next=structuredClone(before);next.accounts.push(a);
    // The independent empty book may safely precede account registration; failed registration never starts a strategy.
    d.engine.commit(a,d.engine.initial?d.engine.initial(a):B.initial(a,C));d.save(next);return send(200,{ok:true,id:a.id,message:"独立模拟账户已创建，保持停止；无需交易密钥"});
   }
@@ -45,8 +48,13 @@ async function handle(req,res,parsed,d){
    return send(200,{ok:true,preflight:snapshot.preflight,snapshot});
   }
   if(route==="config"){
-   fields(input,["id","config","expectedHash"]);const c=C.normalize(input.config),meta=d.engine.configure(a,c,input.expectedHash),next=d.configuration();
-   next.accounts.find(v=>v.id===a.id)[configKey]=c;d.save(next);return send(200,{ok:true,...meta,message:meta.nextCycleOnly?"已保存为下一轮参数；持仓与待成交委托仍按原快照执行":"参数已保存，未自动启动"});
+   fields(input,["id","config","expectedHash"]);
+   const c=C.normalize(input.config),meta=d.engine.configure(a,c,input.expectedHash);
+   if(c.leverage>1&&d.leverageRules)Leverage.assertAllowed(c.leverage,await d.leverageRules(a),c.allocationPct?d.engine.get(a).balance*c.allocationPct:0);
+   const next=d.configuration(),target=next.accounts.find(v=>v.id===a.id);
+   target[configKey]=c;
+   target.leverage=c.leverage??1;
+   d.save(next);return send(200,{ok:true,...meta,message:meta.nextCycleOnly?"已保存为下一轮参数；持仓与待成交委托仍按原快照执行":"参数已保存，未自动启动"});
   }
   if(route==="control"){
    fields(input,["id","action","confirm","expectedHash","positionId"]);
@@ -66,6 +74,8 @@ async function handle(req,res,parsed,d){
    if(input.action==="start"){
     if(input.confirm!==true||input.expectedHash!==C.hash(a[configKey]))throw Error("请确认当前已保存的参数后再启动");
     if(d.engine.get(a)?.running)return send(200,{ok:true,message:"当前模拟监控已运行",snapshot:d.engine.view(a,st)});
+    const c=C.normalize(a[configKey]);
+    if(c.leverage>1&&d.leverageRules)Leverage.assertAllowed(c.leverage,await d.leverageRules(a),c.allocationPct?d.engine.get(a).balance*c.allocationPct:0);
     await d.engine.refresh(a);
    }
    d.engine.control(a,st,input.action);return send(200,{ok:true,snapshot:d.engine.view(a,st),message:input.action==="start"?(C.startMessage||"4H 模拟监控已启动；等待下一根已收盘信号"):"已暂停新开仓；已有仓位继续执行退出保护"});

@@ -61,7 +61,8 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#deskAccount').textContent.startsWith('超长') && document.querySelector('#deskPrimaryAction').textContent==='配置并启动'");
    await click("#deskPrimaryAction");await until("document.querySelector('#page-parameters').open");
    await fitDialogs();
-   await evaluate("const f=document.querySelector('#deskSettings');f.elements.baseAmount.value='777';f.elements.side.value='short';f.elements.addTrigger.value='1.5';f.elements.takeProfit.value='3.25';f.dispatchEvent(new Event('input',{bubbles:true}));");
+   await until("document.querySelector('#deskSettings [name=leverage]').max==='150'");
+   await evaluate("const f=document.querySelector('#deskSettings');f.elements.leverage.value='25';f.elements.baseAmount.value='777';f.elements.side.value='short';f.elements.addTrigger.value='1.5';f.elements.takeProfit.value='3.25';f.dispatchEvent(new Event('input',{bubbles:true}));");
    await until("document.querySelector('#previewNotional').textContent.includes('1,377') && !document.querySelector('#parameterDirty').hidden");
    await screenshot(width+"x"+height+"-parameters");
    await dismiss("parameters");await click("#deskPrimaryAction");
@@ -153,9 +154,9 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#deskAccountPicker').value==='new-carry' && !document.querySelector('#deskEditShortcut').disabled");
    if(server.controls.length!==3)throw Error("Creating a carry account started it");
    await click("#deskEditShortcut");
-   await until(`${root}.querySelector('#parameters').open && !!${root}.querySelector('[name=allocationPct]') && !${root}.querySelector('[name=riskPerTrade]')`);
-   await evaluate(`const form=${root}.querySelector('#config-form');form.elements.allocationPct.value='25';form.elements.allocationPct.dispatchEvent(new Event('input',{bubbles:true}));form.querySelector('#save-start').click();`);
-   await until(`${root}.querySelector('#run').textContent.includes('RUNNING') && ${root}.querySelector('#carry-forecast').textContent.includes('预计往返成本')`);
+   await until(`${root}.querySelector('#parameters').open && ${root}.querySelector('[name=leverage]').max==='150' && !${root}.querySelector('[name=riskPerTrade]')`);
+   await evaluate(`const form=${root}.querySelector('#config-form');form.elements.leverage.value='50';form.elements.allocationPct.value='25';form.elements.allocationPct.dispatchEvent(new Event('input',{bubbles:true}));form.querySelector('#save-start').click();`);
+   await until(`${root}.querySelector('#run').textContent.includes('RUNNING') && ${root}.querySelector('#carry-forecast').textContent.includes('预计往返成本') && ${root}.querySelector('#config-summary').textContent.includes('50x')`);
    if(server.controls.at(-1)?.id!=="new-carry")throw Error("Carry control reached the wrong account");
    await screenshot(width+"x"+height+"-carry");
    await click("#deskHistoryShortcut");

@@ -88,7 +88,7 @@
   <form id="deskSettings" class="parameter-form">
     <fieldset class="panel parameter-group"><legend><span>01</span> 首仓设置</legend><p class="group-intro">启动后，按选定方向和金额开第一笔模拟仓位。</p><div class="field-grid">
       <label>交易方向<select name="side"><option value="long">做多 · 看涨</option><option value="short">做空 · 看跌</option></select><small>做多等价格上涨，做空等价格下跌。</small></label>
-      <label>杠杆倍数<div class="input-unit"><input name="leverage" type="number" min="1" max="10" step="1" required><span>倍</span></div><small>影响保证金用量；金额填写的是名义仓位。</small></label>
+      <label>杠杆倍数<div class="input-unit"><input name="leverage" type="number" min="1" step="1" required><span>倍</span></div><small id="deskLeverageHint">打开参数时读取交易所档位。</small></label>
       <label class="field-wide">首仓金额<div class="input-unit"><input name="baseAmount" type="number" min="1" max="100000000" step="any" required><span data-quote>U</span></div><small id="baseAmountHelp">第一笔仓位的名义金额，不是保证金。</small></label>
     </div></fieldset>
     <fieldset class="panel parameter-group"><legend><span>02</span> 补仓设置</legend><p class="group-intro">按固定金额补仓，不翻倍；每次相对最近成交价计算。</p><div class="field-grid">

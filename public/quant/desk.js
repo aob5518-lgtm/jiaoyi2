@@ -49,6 +49,7 @@
   closeRail();
   $("page-"+page).showModal();
   if(page==="accounts")document.dispatchEvent(new CustomEvent("workspacepage",{detail:"connections"}));
+  if(page==="parameters")loadLeverage();
   if(page==="history"){state.offset=0;loadTrades();}
   if(newAccount)$("newConnection").click();
  }
@@ -141,6 +142,31 @@
  }
  const form = $("deskSettings");
  const field = name => form.elements.namedItem(name);
+ let leverageLookup;
+ async function loadLeverage(){
+  const lookup={id:state.id,pending:true,spec:null};
+  leverageLookup=lookup;
+  updateBudget();
+  try {lookup.spec=(await api("/api/v4/desk/leverage?id="+encodeURIComponent(lookup.id))).spec;}
+  catch {lookup.spec=null;}
+  finally {
+   lookup.pending=false;
+   if(leverageLookup===lookup&&lookup.id===state.id)updateBudget();
+  }
+ }
+ function renderLeverage(c){
+  const lookup=leverageLookup?.id===state.id?leverageLookup:null;
+  const notional=c.baseAmount+c.addAmount*c.maxAdds;
+  const tier=lookup?.spec?.tiers.find(t=>notional>=t.floor&&(t.cap===null||notional<t.cap||lookup.spec.capInclusive&&notional===t.cap));
+  const input=field("leverage");
+  input.removeAttribute("max");
+  input.step=lookup?.spec?.step??(state.data?.selected.platform==="extended"?.1:1);
+  if(tier){
+   input.max=tier.maxLeverage;
+   $("deskLeverageHint").textContent=lookup.spec.market+" 当前计划仓位最高 "+tier.maxLeverage+" 倍";
+  }else $("deskLeverageHint").textContent=lookup?.pending?"正在读取交易所杠杆档位…":lookup?.spec?
+   "计划名义仓位超出交易所分档范围":"交易所档位暂未取得，保存时会重新校验。";
+ }
  let turtleDesk, turtleTarget=null, turtleRequest=0;
  function accountsFor(mode,accounts=state.data?.accounts||[]){
   const list=accounts.filter(account=>fromAccount(account)===mode);
@@ -314,6 +340,7 @@
  }
  function updateBudget() {
   const c = settingsValues(), unit = state.data?.selected.quoteAsset || "U";
+  renderLeverage(c);
   const preview = window.JustSettingsPreview?.build(c, state.offline ? null : state.data?.snapshot.mark) || {valid: false, rows: []};
   $("parameterDirty").hidden = !state.dirty;
   $("deskSaveState").textContent = state.busy ? "正在保存或同步…" : state.dirty ? "有未保存的参数" : state.data?.selected.ready ? "当前已保存参数" : "尚未保存经典参数";

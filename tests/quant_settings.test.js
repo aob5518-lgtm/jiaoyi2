@@ -22,7 +22,7 @@ test("Missing or stale price does not fabricate a ladder or disable budget previ
  }
 });
 test("Blank, out-of-range and fractional integer fields never show misleading estimates",()=>{
- for(const bad of [{leverage:0},{leverage:1.5},{baseAmount:NaN},{addAmount:0},{maxAdds:11},{maxAdds:1.2},{addTrigger:0},{takeProfit:1},{side:"other"}]){
+ for(const bad of [{leverage:0},{leverage:1.55},{baseAmount:NaN},{addAmount:0},{maxAdds:11},{maxAdds:1.2},{addTrigger:0},{takeProfit:1},{side:"other"}]){
   const p=P.build({...defaults,...bad},2500);assert.equal(p.valid,false);assert.deepEqual(p.rows,[]);assert.equal(p.margin,undefined);
  }
 });

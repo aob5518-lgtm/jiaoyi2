@@ -1,15 +1,17 @@
 "use strict";
 
 const {createHash}=require("node:crypto");
+const {valid:validLeverage}=require("../../market_leverage");
 const ID="pullback_15m_v1", REVISION="PULLBACK_15M_V1", BAR=15*60000;
 const label="短线顺势回踩";
-const defaults=Object.freeze({riskPerTrade:.003,direction:"both",breakoutBars:20,setupBars:12,maxHoldBars:16,minNetR:1.5});
+const defaults=Object.freeze({riskPerTrade:.003,direction:"both",breakoutBars:20,setupBars:12,maxHoldBars:16,minNetR:1.5,leverage:1});
 
 function normalize(input={}) {
  if (!input||typeof input!=="object"||Array.isArray(input)||Object.keys(input).some(key=>!Object.hasOwn(defaults,key))) {
   throw Error("顺势回踩参数含不支持的字段");
  }
  const c={...defaults,...input};
+ if(!validLeverage(c.leverage))throw Error("杠杆须为大于或等于 1 的整数");
  const ranges=[["riskPerTrade",.001,.005],["breakoutBars",12,40,true],
   ["setupBars",6,20,true],["maxHoldBars",4,32,true],["minNetR",1.5,3]];
  for (const [key,min,max,integer] of ranges) {
@@ -21,9 +23,9 @@ function normalize(input={}) {
 function assertAccount(a) {
  if (a?.strategyType!==ID||a.tradeMode!=="simulation"||a.simulationEnabled!==true||
      a.platform!=="binance"||a.quoteAsset!=="USDT"||!["ETH","BTC"].includes(a.symbol)||
-     !Number.isFinite(a.simulationBalance)||a.simulationBalance<100||a.leverage!==1||
+     !Number.isFinite(a.simulationBalance)||a.simulationBalance<100||!validLeverage(a.leverage??1)||
      ["address","privateKey","apiKey","apiSecret","starkPrivateKey","publicKey","vault"].some(key=>a[key])) {
-  throw Error("PAPER_ONLY：短线回踩仅支持无交易凭据、固定 1 倍的 Binance BTC/ETH USDT 永续模拟账户");
+  throw Error("PAPER_ONLY：短线回踩仅支持无交易凭据的 Binance BTC/ETH USDT 永续模拟账户");
  }
 }
 function hash(c) {
