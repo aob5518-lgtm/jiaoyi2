@@ -4,12 +4,12 @@
   const data=A.state.data;if(!data)return;
   const list=A.$("accountList"),select=A.$("accountSwitcher"),search=A.$("accountSearch").value,strategy=A.$("accountStrategy").value,status=A.$("accountStatus").value,scrollTop=list.scrollTop;
   list.replaceChildren();select.replaceChildren();
+  for(const a of data.accounts){const option=A.el("option",a.name+" · "+A.name(a.strategyType));option.value=a.id;option.selected=a.id===A.state.id;select.append(option);}
   for(const a of data.accounts.filter(v=>A.accountMatches(v,search,strategy,status))){
    const button=A.button("",()=>A.selectAccount(a.id),"account-card"+(a.id===A.state.id?" selected":"")),head=A.el("div",null,"account-card-head"),name=A.el("strong",a.name),restricted=a.policy.status!=="SUPPORTED",state=restricted?"受限":a.running?"运行":"暂停",badge=A.el("span",state,"account-card-state"+(restricted?" warning":""));
    name.title=a.name;badge.title=restricted?A.phase(a.policy.status):a.running?"RUNNING · 监控运行中":"PAUSED · 新交易已暂停";head.append(name,badge);
    const pair=A.el("span",a.symbol+"/"+a.quoteAsset+" · "+A.name(a.strategyType),"account-card-pair");pair.title=a.platform+" · "+pair.textContent;
    const net=A.el("small",null,"account-card-net"),value=A.el("b",A.fmt(a.netPnl," U"),A.value(a.netPnl)===null?"":Number(a.netPnl)>0?"profit":Number(a.netPnl)<0?"loss":"");net.append(A.el("span","净收益"),value);value.title=A.fmt(a.netPnl," U");button.append(head,pair,net);button.title=a.name+" · "+pair.title+" · "+badge.title;button.setAttribute("aria-pressed",String(a.id===A.state.id));list.append(button);
-   const option=A.el("option",a.name+" · "+A.name(a.strategyType));option.value=a.id;option.selected=a.id===A.state.id;select.append(option);
   }
   list.scrollTop=scrollTop;
   if(!list.children.length)list.append(A.el("p","没有匹配的账户","empty"));

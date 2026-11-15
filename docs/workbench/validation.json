@@ -1,0 +1,20 @@
+{
+  "baseline": "4bb0c1e025f706043b63b5670b1c347b571e3b71",
+  "tests": {
+    "pass": 437,
+    "fail": 0,
+    "skip": 0
+  },
+  "browserViews": 58,
+  "interactionFlows": 24,
+  "browserExceptions": 0,
+  "accountCounts": [
+    63,
+    100,
+    150
+  ],
+  "syntheticOnly": true,
+  "backendChanged": false,
+  "strategyParametersChanged": false,
+  "productionDeployed": false
+}
