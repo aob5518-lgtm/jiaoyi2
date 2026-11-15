@@ -130,6 +130,22 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#deskPrimaryAction').disabled && !document.querySelector('#deskPauseAction').disabled && document.querySelector('#deskAccountPicker').value==='new-turtle'");
    if(server.controls.length!==2)throw Error("Strategy switching sent an order control");
    results.push({width,height,scenario:"switch-strategy-edit-matching-parameters-and-direct-start",...await fit()});
+   await click('[data-strategy="reversal"]');
+   await until("document.querySelector('#deskTurtlePane').shadowRoot?.querySelector('#empty h2')?.textContent.includes('找底摸顶') && !document.querySelector('#deskPrimaryAction').disabled");
+   await click("#deskPrimaryAction");
+   await evaluate(`${root}.querySelector('#create-form').requestSubmit()`);
+   await until("document.querySelector('#deskAccountPicker').value==='new-reversal' && !document.querySelector('#deskEditShortcut').disabled");
+   if(server.controls.length!==2)throw Error("Creating a reversal account started it");
+   await click("#deskEditShortcut");
+   await until(`${root}.querySelector('#parameters').open && !!${root}.querySelector('[name=maxAdx]') && !${root}.querySelector('[name=entryBars]')`);
+   await evaluate(`const form=${root}.querySelector('#config-form');form.elements.riskPerTrade.value='0.6';form.elements.riskPerTrade.dispatchEvent(new Event('input',{bubbles:true}));form.querySelector('#save-start').click();`);
+   await until(`${root}.querySelector('#decision-code').textContent==='等待极值' && ${root}.querySelector('#run').textContent.includes('RUNNING') && !document.querySelector('#deskPauseAction').disabled`);
+   if(server.controls.at(-1)?.id!=="new-reversal"||server.controls.at(-1)?.action!=="start")throw Error("Reversal control reached the wrong account");
+   await screenshot(width+"x"+height+"-reversal");
+   await click("#deskHistoryShortcut");
+   await until("document.querySelector('#page-history').open && document.querySelector('#deskTrades').textContent.includes('暂无已结算交易')");
+   await dismiss("history");
+   results.push({width,height,scenario:"reversal-create-save-start-history",...await fit()});
   }
   await call("Page.navigate",{url:"http://127.0.0.1:"+port+"/?scenario=save-failed#parameters"});
   await until("document.querySelector('#page-parameters').open && !document.querySelector('#deskSave').disabled");

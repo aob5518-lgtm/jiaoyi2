@@ -77,7 +77,7 @@ async function handle(req, res, parsed, d) {
     requireFields(input, checking ? ["id"] : ["id", "name", "address", ...secrets]);
     const account = d.getAccountById(input.id);
     if (!account) throw Error("账户不存在");
-    if(account.strategyType==="turtle_4h_v1"&&!checking&&Object.keys(credentialPatch(input)).length)throw Error("独立海龟 Paper 研究账户禁止添加交易密钥或地址；请在原连接账户管理 API");
+    if(["turtle_4h_v1","reversal_4h_v1"].includes(account.strategyType)&&!checking&&Object.keys(credentialPatch(input)).length)throw Error("独立模拟账户禁止添加交易密钥或地址");
     if (checking) {
       try {
         const summary = await d.checkConnection(account);

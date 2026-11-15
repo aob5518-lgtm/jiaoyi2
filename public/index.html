@@ -31,6 +31,7 @@
   <div role="group" class="strategy-tabs" aria-label="选择策略">
    <button type="button" data-strategy="classic" aria-pressed="true">经典补仓</button>
    <button type="button" data-strategy="turtle" aria-pressed="false">海龟趋势 4H</button>
+   <button type="button" data-strategy="reversal" aria-pressed="false">找底摸顶 4H</button>
   </div>
   <button type="button" class="text-button" data-strategy="history" aria-pressed="false" hidden>历史账户</button>
  </div>
@@ -44,7 +45,7 @@
  </div>
  <p id="deskStarterHint" role="status">正在同步账户。</p>
 </section>
-<section id="deskTurtlePane" aria-label="海龟趋势 4H" data-template="/turtle.html" data-stylesheet="/turtle/desk.css?v=3" hidden></section>
+<section id="deskTurtlePane" aria-label="模拟策略工作台" data-template="/turtle.html" data-stylesheet="/turtle/desk.css?v=3" hidden></section>
 <section id="page-trading" aria-label="交易总览">
 <div class="workspace-status"><div class="account-badges"><span id="deskMode" class="tag">—</span><span id="deskRun" class="tag">—</span><span id="deskMarket" class="tag">等待行情</span></div><small id="deskUpdated">等待同步</small></div>
 <div class="status-grid desk-metrics">

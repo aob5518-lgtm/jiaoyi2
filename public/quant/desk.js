@@ -2,8 +2,10 @@
  "use strict";
  const $ = id => document.getElementById(id);
  const query = new URLSearchParams(location.search);
- const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",history:"历史账户"};
- const fromAccount = account => account.strategyType==="turtle_4h_v1"?"turtle":account.eligible?"classic":"history";
+ const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",reversal:"找底摸顶 4H",history:"历史账户"};
+ const paperStrategies = {turtle:"turtle_4h_v1",reversal:"reversal_4h_v1"};
+ const isPaperMode = mode => Object.hasOwn(paperStrategies,mode);
+ const fromAccount = account => Object.keys(paperStrategies).find(mode=>paperStrategies[mode]===account.strategyType) || (account.eligible?"classic":"history");
  const state = {data:null,id:query.get("account")||"",mode:Object.hasOwn(strategies,query.get("strategy"))?query.get("strategy"):"",empty:false,lastAccounts:{},busy:false,offline:true,dirty:false,request:0,offset:0,trades:[],filter:"all",switching:false,drawer:"",queuedDrawer:"",turtle:null};
  const labels = {hyperliquid: "Hyperliquid", binance: "Binance", extended: "Extended"};
  const keys = ["side", "leverage", "baseAmount", "addAmount", "maxAdds", "addTrigger", "takeProfit"];
@@ -35,7 +37,7 @@
   if(state.busy||state.switching||state.turtle?.busy)return;
   if(state.drawer===page)return;
   if(!closeDrawer())return;
-  if(page==="parameters"&&state.mode==="turtle"){
+  if(page==="parameters"&&isPaperMode(state.mode)){
    if(state.turtle?.snapshot)turtleDesk.edit();
    else if(!state.empty)state.queuedDrawer="parameters";
    return;
@@ -118,7 +120,7 @@
    button.setAttribute("aria-pressed", String(account.id === state.id));
    button.disabled = state.busy || state.switching || !!state.turtle?.busy;
    button.dataset.accountId=account.id;
-   const turtle=account.strategyType==="turtle_4h_v1";
+   const turtle=isPaperMode(fromAccount(account));
    head.append(node("strong", account.name), node("small", turtle?account.running?"运行中":"已暂停":account.error ? "异常" : !account.eligible ? "只读" : account.running ? "运行" : account.ready ? "暂停" : "可配置"));
    const net = account.floating == null ? null : Number(account.floating) + Number(account.realized || 0);
    const foot = node("span", (account.paper ? "模拟" : "Live · 只读") + " · " + (net == null ? account.hasPosition ? "有仓位" : "空仓" : "总净盈亏 " + format(net)), "rail-pnl");
@@ -142,7 +144,7 @@
  let turtleDesk, turtleTarget=null, turtleRequest=0;
  function accountsFor(mode,accounts=state.data?.accounts||[]){
   const list=accounts.filter(account=>fromAccount(account)===mode);
-  if(mode!=="turtle"||!state.turtle)return list;
+  if(!isPaperMode(mode)||!state.turtle)return list;
   const running=new Map(state.turtle.accounts.map(account=>[account.id,account.running]));
   const snapshot=state.turtle.snapshot;
   return list.map(account=>({...account,running:snapshot?.id===account.id?snapshot.running:running.get(account.id)??account.running,
@@ -200,14 +202,14 @@
   const ticket=++turtleRequest;
   $("page-trading").hidden=true;$("deskTurtlePane").hidden=false;
   const pane=$("deskTurtlePane"),root=pane.shadowRoot||pane.attachShadow({mode:"open"});
-  root.replaceChildren(node("p","正在读取海龟 4H 工作台…"));
+  root.replaceChildren(node("p","正在读取"+strategies[state.mode]+"工作台…"));
   try{
    const response=await fetch(pane.dataset.template,{credentials:"same-origin"});
-   if(!response.ok)throw Error("海龟 4H 工作台加载失败");
+   if(!response.ok)throw Error("策略工作台加载失败");
    const source=new DOMParser().parseFromString(await response.text(),"text/html");
    if(ticket!==turtleRequest)return;
    const regions=["message","empty","desk","parameters","create","confirm"].map(id=>source.getElementById(id));
-   if(regions.some(region=>!region)||!window.JustTurtleDesk)throw Error("海龟 4H 工作台资源不完整");
+   if(regions.some(region=>!region)||!window.JustTurtleDesk)throw Error("策略工作台资源不完整");
    const style=document.createElement("link");
    style.rel="stylesheet";style.href=pane.dataset.stylesheet;
    const nodes=regions.map(region=>document.importNode(region,true));
@@ -217,7 +219,7 @@
    wrap.append(...nodes);
    root.replaceChildren(style,wrap);
    turtleDesk=window.JustTurtleDesk.mount(root,{
-    accountId:id,embedded:true,
+    accountId:id,embedded:true,mode:state.mode,
     onState(value){
      if(ticket!==turtleRequest)return;
      state.turtle=value;
@@ -247,7 +249,7 @@
   }
  }
  function renderStarter(account,snapshot){
-  const turtle=state.mode==="turtle",historical=state.mode==="history",paper=state.turtle?.snapshot;
+  const turtle=isPaperMode(state.mode),historical=state.mode==="history",paper=state.turtle?.snapshot;
   const blocked=state.busy||state.switching||state.offline||!!state.turtle?.busy;
   const list=accountsFor(state.mode),picker=$("deskAccountPicker");
   const byName=JSON.stringify(list.map(a=>[a.id,a.name,a.symbol,a.quoteAsset]));
@@ -289,7 +291,7 @@
    primary.disabled=blocked||!state.turtle?.online||!paper||paper.running||state.turtle.dirty||paper.riskLock||!!paper.pending;
    pause.disabled=blocked||!state.turtle?.online||!paper?.running;
    pause.onclick=()=>turtleDesk.pause();
-   hint=!paper?"正在同步海龟 4H…":paper.riskLock?"该模拟账户当前风控锁定。":paper.pending?"当前有待确认委托。":state.turtle.dirty?"请先保存参数。":paper.running?"运行中 · 等待有效的 4H 信号":"已暂停 · 点击「启动模拟」恢复监控";
+   hint=!paper?"正在同步"+strategies[state.mode]+"…":paper.riskLock?"该模拟账户当前风控锁定。":paper.pending?"当前有待确认委托。":state.turtle.dirty?"请先保存参数。":paper.running?"运行中 · 等待有效的 4H 信号":"已暂停 · 点击「启动模拟」恢复监控";
   }else{
    const startControl=document.querySelector('[data-action="start"]'),pauseControl=document.querySelector('[data-action="pause"]');
    primary.textContent=account.ready?"启动模拟":"配置并启动";
@@ -343,7 +345,7 @@
    return;
   }
   const a = data.selected, s = data.snapshot, p = s.position, unit = a.quoteAsset;
-  if(state.empty||state.mode==="turtle"){
+  if(state.empty||isPaperMode(state.mode)){
    $("deskAccount").textContent=state.empty?strategies[state.mode]:a.name;
    $("deskInstrument").textContent=state.empty?"请选择或新建账户":(labels[a.platform]||a.platform)+" · "+a.symbol+" / "+unit;
    $("page-trading").hidden=true;
@@ -398,7 +400,7 @@
    if (ticket !== state.request) return;
    if(!state.mode){
     const selectedMode=fromAccount(data.selected);
-    state.mode=selectedMode!=="history"?selectedMode:accountsFor("classic",data.accounts).length?"classic":accountsFor("turtle",data.accounts).length?"turtle":"classic";
+    state.mode=selectedMode!=="history"?selectedMode:accountsFor("classic",data.accounts).length?"classic":(Object.keys(paperStrategies).find(mode=>accountsFor(mode,data.accounts).length)||"classic");
    }
    const list=accountsFor(state.mode,data.accounts);
    const account=list.find(a=>a.id===state.id)||preferred(state.mode,data.accounts);
@@ -415,10 +417,10 @@
    const legacyPicker=$("connectionSwitcher");
    if([...legacyPicker.options].some(option=>option.value===state.id))legacyPicker.value=state.id;
    state.offline = false;
-   if(state.mode==="turtle")showTurtle(state.id);
+   if(isPaperMode(state.mode))showTurtle(state.id);
    else hideTurtle();
    render();
-   if(state.drawer==="history"&&state.mode!=="turtle")loadTrades();
+   if(state.drawer==="history"&&!isPaperMode(state.mode))loadTrades();
   } catch (error) {
    if (ticket !== state.request) return;
    state.offline = true;
@@ -433,13 +435,13 @@
   catch (error) {message(error.message);return false;}
   finally {state.busy = false;render();}
  }
- const tradeReasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出",take_profit:"止盈"};
+ const tradeReasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出",take_profit:"止盈",mean_target:"回归中轨止盈",time_stop:"到期退出"};
  const historyPageSize=30;
  let historyRequest=0;
  async function loadTrades() {
   if (!state.id) return;
   const {id,offset,mode}=state, ticket=++historyRequest;
-  const turtle=mode==="turtle",snapshot=turtle?state.turtle?.snapshot:state.data?.snapshot;
+  const turtle=isPaperMode(mode),snapshot=turtle?state.turtle?.snapshot:state.data?.snapshot;
   const account=state.data?.selected;
   const current=()=>ticket===historyRequest&&id===state.id&&offset===state.offset&&state.drawer==="history";
   const box=$("deskTrades"), status=$("deskHistoryStatus");
@@ -453,13 +455,13 @@
   $("deskHistoryCount").textContent="—";
   status.textContent="正在读取已结算交易…";
   try {
-   if(turtle&&(!snapshot||snapshot.id!==id))throw Error("海龟 4H 记录尚未同步，请稍后重试。");
+   if(turtle&&(!snapshot||snapshot.id!==id))throw Error("模拟记录尚未同步，请稍后重试。");
    const records=turtle?snapshot.history:null;
-   const data=turtle?{total:records.length,items:records.slice(offset,offset+historyPageSize)}:
-    await api("/api/v4/desk/history?id="+encodeURIComponent(id)+"&offset="+offset);
+   const data=mode==="turtle"?{total:records.length,items:records.slice(offset,offset+historyPageSize)}:
+    await api("/api/v4/"+(mode==="reversal"?"reversal":"desk")+"/history?id="+encodeURIComponent(id)+"&offset="+offset);
    if(!current())return;
    state.trades=data.items;
-   status.textContent=turtle?"显示最近 50 笔已结算交易。":"";
+   status.textContent=mode==="turtle"?"显示最近 50 笔已结算交易。":"";
    for(const item of data.items) {
     const row = node("tr");
    row.append(node("td", time(item.time)), node("td", item.side === "long" ? "做多" : item.side === "short" ? "做空" : item.side),

@@ -1,9 +1,9 @@
 "use strict";
 const C=require("./config"),BASE="https://fapi.binance.com";
 async function json(url){let r;try{r=await fetch(url,{signal:AbortSignal.timeout(12000)});}catch(e){throw Error("BINANCE_PUBLIC_UNAVAILABLE："+(e.cause?.code||e.name||"连接失败"));}if(!r.ok)throw Error("BINANCE_PUBLIC_HTTP_"+r.status);return r.json();}
-function create(request=json,clock=Date.now){let specs,checked=0;const caches=new Map();
+function create(request=json,clock=Date.now,profile=C){let specs,checked=0;const caches=new Map();
  return {async load(a,c,since) {
-  C.assertAccount(a);
+  profile.assertAccount(a);
   const symbol=a.symbol+"USDT",now=clock(),cache=caches.get(symbol);
   const bucket=Math.floor(now/C.BAR);
   const fresh=cache&&cache.bucket===bucket&&now-cache.at<60000;

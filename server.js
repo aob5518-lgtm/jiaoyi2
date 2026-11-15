@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const classicOnly = process.env.JUST_AGENT_CLASSIC_ONLY === "1" || fs.existsSync(path.join(__dirname, ".classic-only"));
 const ClassicOnly = require("./terminal/classic-only");
 const Turtle = require("./strategy/turtle_4h/config");
+const Reversal = require("./strategy/reversal_4h/config");
 let hypothesisResearchService;
 const TrendOnly = require("./trend_only");
 const TrendOnlyV2 = require("./trend_only_v2");
@@ -17,7 +18,8 @@ const { createTrendRuntime } = require("./trend_runtime");
 const TerminalPolicy=require("./terminal/policy");
 const Compound=require("./strategy/compound_4h/config");
 const isCompound=account=>getStrategyType(account)===Compound.ID;
-const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2", "trend_only_v3", "compound_4h_v1", Turtle.ID]);
+const isIndependentPaper = type => type===Turtle.ID||type===Reversal.ID;
+const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2", "trend_only_v3", "compound_4h_v1", Turtle.ID, Reversal.ID]);
 function getStrategyType(acc = {}) {
   const explicit = String(acc?.strategyType || "").trim();
   if (explicit) return explicit; // Unknown identifiers must never select ClassicDCA.
@@ -31,6 +33,7 @@ function getStrategyType(acc = {}) {
 function getStrategyLabel(acc = {}) {
   const type = getStrategyType(acc);
   if(type===Turtle.ID)return "海龟趋势 4H · Paper";
+  if(type===Reversal.ID)return Reversal.label+" · Paper";
   if(!STRATEGY_TYPES.has(type))return "不支持的策略（已限制交易）";
   if(type===Compound.ID)return "4H Compound Reversal V1 · Paper";
   if (type === "trend_only_v1") return "Trend Only V1";
@@ -42,6 +45,7 @@ function getStrategyLabel(acc = {}) {
 function getStrategyMode(acc = {}) {
   const type = getStrategyType(acc);
   if(type===Turtle.ID)return "海龟趋势 4H · Paper";
+  if(type===Reversal.ID)return Reversal.label+" · Paper";
   if(!STRATEGY_TYPES.has(type))return "UNSUPPORTED_STRATEGY";
   if(type===Compound.ID)return "4H Compound Reversal V1";
   return type === "trend_only_v3" ? "Trend Only V3" : type === "trend_only_v2" ? "Trend Only V2" : type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
@@ -1124,7 +1128,7 @@ function normalizeExistingSimulationDefaults() {
   let changed = false;
 
   for (const acc of config.accounts || []) {
-    if(isCompound(acc)||getStrategyType(acc)===Turtle.ID||!STRATEGY_TYPES.has(getStrategyType(acc)))continue; // Independent books never inherit retired defaults.
+    if(isCompound(acc)||isIndependentPaper(getStrategyType(acc))||!STRATEGY_TYPES.has(getStrategyType(acc)))continue; // Independent books never inherit retired defaults.
     const migratedType = getStrategyType(acc);
     if (acc.strategyType !== migratedType) {
       acc.strategyType = migratedType;
@@ -3372,6 +3376,13 @@ const turtlePaper = require("./strategy/turtle_4h/runtime").create({
   {account:{...a,paper:true},equity:turtlePaper.get(a)?.balance,state:{}}
  ],side,risk)
 });
+const reversalPaper = require("./strategy/turtle_4h/runtime").create({
+ directory: __dirname, profile: Reversal, analyze: require("./strategy/reversal_4h/signal").analyze,
+ permit:(a,risk,side)=>require("./strategy/trend_v3/portfolio").snapshot({...a,paper:true},[
+  {account:{...a,paper:true},equity:reversalPaper.get(a)?.balance,state:{}}
+ ],side,risk)
+});
+const independentPaperEngine = account => account.strategyType===Reversal.ID?reversalPaper:turtlePaper;
 const classicPaper = require("./terminal/classic-paper").create(__dirname);
 function verifyDeskLegacyFlat(account, st) {
   const trend = account.strategyType === "classic" ? trendRuntime.get(account) : {};
@@ -3423,6 +3434,7 @@ async function tickAccount(acc) {
     // 每轮只清除“当前异常”；lastError 保留最近一次错误供排查。
     st.activeError = "";
     if(activeStrategyType===Turtle.ID){await turtlePaper.tick(acc,st);return;}
+    if(activeStrategyType===Reversal.ID){await reversalPaper.tick(acc,st);return;}
     if (classicPaper.get(acc.id)) {
       const price = await getMarketPrice(acc);
       classicPaper.mark(getAccountById(acc.id), price);
@@ -4948,10 +4960,11 @@ const server = http.createServer((req, res) => {
     hypothesisResearchService ||= research.createService({directory:path.join(__dirname,".v5-research","integrated")});
     research.handle(req,res,{pathname},hypothesisResearchService);return;
   }
-  if (pathname.startsWith("/api/v4/turtle/")) {
+  if (pathname.startsWith("/api/v4/turtle/") || pathname.startsWith("/api/v4/reversal/")) {
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
+    const reversal=pathname.startsWith("/api/v4/reversal/");
     return require("./terminal/turtle-api").handle(req,res,parsed,{
-      engine:turtlePaper,json:jsonRes,accounts:()=>config.accounts,getAccountById,state:id=>stateMap[id],
+      engine:reversal?reversalPaper:turtlePaper,profile:reversal?Reversal:Turtle,json:jsonRes,accounts:()=>config.accounts,getAccountById,state:id=>stateMap[id],
       configuration:()=>loadConfig(),save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},
       lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock
     });
@@ -5072,6 +5085,7 @@ const server = http.createServer((req, res) => {
         if (!lock) throw new Error("账户交易锁繁忙");
         st.tickRunning = true;
         if (pathname === "/api/trend-only/config") {
+          if(isIndependentPaper(acc.strategyType))throw Error("独立模拟账户请在工作台修改参数");
           require("./terminal/migration-audit").authorize({account:acc,next:{...data,strategyType:data.strategyType??getStrategyType(acc)}});
           if(data.strategyType!==undefined&&!["trend_only_v1","trend_only_v2","trend_only_v3"].includes(data.strategyType))throw Error("策略标识不支持");
           if (st.running || Number(st.positionQty) > 0 || trendRuntime.busy(acc)) throw new Error("请先停止开仓，并平仓或核对未确认订单后修改配置");
@@ -5281,6 +5295,7 @@ const server = http.createServer((req, res) => {
 
         const current = cfg.accounts[idx];
         if (classicPaper.get(current.id)) throw Error("请在量化后台修改经典策略参数");
+        if (isIndependentPaper(current.strategyType) || isIndependentPaper(next.strategyType)) throw Error("独立模拟账户请在工作台修改参数");
         require("./terminal/migration-audit").authorize({account:current,next});
         const currentState = stateMap[current.id];
         if(currentState.tickRunning)throw Error("账户正在执行，请稍后重试");
@@ -5426,7 +5441,7 @@ const server = http.createServer((req, res) => {
 
         await runWithConcurrency(cfg.accounts || [], ACCOUNT_START_SYNC_CONCURRENCY, async (current) => {
           try {
-            if (isTrendOnly(current)||isCompound(current)||TerminalPolicy.restricted(current)) { results.push({ id: current.id, name: current.name, ok: false, skipped: true, error: `${getStrategyMode(current)} 账户需要单独启动；旧策略禁止新交易。` }); return; }
+            if (isIndependentPaper(current.strategyType)||isTrendOnly(current)||isCompound(current)||TerminalPolicy.restricted(current)) { results.push({ id: current.id, name: current.name, ok: false, skipped: true, error: `${getStrategyMode(current)} 账户需要单独启动；旧策略禁止新交易。` }); return; }
             validateAccountConfigPayload({
               platform: current.platform,
               strategyType: current.strategyType || "classic",
@@ -5509,7 +5524,7 @@ const server = http.createServer((req, res) => {
     ensureAccountStates();
 
     for (const current of cfg.accounts || []) {
-      if(current.strategyType===Turtle.ID){turtlePaper.control(current,stateMap[current.id],"pause");continue;}
+      if(isIndependentPaper(current.strategyType)){independentPaperEngine(current).control(current,stateMap[current.id],"pause");continue;}
       if (classicPaper.get(current.id)) classicPaper.control(current, "pause");
       const st = stateMap[current.id];
       current.running = false;
@@ -5530,6 +5545,7 @@ const server = http.createServer((req, res) => {
     (async () => {
       try {
         const current = getCurrentAccount();
+        if(isIndependentPaper(current.strategyType))return jsonRes(res,409,{ok:false,error:"独立模拟策略请在工作台启动"});
         if(TerminalPolicy.restricted(current)){const message=(getStrategyType(current)==="trend_only_v2"&&current.platform==="extended"&&!isSimulationAccount(current)?"Extended Live 趋势下单暂未开放；":"")+TerminalPolicy.classify(current,stateMap[current.id]).status+"：旧策略只允许持仓管理，未知策略不支持启动";return jsonRes(res,400,{ok:false,error:message,message});}
         if(isCompound(current)){if(current.tradeMode!=="simulation"||current.simulationEnabled!==true||compoundRuntime.get(current).riskLock)throw Error("4H仅Paper且不可处于风控锁定");stateMap[current.id].running=true;persistAccountRunning(current.id,true);return jsonRes(res,200,{ok:true,strategyType:Compound.ID,message:"4H Paper已启动"});}
         if (isTrendOnly(current)) {
@@ -5609,7 +5625,7 @@ const server = http.createServer((req, res) => {
 
   if (pathname === "/api/stop" && req.method === "POST") {
     const current = getCurrentAccount();
-    if(current.strategyType===Turtle.ID){turtlePaper.control(current,stateMap[current.id],"pause");return jsonRes(res,200,{ok:true,message:"已暂停模拟新开仓，持仓保护继续"});}
+    if(isIndependentPaper(current.strategyType)){independentPaperEngine(current).control(current,stateMap[current.id],"pause");return jsonRes(res,200,{ok:true,message:"已暂停模拟新开仓，持仓保护继续"});}
     if (classicPaper.get(current.id)) classicPaper.control(current, "pause");
     stateMap[current.id].running = false;
     persistAccountRunning(current.id, false);
@@ -5624,7 +5640,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/api/manual-order" && req.method === "POST") {
-    if(getCurrentAccount()?.strategyType===Turtle.ID)return jsonRes(res,409,{ok:false,error:"独立模拟仓位请使用海龟 4H 工作台；不允许兼容接口改写账本"});
+    if(isIndependentPaper(getCurrentAccount()?.strategyType))return jsonRes(res,409,{ok:false,error:"独立模拟仓位请使用工作台的持仓操作"});
     if (classicPaper.get(getCurrentAccount()?.id)) return jsonRes(res, 409, {ok: false, error: "经典模拟仓位请在量化后台管理"});
     let body = "";
     req.on("data", chunk => body += chunk);

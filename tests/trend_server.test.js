@@ -34,6 +34,31 @@ test("海龟 Paper 账户不能从原连接入口添加密钥或通过兼容参�
  assert.equal((await f.call('/api/v4/config',{id,strategyType:'classic',config:{}})).code,400);
  assert.equal(vm.runInContext('JSON.stringify(config.accounts.find(a=>a.id==='+JSON.stringify(id)+'))',f.ctx),before);
 });
+test("找底摸顶使用独立认证路由、策略配置和完整分页账本，禁止接入旧账户或真实凭据",async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"}),route="/api/v4/reversal",C=require("../strategy/reversal_4h/config");
+ const before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ assert.equal((await f.call(route+"/accounts",undefined,false)).code,401);
+ assert.equal((await f.call(route+"/history?id=legacy",undefined,false)).code,401);
+ assert.equal((await f.call(route+"/accounts",{name:"Rejected",symbol:"ETH",apiKey:"test"})).code,400);
+ const created=await f.call(route+"/accounts",{name:"Reversal ETH",symbol:"ETH",initialEquity:10000});
+ assert.equal(created.code,200);
+ const {id}=created.data;
+ const s=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(s.running,false);
+ assert.equal(s.realOrderPermission,false);
+ assert.equal(s.strategyType,C.ID);
+ assert.equal((await f.call("/api/v4/desk?id="+id)).data.selected.strategy,"找底摸顶 4H");
+ assert.equal((await f.call("/api/v4/turtle/status?id="+id)).code,400);
+ assert.equal((await f.call(route+"/status?id=legacy")).code,400);
+ assert.equal((await f.call(route+"/control",{id,action:"start",confirm:true,expectedHash:"stale"})).code,400);
+ assert.equal((await f.call("/api/v4/connections/update",{id,apiKey:"test"})).code,400);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:s.configHash,config:{...C.defaults,riskPerTrade:.006}})).code,200);
+ assert.equal((await f.call(route+"/status?id="+id)).data.snapshot.config.riskPerTrade,.006);
+ assert.equal((await f.call(route+"/history?id="+id+"&offset=30")).data.total,0);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),before);
+ assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
+ assert.equal(fs.existsSync(path.join(f.directory,"turtle_4h_paper.json")),false);
+});
 test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及重启保留账本", async t => {
  const f=setup(t), route="/api/v4/desk", settings={side:"long",leverage:1,baseAmount:100,addAmount:100,maxAdds:1,addTrigger:.01,takeProfit:.01};
  fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");
