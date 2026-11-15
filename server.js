@@ -9,6 +9,7 @@ const Turtle = require("./strategy/turtle_4h/config");
 const Reversal = require("./strategy/reversal_4h/config");
 const Carry = require("./strategy/funding_carry/config");
 const Pullback = require("./strategy/pullback_15m/config");
+const ChartSwing = require("./strategy/chart_swing_1h/config");
 const marketLeverage = require("./market_leverage").create();
 const leverageRules = async account => marketLeverage.load(account).catch(()=>null);
 let hypothesisResearchService;
@@ -22,7 +23,7 @@ const { createTrendRuntime } = require("./trend_runtime");
 const TerminalPolicy=require("./terminal/policy");
 const Compound=require("./strategy/compound_4h/config");
 const isCompound=account=>getStrategyType(account)===Compound.ID;
-const paperProfiles = new Map([Turtle,Reversal,Carry,Pullback].map(profile=>[profile.ID,profile]));
+const paperProfiles = new Map([Turtle,Reversal,Carry,Pullback,ChartSwing].map(profile=>[profile.ID,profile]));
 const isIndependentPaper = type => paperProfiles.has(type);
 const STRATEGY_TYPES = new Set(["classic", "smart_regime_v1", "trend_only_v1", "trend_only_v2", "trend_only_v3", "compound_4h_v1", ...paperProfiles.keys()]);
 function getStrategyType(acc = {}) {
@@ -41,6 +42,7 @@ function getStrategyLabel(acc = {}) {
   if(type===Reversal.ID)return Reversal.label+" · Paper";
   if(type===Carry.ID)return Carry.label+" · Paper";
   if(type===Pullback.ID)return Pullback.label+" · Paper";
+  if(type===ChartSwing.ID)return ChartSwing.label+" · Paper";
   if(!STRATEGY_TYPES.has(type))return "不支持的策略（已限制交易）";
   if(type===Compound.ID)return "4H Compound Reversal V1 · Paper";
   if (type === "trend_only_v1") return "Trend Only V1";
@@ -55,6 +57,7 @@ function getStrategyMode(acc = {}) {
   if(type===Reversal.ID)return Reversal.label+" · Paper";
   if(type===Carry.ID)return Carry.label+" · Paper";
   if(type===Pullback.ID)return Pullback.label+" · Paper";
+  if(type===ChartSwing.ID)return ChartSwing.label+" · Paper";
   if(!STRATEGY_TYPES.has(type))return "UNSUPPORTED_STRATEGY";
   if(type===Compound.ID)return "4H Compound Reversal V1";
   return type === "trend_only_v3" ? "Trend Only V3" : type === "trend_only_v2" ? "Trend Only V2" : type === "trend_only_v1" ? "Trend Only V1" : type === "smart_regime_v1" ? "智能V1" : "DCA基础模式";
@@ -3398,7 +3401,13 @@ const pullbackPaper = require("./strategy/turtle_4h/runtime").create({
   {account:{...a,paper:true},equity:pullbackPaper.get(a)?.balance,state:{}}
  ],side,risk)
 });
-const paperEngines = new Map([[Turtle.ID,turtlePaper],[Reversal.ID,reversalPaper],[Carry.ID,carryPaper],[Pullback.ID,pullbackPaper]]);
+const chartSwingPaper = require("./strategy/turtle_4h/runtime").create({
+ directory:__dirname,profile:ChartSwing,leverageRules,analyze:require("./strategy/chart_swing_1h/signal").analyze,
+ permit:(a,risk,side)=>require("./strategy/trend_v3/portfolio").snapshot({...a,paper:true},[
+  {account:{...a,paper:true},equity:chartSwingPaper.get(a)?.balance,state:{}}
+ ],side,risk)
+});
+const paperEngines = new Map([[Turtle.ID,turtlePaper],[Reversal.ID,reversalPaper],[Carry.ID,carryPaper],[Pullback.ID,pullbackPaper],[ChartSwing.ID,chartSwingPaper]]);
 const independentPaperEngine = account => paperEngines.get(account.strategyType);
 const classicPaper = require("./terminal/classic-paper").create(__dirname);
 function verifyDeskLegacyFlat(account, st) {
@@ -3454,6 +3463,7 @@ async function tickAccount(acc) {
     if(activeStrategyType===Reversal.ID){await reversalPaper.tick(acc,st);return;}
     if(activeStrategyType===Carry.ID){await carryPaper.tick(acc,st);return;}
     if(activeStrategyType===Pullback.ID){await pullbackPaper.tick(acc,st);return;}
+    if(activeStrategyType===ChartSwing.ID){await chartSwingPaper.tick(acc,st);return;}
     const classicBook = classicPaper.get(acc.id);
     if (classicBook) {
       const [price,spec] = await Promise.all([getMarketPrice(acc),classicBook.running&&classicBook.settings.leverage>1?leverageRules(acc):undefined]);
@@ -4980,10 +4990,10 @@ const server = http.createServer((req, res) => {
     hypothesisResearchService ||= research.createService({directory:path.join(__dirname,".v5-research","integrated")});
     research.handle(req,res,{pathname},hypothesisResearchService);return;
   }
-  if (pathname.startsWith("/api/v4/turtle/") || pathname.startsWith("/api/v4/reversal/") || pathname.startsWith("/api/v4/carry/") || pathname.startsWith("/api/v4/pullback/")) {
+  if (pathname.startsWith("/api/v4/turtle/") || pathname.startsWith("/api/v4/reversal/") || pathname.startsWith("/api/v4/carry/") || pathname.startsWith("/api/v4/pullback/") || pathname.startsWith("/api/v4/swing/")) {
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
     const route=pathname.split("/")[3];
-    const profile=[Turtle,Reversal,Carry,Pullback].find(candidate=>(candidate.route||"turtle")===route);
+    const profile=[Turtle,Reversal,Carry,Pullback,ChartSwing].find(candidate=>(candidate.route||"turtle")===route);
     return require("./terminal/turtle-api").handle(req,res,parsed,{
       engine:independentPaperEngine({strategyType:profile.ID}),profile,json:jsonRes,accounts:()=>config.accounts,getAccountById,state:id=>stateMap[id],
       configuration:()=>loadConfig(),save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},

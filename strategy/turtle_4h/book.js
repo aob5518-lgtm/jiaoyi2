@@ -28,7 +28,7 @@ function plan(b,a,c,data,analysis,profile=C){
  const side=analysis.side,q=data.quote,entry=analysis.entry;
  const cost=require("../../trade_cost").getEstimatedTradeCost({...a,paper:true},entry?"range_reversal":"turtle_breakout");
  const price=(side==="long"?q.ask:q.bid)*(1+(side==="long"?1:-1)*cost.estimatedEntrySlippage),budget=b.balance*c.riskPerTrade;
- const levels=entry?protection(price,q,side,analysis.atr,entry,c,cost):null;
+ const levels=entry?(profile.protection||protection)(price,q,side,analysis.atr,entry,c,cost):null;
  const distance=levels?.distance??analysis.atr*c.stopAtr,leverage=c.leverage??1;
  const unitRisk=levels?.unitRisk??distance+price*cost.entryFeeRate+(price+distance)*(cost.exitFeeRate+cost.estimatedExitSlippage);
  const raw=Math.min(budget/unitRisk,b.balance*leverage/(price*(1+cost.entryFeeRate*leverage))),qty=floorQty(raw,data.rules.step);
@@ -53,7 +53,7 @@ function funding(b,data,time){
 function finish(b,price,time,reason,profile){
  const p=b.position,gross=(p.side==="long"?1:-1)*(price-p.entry)*p.qty,fees=p.entryFee+price*p.qty*p.cost.exitFeeRate,netPnl=gross-fees+p.funding;
  b.trades.push({id:p.id,entryTime:p.openedAt,time,side:p.side,entryPrice:p.entry,exitPrice:price,qty:p.qty,reason,grossPnl:gross,tradingFee:fees,fundingPnl:p.funding,netPnl,rMultiple:netPnl/p.actualRisk,initialStop:p.initialStop,finalStop:p.stop,atrAtEntry:p.atr,plannedRisk:p.budget,actualRisk:p.actualRisk,config:p.config,configHash:p.configHash,strategyRevision:profile.REVISION,sampleType:"paper_forward",maxFavorable:p.mfe,maxAdverse:p.mae,
-  ...(p.target?{target:p.target,plannedNetR:p.plannedNetR}:{})});
+  ...(p.target?{target:p.target,plannedNetR:p.plannedNetR}:{}),...(p.entryMode?{entryMode:p.entryMode}:{})});
  b.balance=round(b.balance+netPnl);b.realized=round(b.realized+netPnl);b.day.net+=netPnl;b.position=null;
  if(!(b.balance>0)){b.riskLock=true;b.running=false;}decide(b,"ORDER_FILLED",reason==="hard_sl"?"已按模拟保护止损退出":"模拟仓位已结算",time);
 }
@@ -74,7 +74,7 @@ function advance(before,e,c,profile=C){
    const m=o.meta,cost=m.cost,price=(m.side==="long"?q.ask:q.bid)*(1+(m.side==="long"?1:-1)*cost.estimatedEntrySlippage);
    let levels;
    if(m.entry){
-    try {levels=protection(price,q,m.side,m.atr,m.entry,m.config,cost);}
+     try {levels=(profile.protection||protection)(price,q,m.side,m.atr,m.entry,m.config,cost);}
     catch(error){
      o.status="CANCELLED";o.finishedAt=time;b.pending=null;
      decide(b,"ENTRY_CANCELLED",error.message+"，未模拟成交",time);return b;
@@ -94,14 +94,15 @@ function advance(before,e,c,profile=C){
    }
    const permission=e.permit(m.budget,m.side);if(!permission.allowed){o.status="CANCELLED";o.finishedAt=time;b.pending=null;decide(b,"PORTFOLIO_BLOCK",permission.reason||"组合风险阻断",time);return b;}
    b.position={id:o.id,side:m.side,qty,entry:price,openedAt:time,stop,initialStop:stop,atr:m.atr,budget:m.budget,actualRisk:qty*unit,entryFee:price*qty*cost.entryFeeRate,cost,config:m.config,configHash:m.configHash,funding:0,fundingThrough:time,signalAt:m.signalAt,mae:0,mfe:0};
-   if(levels){b.position.target=levels.target;b.position.plannedNetR=levels.netR;decide(b,"ORDER_FILLED","模拟"+(m.side==="long"?"多仓":"空仓")+"已成交，止损与目标已锁定",time);}
+   if(profile.stopOnly)b.position.entryMode=m.entry?.mode;
+   if(levels){b.position.target=levels.target;b.position.plannedNetR=levels.netR;decide(b,"ORDER_FILLED","模拟"+(m.side==="long"?"多仓":"空仓")+(profile.stopOnly?"已成交，结构止损与本轮配置已锁定":"已成交，止损与目标已锁定"),time);}
    o.filledQty=qty;o.remainderCancelled=qty<m.qty;o.price=price;o.status=qty<m.qty?"PARTIAL_FILLED_CANCELLED":"FILLED";
   }else{
    const p=b.position;if(!p)throw Error("UNKNOWN_ORDER_STATE：退出订单没有对应仓位");
    let reference=p.side==="long"?q.bid:q.ask,mode="market_quote";
-   const hard=p.target&&(p.side==="long"?q.bid<=p.stop:q.ask>=p.stop);
-   const reason=hard?"hard_sl":o.meta.reason;
-   if(reason==="hard_sl"){
+   const hard=(p.target||profile.stopOnly)&&(p.side==="long"?q.bid<=p.stop:q.ask>=p.stop);
+   const reason=hard?(profile.stopOnly&&p.stop!==p.initialStop?"swing_trailing_exit":"hard_sl"):o.meta.reason;
+   if(reason==="hard_sl"||reason==="swing_trailing_exit"){
     // Without tick-by-tick evidence, quote-triggered stops use the adverse quote, not an invented stop fill.
     reference=p.side==="long"?Math.min(reference,p.stop):Math.max(reference,p.stop);mode="quote_trigger_conservative";
    }
@@ -112,7 +113,16 @@ function advance(before,e,c,profile=C){
  b.lastQuoteTime=Math.max(b.lastQuoteTime,q.time);
  if(b.position){
   const p=b.position,hard=p.side==="long"?q.bid<=p.stop:q.ask>=p.stop;
-  if(hard||e.manual){submit(b,"close",{reason:hard?"hard_sl":"manual_close"},time);return b;}
+  if(hard||e.manual){submit(b,"close",{reason:hard?(profile.stopOnly&&p.stop!==p.initialStop?"swing_trailing_exit":"hard_sl"):"manual_close"},time);return b;}
+  if(profile.managePosition){
+   const action=profile.managePosition(p,e);
+   if(action.exitReason){submit(b,"close",{reason:action.exitReason},time);return b;}
+   if(Number.isFinite(action.stop)&&action.stop>0){
+    const favorable=p.side==="long"?action.stop>p.stop&&action.stop<q.bid:action.stop<p.stop&&action.stop>q.ask;
+    if(favorable)p.stop=action.stop;
+   }
+   decide(b,"POSITION_MANAGED",b.running?"按本轮结构止损、收盘动量和 ATR 移动保护管理":"已暂停新增，当前波段仓位保护继续",time);return b;
+  }
   if(p.target){
    const targetReached=p.side==="long"?q.bid>=p.target:q.ask<=p.target;
    if(targetReached||time-p.openedAt>=p.config.maxHoldBars*profile.BAR){

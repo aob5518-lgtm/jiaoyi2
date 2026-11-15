@@ -2,11 +2,11 @@
  "use strict";
  function mount(root, {accountId, embedded=false, mode="turtle", onCreated, onState}={}){
  const $=id=>root.getElementById(id),node=(tag,text,cls)=>{const e=document.createElement(tag);e.textContent=text??"";if(cls)e.className=cls;return e;};
- const reversal=mode==="reversal",carry=mode==="carry",pullback=mode==="pullback",form=$("config-form");
+ const reversal=mode==="reversal",carry=mode==="carry",pullback=mode==="pullback",swing=mode==="swing",form=$("config-form");
  const labels={riskPerTrade:"单笔计划风险",leverage:"模拟杠杆",direction:"方向",entryBars:"入场通道",exitBars:"退出通道",atrPeriod:"ATR 周期",stopAtr:"初始止损倍数",
   bandBars:"布林带周期",bandWidth:"布林带宽度",maxAdx:"ADX 上限",minNetR:"最低净收益风险比",maxHoldBars:"最长持仓根数",
   allocationPct:"每腿资金比例",maxHoldHours:"最长持仓小时",minEdgeBps:"最低净收益余量",
-  breakoutBars:"突破观察根数",setupBars:"回踩形态有效根数"};
+  breakoutBars:"突破观察根数",setupBars:"回踩形态有效根数",channelBars:"区间观察根数",confirmBars:"动量确认根数",trailAtr:"移动保护 ATR 倍数"};
  const reversalFields=[
   ["bandBars","15","50","1"],["bandWidth","1.5","3","any"],["maxAdx","15","30","any"],
   ["minNetR","1.2","3","any"],["maxHoldBars","4","24","1"]
@@ -14,7 +14,8 @@
  const carryFields=[["allocationPct","5","30","any","占账户权益的百分比，20 表示每腿 20%"],
   ["maxHoldHours","24","168","1","到期后安排匹配退出"],["minEdgeBps","5","100","any","10 个基点 = 0.10%"]];
  const pullbackFields=[["breakoutBars","12","40","1"],["setupBars","6","20","1"],["minNetR","1.5","3","any"],["maxHoldBars","4","32","1"]];
- const keys=carry?["leverage",...carryFields.map(([key])=>key)]:reversal||pullback?["riskPerTrade","leverage","direction",...(pullback?pullbackFields:reversalFields).map(([key])=>key)]:
+ const swingFields=[["channelBars","12","60","1"],["confirmBars","1","4","1"],["stopAtr","1.2","2.5","any"],["trailAtr","1.5","4","any"],["maxHoldBars","12","168","1"]];
+ const keys=carry?["leverage",...carryFields.map(([key])=>key)]:reversal||pullback||swing?["riskPerTrade","leverage","direction",...(swing?swingFields:pullback?pullbackFields:reversalFields).map(([key])=>key)]:
   ["entryBars","exitBars","atrPeriod","stopAtr","riskPerTrade","leverage","direction"];
  if(reversal){
   $("empty").querySelector("h2").textContent="创建找底摸顶 4H 模拟账户";
@@ -61,6 +62,23 @@
   });
   $("position").parentElement.querySelector("p:last-child").textContent="按结构止损、前波段目标或到期退出。暂停新增后继续保护持仓。";
  }
+ if(swing){
+  $("empty").querySelector("h2").textContent="创建图示波段 1H 模拟账户";
+  $("empty").querySelector(".features").replaceChildren(...["按红框思路研究 · 非精确顶底预测","区间极值 · 收盘转向确认","独立模拟账本 · 盈利尚未验证"].map(v=>node("span",v)));
+  $("create-form").elements.name.value="图示波段 1H · ETH Paper";
+  const advanced=form.querySelector("details");
+  advanced.querySelector("summary").textContent="高级参数 · 波段确认与保护";
+  advanced.querySelector(".fields").replaceChildren(...swingFields.map(([key,min,max,step])=>{
+   const label=node("label",labels[key]),input=node("input");
+   Object.assign(input,{name:key,type:"number",min,max,step,required:true});label.append(input);return label;
+  }));
+  const levels=$("desk").querySelectorAll(".levels section");
+  [["前区间上沿","极值观察 / 突破参考，非保证开仓价"],["前区间下沿","等待已收盘的动量及小结构确认"],["下次 1H 收盘","北京时间"]].forEach(([label,hint],i)=>{
+   levels[i].querySelector("span").textContent=label;levels[i].querySelector("small").textContent=hint;
+  });
+  $("position").parentElement.querySelector("p:last-child").textContent="结构止损始终有效，按已收盘动量转向或 ATR 移动保护退出。不追溯在历史顶底成交。";
+  window.JustChartSwingReview?.mount($("empty"));
+ }
  if(carry){
   $("empty").querySelector("h2").textContent="创建资金费率对冲模拟账户";
   $("empty").querySelector(".features").replaceChildren(...["买现货 · 空等币量永续","仅做正费率方向","分开核算资金费和双边成本"].map(value=>node("span",value)));
@@ -98,6 +116,7 @@
   FUNDING_BLOCK:"等待资金费核对",EXIT_WAIT:"等待退出盘口",RECONCILING:"结算核对中",SETTLED:"已结算",COOLDOWN:"轮次冷却"});
  Object.assign(codes,{WAIT_TREND:"等待方向",WAIT_PULLBACK:"等待回踩",WAIT_PULLBACK_CONFIRM:"等待回踩确认",
   SETUP_INVALID:"形态失效",PULLBACK_CONFIRMED:"回踩已确认",SIGNAL_EXPIRED:"入场窗口已过",LEVERAGE_BLOCK:"交易所杠杆档位阻断"});
+ Object.assign(codes,{WAIT_SWING:"等待波段",WAIT_SWING_CONFIRM:"观察到极值 · 等待确认",SWING_CONFIRMED:"波段收盘已确认"});
  const reasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出"};
  async function api(route,body){const r=await fetch("/api/v4/"+mode+"/"+route,{credentials:"same-origin",cache:"no-store",...(body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{})});if(r.status===401)throw Error("登录已过期，请重新登录");const v=await r.json();if(!r.ok||!v.ok){const error=Error(v.error||"请求失败");error.snapshot=v.snapshot;throw error;}return v;}
  function msg(s){$("message").textContent=s;$("message").hidden=!s;}
@@ -137,7 +156,7 @@
  function preview(){
   const c=values();
   applyLeverageHint(c);
-  const valid=keys.every(k=>form.elements[k].validity.valid)&&(carry||reversal||pullback||c.exitBars<c.entryBars);
+  const valid=keys.every(k=>form.elements[k].validity.valid)&&(carry||reversal||pullback||swing||c.exitBars<c.entryBars);
   const changes=state.editBase?differences(state.editBase,c):[];
   state.dirty=changes.length>0;
   const invalid=keys.find(key=>!form.elements[key].validity.valid);
@@ -218,7 +237,9 @@
   }
   const c=s.config;
   const summary=[["生效范围",s.activeConfig?"下一轮":"下次开仓"],["每笔计划风险",percent(c.riskPerTrade)],["模拟杠杆",(c.leverage??1)+"x"],["方向",direction[c.direction]]];
-  details("config-summary",[...summary,...(pullback?[
+  details("config-summary",[...summary,...(swing?[
+   ["区间 / 动量确认",c.channelBars+" / "+c.confirmBars+" 根 1H"],["初始 / 移动保护",c.stopAtr+" / "+c.trailAtr+" ATR"],["最长持仓",c.maxHoldBars+" 小时"],["收益验证","截图为已见研究样本"]
+  ]:pullback?[
    ["突破观察",c.breakoutBars+" 根 15m"],["有效期",c.setupBars*15+" 分钟"],["最低净收益风险比",fmt(c.minNetR)+"R"],["最长持仓",fmt(c.maxHoldBars/4)+" 小时"]
   ]:reversal?[
    ["布林带",c.bandBars+" 根 · "+c.bandWidth+" 倍标准差"],["ADX 上限",fmt(c.maxAdx)],["最低净收益风险比",fmt(c.minNetR)+"R"],["最长持仓",c.maxHoldBars*4+" 小时"]

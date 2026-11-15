@@ -1,4 +1,8 @@
 :root,:host{color-scheme:dark;--bg:#09101b;--panel:#101b2a;--line:#233247;--text:#e8eef6;--muted:#91a3b9;--accent:#57c9df;--profit:#48c6a0;--loss:#f17e91}
+.swing-review{margin:16px 0;min-width:0}.swing-review>summary{font-weight:600;cursor:pointer;padding:6px 0}.swing-review svg{display:block;width:100%;height:auto;max-height:340px;margin-top:14px}
+.swing-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:16px 0}.swing-stats section{min-width:0}.swing-stats span{display:block;color:var(--muted);font-size:12px}.swing-stats strong{font-size:20px;font-variant-numeric:tabular-nums}
+.swing-review .row select{min-width:0;flex:1;width:120px}.swing-ranges p{margin:6px 0;font-size:13px;overflow-wrap:anywhere}.swing-axis{justify-content:space-between;font-size:12px;color:var(--muted)}.swing-review-trades{max-height:220px;overflow-y:auto;font-size:13px}.swing-review details p{overflow-wrap:anywhere}.swing-review .warning{color:#e5b56f}
+@media(max-width:600px){.swing-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.swing-review .row select{flex-basis:100%;order:-1}.swing-axis{font-size:12px;flex-wrap:wrap}}
 .embedded-workbench .controls>:not(#exit-actions){display:none}
 .embedded-workbench .controls:has(#exit-actions[hidden]){display:none}
 .embedded-workbench .settings-panel [data-create],.embedded-workbench .settings-panel #edit,.embedded-workbench #empty [data-create]{display:none}

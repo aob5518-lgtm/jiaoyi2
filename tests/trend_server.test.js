@@ -18,6 +18,29 @@ function setup(t,env={},leverageSource){
  }
  return{ctx,call,directory};
 }
+
+test("图示波段认证接口创建独立停止 Paper 账本、保存自身参数并防止旧接口或凭据混入",async t=>{
+ const C=require("../strategy/chart_swing_1h/config"),f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"});
+ const before=vm.runInContext("JSON.stringify(config.accounts[0])",f.ctx),route="/api/v4/swing";
+ for(const path of ["/accounts","/status?id=x","/history?id=x"])assert.equal((await f.call(route+path,undefined,false)).code,401);
+ assert.equal((await f.call(route+"/accounts",{name:"Invalid",symbol:"ETH",apiKey:"x"})).code,400);
+ const created=await f.call(route+"/accounts",{name:"Chart ETH",symbol:"ETH",initialEquity:10000});
+ assert.equal(created.code,200);const id=created.data.id;
+ const s=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(s.running,false);assert.equal(s.allowLive,false);assert.equal(s.realOrderPermission,false);
+ assert.equal(s.strategyType,C.ID);assert.equal(s.configHash,C.hash(C.defaults));
+ assert.equal((await f.call("/api/v4/desk?id="+id)).data.selected.strategy,"图示波段 1H");
+ assert.equal((await f.call("/api/v4/turtle/status?id="+id)).code,400);
+ assert.equal((await f.call("/api/v4/connections/update",{id,apiKey:"x"})).code,400);
+ assert.equal((await f.call("/api/config",{id,strategyType:"classic",tradeMode:"live"})).code,410);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:s.configHash,config:{riskPerTrade:.004,channelBars:24}})).code,200);
+ const saved=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(saved.config.channelBars,24);assert.equal(saved.config.riskPerTrade,.004);assert.equal(saved.running,false);
+ assert.equal((await f.call(route+"/control",{id,action:"start",confirm:true,expectedHash:s.configHash})).code,400);
+ assert.equal((await f.call(route+"/history?id="+id)).data.total,0);
+ assert.equal(vm.runInContext("JSON.stringify(config.accounts[0])",f.ctx),before);
+ assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
+});
 test("海龟 4H 真实服务器路由要求登录，创建独立停止账户且保留原配置",async t=>{
  const f=setup(t),before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
  assert.equal((await f.call('/api/v4/turtle/accounts',undefined,false)).code,401);

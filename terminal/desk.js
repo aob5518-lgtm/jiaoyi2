@@ -2,7 +2,7 @@
 const C = require("./classic-paper");
 const Leverage = require("../market_leverage");
 const {number, historyRows} = require("./model");
-const paperLabels = {funding_carry_v1:"资金费率对冲",reversal_4h_v1:"找底摸顶 4H",turtle_4h_v1:"海龟趋势 4H",pullback_15m_v1:"短线顺势回踩"};
+const paperLabels = {funding_carry_v1:"资金费率对冲",reversal_4h_v1:"找底摸顶 4H",turtle_4h_v1:"海龟趋势 4H",pullback_15m_v1:"短线顺势回踩",chart_swing_1h_v1:"图示波段 1H"};
 
 function readBody(req) {
   return new Promise((resolve, reject) => {

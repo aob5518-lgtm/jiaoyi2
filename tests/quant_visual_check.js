@@ -179,6 +179,28 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#page-history').open && document.querySelector('#deskTrades').textContent.includes('暂无已结算交易')");
    await dismiss("history");
    results.push({width,height,scenario:"short-term-pullback-create-save-start-and-history",...await fit()});
+   await click('[data-strategy="swing"]');
+   await until(`${root}?.querySelector('#empty h2')?.textContent.includes('图示波段') && !!${root}.querySelector('.swing-review select')`);
+   await evaluate(`${root}.querySelector('.swing-review').open=true`);
+   await until(`${root}.querySelectorAll('.swing-review select option').length===39 && ${root}.querySelectorAll('.swing-review svg rect').length===2`);
+   const reviewFit=await evaluate(`({scroll:${root}.querySelector('.embedded-workbench').scrollWidth,client:${root}.querySelector('.embedded-workbench').clientWidth})`);
+   if(reviewFit.scroll>reviewFit.client+1)throw Error("Screenshot review overflow: "+JSON.stringify(reviewFit));
+   await screenshot(width+"x"+height+"-swing-review");
+   await evaluate(`const select=${root}.querySelector('.swing-review select');select.value='38';select.dispatchEvent(new Event('change'))`);
+   if(!await evaluate(`${root}.querySelector('.swing-review .decision').textContent.includes('图 46')`))throw Error("Review navigation failed");
+   await evaluate(`${root}.querySelector('.swing-review').open=false`);
+   await click("#deskPrimaryAction");
+   await evaluate(`${root}.querySelector('#create-form').requestSubmit()`);
+   await until("document.querySelector('#deskAccountPicker').value==='new-swing' && !document.querySelector('#deskEditShortcut').disabled");
+   if(server.controls.length!==5)throw Error("Creating a swing Paper account started it");
+   await click("#deskEditShortcut");
+   await until(`${root}.querySelector('#parameters').open && !!${root}.querySelector('[name=channelBars]') && !${root}.querySelector('[name=breakoutBars]')`);
+   await evaluate(`const form=${root}.querySelector('#config-form');form.elements.riskPerTrade.value='0.4';form.elements.riskPerTrade.dispatchEvent(new Event('input',{bubbles:true}));form.querySelector('#save-start').click()`);
+   await until(`${root}.querySelector('#run').textContent.includes('RUNNING') && ${root}.querySelector('#config-summary').textContent.includes('20 / 2')`);
+   if(server.controls.at(-1)?.id!=="new-swing")throw Error("Swing control reached the wrong account");
+   await screenshot(width+"x"+height+"-swing");
+   await click("#deskHistoryShortcut");await until("document.querySelector('#page-history').open");await dismiss("history");
+   results.push({width,height,scenario:"swing-review-create-save-start-history",reviewFit,...await fit()});
   }
   await call("Page.navigate",{url:"http://127.0.0.1:"+port+"/?scenario=save-failed#parameters"});
   await until("document.querySelector('#page-parameters').open && !document.querySelector('#deskSave').disabled");

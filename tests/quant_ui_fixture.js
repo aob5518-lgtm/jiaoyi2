@@ -4,8 +4,9 @@ const turtleConfig=require("../strategy/turtle_4h/config");
 const reversalConfig=require("../strategy/reversal_4h/config");
 const carryConfig=require("../strategy/funding_carry/config");
 const pullbackConfig=require("../strategy/pullback_15m/config");
+const swingConfig=require("../strategy/chart_swing_1h/config");
 const root = path.resolve(__dirname, "../public");
-const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css"]);
+const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css","quant/chart-swing-review.js","quant/chart-swing-sample.js"]);
 function start(port = 0) {
  let count = 64, scenario = "";
  const saved = new Map(), submissions = [], controls=[], turtleAccounts=new Map();
@@ -37,9 +38,9 @@ function start(port = 0) {
     ...(profile===carryConfig?{carry:{phase:"flat",spot:2500,perp:2504,basisBps:16,rate:.0003,nextFundingAt:Date.now()+3600000,expected:8,cost:10,edge:-2},decision:{code:"COST_BLOCK",reason:"预计交易成本超过收益"}}:{}),
     ...(profile===pullbackConfig?{decision:{code:"WAIT_PULLBACK",reason:"等待回踩"},analysis:{trend:"long",breakoutLevel:2480}}:{})};
   };
-  if(/^\/api\/v4\/(turtle|reversal|carry|pullback)\//.test(url.pathname)){
+  if(/^\/api\/v4\/(turtle|reversal|carry|pullback|swing)\//.test(url.pathname)){
    const route=url.pathname.split("/").at(-1);
-   const mode=url.pathname.split("/")[3],profile={turtle:turtleConfig,reversal:reversalConfig,carry:carryConfig,pullback:pullbackConfig}[mode];
+   const mode=url.pathname.split("/")[3],profile={turtle:turtleConfig,reversal:reversalConfig,carry:carryConfig,pullback:pullbackConfig,swing:swingConfig}[mode];
    if(req.method==="GET"&&route==="accounts")return json(200,{ok:true,accounts,defaults:profile.defaults});
    if(req.method==="GET"&&route==="status"){
     const a=accounts.find(x=>x.id===url.searchParams.get("id"));

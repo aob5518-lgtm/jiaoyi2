@@ -9,8 +9,9 @@ function create(d){
    const ids=b.orders.map(o=>o.id);if(new Set(ids).size!==ids.length||b.orders.some(o=>!["SUBMITTED","FILLED","PARTIAL_FILLED_CANCELLED","CANCELLED"].includes(o.status)||o.status==="SUBMITTED"&&o.id!==b.pending?.id)||b.pending&&b.orders.find(o=>o.id===b.pending.id)?.status!=="SUBMITTED")throw Error();
    if(b.pending?.kind==="open"){C.normalize(b.pending.meta.config);if(!(b.pending.meta.qty>0&&b.pending.meta.budget>0&&b.pending.meta.distance>0))throw Error();}
    if(b.position){C.normalize(b.position.config);if(!(b.position.qty>0&&b.position.entry>0&&b.position.stop>0&&b.position.actualRisk>0&&b.position.cost?.exitFeeRate>=0&&Number.isFinite(b.position.fundingThrough)))throw Error();}
-   if(C.waitCode&&b.pending?.kind==="open"&&!(b.pending.meta.entry?.stop>0&&b.pending.meta.entry?.target>0))throw Error();
-   if(C.waitCode&&b.position&&!(b.position.target>0&&b.position.plannedNetR>=b.position.config.minNetR&&
+   if(C.waitCode&&b.pending?.kind==="open"&&!(b.pending.meta.entry?.stop>0&&(C.stopOnly||b.pending.meta.entry?.target>0)))throw Error();
+   if(C.stopOnly&&b.position&&!(b.position.initialStop>0&&(b.position.side==="long"?b.position.initialStop<b.position.entry:b.position.side==="short"&&b.position.initialStop>b.position.entry)))throw Error();
+   if(C.waitCode&&!C.stopOnly&&b.position&&!(b.position.target>0&&b.position.plannedNetR>=b.position.config.minNetR&&
       (b.position.side==="long"?b.position.stop<b.position.entry&&b.position.entry<b.position.target:
        b.position.side==="short"&&b.position.target<b.position.entry&&b.position.entry<b.position.stop)))throw Error();
   }books=x.books;

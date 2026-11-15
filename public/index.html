@@ -34,6 +34,7 @@
    <button type="button" data-strategy="reversal" aria-pressed="false">找底摸顶 4H</button>
    <button type="button" data-strategy="carry" aria-pressed="false">资金费率对冲</button>
    <button type="button" data-strategy="pullback" aria-pressed="false">短线顺势回踩</button>
+   <button type="button" data-strategy="swing" aria-pressed="false">图示波段 1H</button>
   </div>
   <button type="button" class="text-button" data-strategy="history" aria-pressed="false" hidden>历史账户</button>
  </div>
@@ -47,7 +48,7 @@
  </div>
  <p id="deskStarterHint" role="status">正在同步账户。</p>
 </section>
-<section id="deskTurtlePane" aria-label="模拟策略工作台" data-template="/turtle.html" data-stylesheet="/turtle/desk.css?v=3" hidden></section>
+<section id="deskTurtlePane" aria-label="模拟策略工作台" data-template="/turtle.html" data-stylesheet="/turtle/desk.css?v=swing1" hidden></section>
 <section id="page-trading" aria-label="交易总览">
 <div class="workspace-status"><div class="account-badges"><span id="deskMode" class="tag">—</span><span id="deskRun" class="tag">—</span><span id="deskMarket" class="tag">等待行情</span></div><small id="deskUpdated">等待同步</small></div>
 <div class="status-grid desk-metrics">
@@ -137,8 +138,10 @@
 </div>
 </div>
 <script src="/quant/settings-preview.js?v=core2"></script>
-<script src="/turtle/desk.js?v=4"></script>
-<script src="/quant/desk.js?v=strategy2"></script>
+<script src="/quant/chart-swing-sample.js?v=1"></script>
+<script src="/quant/chart-swing-review.js?v=1"></script>
+<script src="/turtle/desk.js?v=swing1"></script>
+<script src="/quant/desk.js?v=swing1"></script>
 <script src="/hypothesis/connections.js?v=onepage1"></script>
 <script src="/quant/production.js?v=onepage1"></script>
 </body>
