@@ -39,6 +39,6 @@ test("An orphan submitted order or duplicate order ID locks restoration and pres
  A.throws(()=>R.create(x.deps).get(a),/LEDGER_REVIEW/);A.equal(fs.readFileSync(file,"utf8"),before);
 });
 test("Replay aggregates only complete UTC 4H groups and cannot use future bars",()=>{
- const {aggregate}=require("../scripts/turtle_research");const start=Math.floor(F.NOW/C.BAR)*C.BAR,rows=Array.from({length:8},(_,i)=>({time:start+i*3600000,open:100+i,high:102+i,low:99+i,close:101+i})),four=aggregate(rows);A.equal(four.length,2);A.equal(four[0].close,104);A.equal(aggregate(rows.filter((_,i)=>i!==2)).length,1);
+ const {aggregate,hourPath}=require("../scripts/turtle_research");const start=Math.floor(F.NOW/C.BAR)*C.BAR,rows=Array.from({length:8},(_,i)=>({time:start+i*3600000,open:100+i,high:102+i,low:99+i,close:101+i})),four=aggregate(rows);A.equal(four.length,2);A.equal(four[0].close,104);A.equal(aggregate(rows.filter((_,i)=>i!==2)).length,1);A.deepEqual(hourPath(rows[0],"short"),[100,102,99,101]);A.deepEqual(hourPath(rows[0],"long"),[100,99,102,101]);
  A.equal(S.analyze(four,c,start+C.BAR-1).code,"WARMUP");
 });
