@@ -193,6 +193,7 @@
   try {
    const data = await api("/api/v4/desk" + (state.id ? "?id=" + encodeURIComponent(state.id) : ""));
    if (ticket !== state.request) return;
+   if(data.selected.strategyType==="turtle_4h_v1"){location.href="/turtle.html?account="+encodeURIComponent(data.selected.id);return;}
    state.data = data;
    state.id = data.selected.id;
    state.offline = false;
@@ -249,9 +250,17 @@
   const link = node("a"), url = URL.createObjectURL(new Blob(["\uFEFF" + rows.map(row => row.map(cell).join(",")).join("\r\n")], {type: "text/csv;charset=utf-8"}));
   link.href = url;link.download = "just-agent-trades.csv";link.click();setTimeout(() => URL.revokeObjectURL(url), 1000);
  };
- for (const button of document.querySelectorAll("[data-action]")) button.onclick = () => {
+ for (const button of document.querySelectorAll("[data-action]")) button.onclick = async () => {
   const action = button.dataset.action, a = state.data?.selected;
   if (!a || button.disabled) return;
+  if(action==="start"){
+   if(state.busy||state.dirty)return;
+   state.busy=true;render();let permitted=false;
+   try{const p=await api("/api/v4/desk/preflight?id="+encodeURIComponent(a.id));if(!p.allowed)throw Error(p.blockers.join("；"));permitted=true;}
+   catch(e){message(e.message);}
+   finally{state.busy=false;render();}
+   if(!permitted)return;
+  }
   if (action !== "pause" && !confirm((action === "start" ? "启动经典模拟交易" : "平掉全部模拟仓位并暂停") + " · " + a.name + "？")) return;
   mutate("control", {action, ...(action === "close" ? {confirm: true} : {})}, action === "start" ? "已启动经典模拟，等待有效行情。" : action === "pause" ? "已暂停新增交易。" : "模拟仓位已平，策略已暂停。");
  };

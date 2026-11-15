@@ -24,13 +24,24 @@ function readBody(req) {
 function accountRow(account, st, classic) {
   return {
     id: account.id, name: account.name, symbol: account.symbol, quoteAsset: account.quoteAsset,
-    platform: account.platform, paper: account.tradeMode === "simulation" && account.simulationEnabled === true,
-    strategy: C.eligible(account) ? "经典补仓" : "归档账户",
+    platform: account.platform, strategyType: account.strategyType, paper: account.tradeMode === "simulation" && account.simulationEnabled === true,
+    strategy: account.strategyType === "turtle_4h_v1" ? "海龟趋势 4H" : C.eligible(account) ? "经典补仓" : "归档账户",
     ready: !!classic, eligible: C.eligible(account), running: classic?.running ?? !!st?.running,
     hasPosition: classic ? !!classic.position : Number(st?.positionQty || st?.realPositionSize || 0) > 0,
     floating: classic?.floating ?? null, realized: classic?.realized ?? null,
     error: classic?.blocked ? classic.notice : st?.activeError || null
   };
+}
+async function preflight(account, st, d) {
+  const book = d.classicPaper.get(account.id), blockers = [];
+  if(!C.eligible(account))blockers.push("请选择可配置的经典模拟账户");
+  if(!book)blockers.push("请先保存经典策略参数");
+  if(st.riskLock||st.legacyLedgerBlocked)blockers.push("账户风险或账本尚未完成核对");
+  if(st.pendingOrder||st.placingOrder||st.smartExitPending)blockers.push("存在尚未完成的委托或退出流程");
+  if(d.classicPaper.corrupt())blockers.push("模拟账本损坏，不能启动");
+  if(book && (!d.classicPaper.view(account) || d.classicPaper.view(account).blocked))blockers.push("配置与账本不一致");
+  if(!blockers.length){const price=await d.price(account);if(!(Number.isFinite(price)&&price>0))blockers.push("当前行情报价无效");}
+  return {allowed:!blockers.length,blockers,mode:"Paper",realOrderPermission:false,settings:book?.settings||null};
 }
 async function handle(req, res, parsed, d) {
   const send = (code, data) => d.json(res, code, data);
@@ -51,8 +62,9 @@ async function handle(req, res, parsed, d) {
         const offset = Math.min(Math.max(0, Math.floor(Number(parsed.query.offset) || 0)), items.length);
         return send(200, {ok: true, total: items.length, items: items.slice(offset, offset + 30)});
       }
-      if (route !== "/api/v4/desk") return send(404, {ok: false, error: "接口不存在"});
+      if (!["/api/v4/desk", "/api/v4/desk/preflight"].includes(route)) return send(404, {ok: false, error: "接口不存在"});
       st = d.state(account.id);
+      if(route==="/api/v4/desk/preflight")return send(200,{ok:true,...await preflight(account,st,d)});
       const snapshot = classic || d.readOnlyStatus(account, st);
       return send(200, {ok: true, selected: accountRow(account, st, classic),
         accounts: d.accounts().map(a => accountRow(a, d.state(a.id), d.classicPaper.view(a))),
@@ -79,7 +91,7 @@ async function handle(req, res, parsed, d) {
       const price = await d.price(account);
       d.classicPaper.mark(d.getAccountById(account.id), price, Date.now(), true);
     } else {
-      if (input.action === "start" && st.riskLock) throw Error("账户风险锁定");
+      if (input.action === "start") {const p=await preflight(account,st,d);if(!p.allowed)throw Error(p.blockers.join("；"));}
       d.classicPaper.control(account, input.action);
     }
     return send(200, {ok: true, snapshot: d.classicPaper.view(account)});
@@ -90,4 +102,4 @@ async function handle(req, res, parsed, d) {
     if (lock) d.unlock(lock);
   }
 }
-module.exports = {handle, accountRow};
+module.exports = {handle, accountRow, preflight};

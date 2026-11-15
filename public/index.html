@@ -5,6 +5,7 @@
 <title>JUST AGENT · 经典交易工作台</title>
 <link rel="stylesheet" href="/hypothesis/workbench.css?v=core2">
 <link rel="stylesheet" href="/quant/desk.css?v=core2">
+<link rel="stylesheet" href="/quant/production.css?v=turtle1">
 </head>
 <body>
 <div class="trade-shell">
@@ -25,6 +26,7 @@
   <div class="desk-top-actions"><select id="connectionSwitcher" aria-label="快速切换账户"><option>读取账户…</option></select><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button></div>
 </header>
 <nav class="core-nav" aria-label="核心功能">
+  <a href="/turtle.html" class="strategy-link">海龟趋势 4H · 新策略</a>
   <button data-page="trading" aria-current="page" aria-controls="page-trading">交易总览</button>
   <button data-page="parameters" aria-controls="page-parameters">策略参数<span id="parameterDirty" class="dirty-dot" hidden aria-label="有未保存参数"></span></button>
   <button data-page="accounts" aria-controls="page-accounts">账户管理</button>
@@ -118,5 +120,6 @@
 <script src="/quant/settings-preview.js?v=core2"></script>
 <script src="/quant/desk.js?v=core2"></script>
 <script src="/hypothesis/connections.js?v=core2"></script>
+<script src="/quant/production.js?v=turtle1"></script>
 </body>
 </html>

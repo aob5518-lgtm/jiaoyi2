@@ -23,6 +23,7 @@ test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及�
  assert.equal((await f.call(route,undefined,false)).code,401);
  assert.equal((await f.call(route+"/settings",{id:"legacy",settings})).code,200);
  assert.equal((await f.call(route)).data.selected.running,false);
+ vm.runInContext('getMarketPrice=async()=>100',f.ctx); // Startup now validates a quote before granting execution.
  assert.equal((await f.call(route+"/control",{id:"legacy",action:"start"})).code,200);
  await vm.runInContext('getMarketPrice=async()=>100;tickAccount(config.accounts[0])',f.ctx);
  const open=(await f.call(route)).data.snapshot;

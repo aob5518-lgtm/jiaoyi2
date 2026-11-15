@@ -1,0 +1,52 @@
+{
+  "automated": {
+    "passed": 470,
+    "failed": 0,
+    "skipped": 0
+  },
+  "newStrategyTests": 40,
+  "browser": {
+    "newStrategyScenarios": 54,
+    "classicScenarios": 64,
+    "failed": 0,
+    "minimumNewAccountHeight": 90.765625,
+    "minimumClassicAccountHeight": 90,
+    "horizontalOverflow": false,
+    "overlap": false,
+    "viewports": [
+      [
+        1920,
+        1080
+      ],
+      [
+        1600,
+        900
+      ],
+      [
+        1440,
+        900
+      ],
+      [
+        1366,
+        768
+      ],
+      [
+        390,
+        844
+      ],
+      [
+        375,
+        812
+      ]
+    ],
+    "accountCounts": [
+      64,
+      100,
+      150
+    ]
+  },
+  "productionModified": false,
+  "liveStarted": false,
+  "existingAccountsModified": false,
+  "profitabilityVerified": false
+}
