@@ -9,7 +9,7 @@ function start(port = 0) {
  let accounts = [];
  const makeAccounts = () => Array.from({length: count}, (_, i) => ({
   id: "sample-" + i, name: i === 0 ? "经典模拟 · ETH" : i === 1 ? "超长账户名称测试".repeat(9) : "模拟账户 " + (i + 1),
-  symbol: i % 2 ? "BTC" : "ETH", quoteAsset: "USDT", platform: "binance", paper: i < 50, eligible: i < 50 && !(i===0 && scenario==="readonly"),
+  symbol: i % 2 ? "BTC" : "ETH", quoteAsset: "USDT", platform: "binance", paper: true, eligible: !(i===0 && scenario==="readonly"),
   ready: i === 0 && scenario!=="readonly", running: i === 0 && !scenario, hasPosition: i === 0 && !scenario, strategy: i === 0 && scenario==="readonly"?"归档账户":i === 0 ? "经典补仓" : "未绑定",
   strategyType:i===0&&scenario==="readonly"?"trend_only_v3":"classic"
  }));
@@ -49,7 +49,7 @@ function start(port = 0) {
     if(route==="config"){turtleAccounts.set(a.id,input.config);return json(200,{ok:true,message:"参数已保存"});}
     if(route==="control"){
      controls.push(input);
-     if(input.action==="start"&&input.confirm!==true)return json(400,{ok:false,error:"必须确认启动"});
+     if(input.action==="start"&&(input.confirm!==true||input.expectedHash!==turtleConfig.hash(turtleAccounts.get(a.id))))return json(400,{ok:false,error:"请核对当前参数后启动"});
      a.running=input.action==="start";return json(200,{ok:true,message:a.running?"已启动":"已暂停"});
     }
     return json(404,{ok:false});
@@ -80,6 +80,7 @@ function start(port = 0) {
    return requestBody().then(input=>{
     const a=accounts.find(x=>x.id===input.id);
     if(!a?.eligible||!a.ready)return json(409,{ok:false,error:"当前账户不能启动"});
+    if(input.action==="start"&&scenario==="blocked")return json(400,{ok:false,error:"模拟行情报价暂不可用"});
     controls.push(input);a.running=input.action==="start";return json(200,{ok:true});
    }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
   }

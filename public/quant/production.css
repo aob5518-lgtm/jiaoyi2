@@ -12,22 +12,26 @@ body {
 .desk-header {padding:16px 26px}
 main {padding:18px 26px}
 .desk-starter {
- display:flex;
- justify-content:space-between;
- align-items:center;
- flex-wrap:wrap;
- gap:16px 22px;
+ display:grid;
+ grid-template-columns:minmax(150px,1fr) auto;
+ align-items:end;
+ gap:12px 18px;
  margin-bottom:18px;
  padding:18px 20px;
  border:1px solid #305363;
  border-radius:13px;
  background:#13222e;
 }
-.desk-starter h2 {margin:6px 0 2px;font-size:20px;overflow-wrap:anywhere}
-.desk-starter p {margin:0;color:var(--muted);font-size:13px}
+.strategy-chooser {display:flex;align-items:center;justify-content:space-between;gap:8px;grid-column:1/-1}
+.strategy-tabs {display:inline-flex;gap:4px;padding:4px;background:#0d171f;border:1px solid #2c4152;border-radius:10px}
+.strategy-tabs button {border:1px solid transparent;background:transparent;min-height:37px;padding:5px 13px;white-space:nowrap;font-weight:600}
+.strategy-tabs [aria-pressed="true"] {background:#1e3d4c;border-color:#3d6f81;color:#a3edff}
+.strategy-account {min-width:0;display:grid;gap:5px}
+.strategy-account label {font-size:12px;color:var(--muted)}
+.strategy-account select {width:100%;min-width:0}
+.desk-starter p {grid-column:1/-1;margin:0;color:var(--muted);font-size:13px}
 .starter-actions {display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .starter-actions button {min-height:44px;white-space:normal}
-.desk-starter:not(:has(.starter-actions button:not([hidden]))) {display:none}
 .starter-actions .primary,.desk-dialog .primary {background:var(--accent);color:#071924;border-color:transparent}
 .production-grid {display:grid;grid-template-columns:minmax(0,1fr) 245px;gap:14px;align-items:start}
 .production-grid.single-column {grid-template-columns:minmax(0,1fr)}
@@ -71,11 +75,6 @@ main {padding:18px 26px}
 .desk-dialog .config-hint {margin:0 0 14px}
 .desk-dialog .desk-inline-error {color:#ffb0b8}
 .desk-notice[data-tone="success"] {background:#142923;color:#a9e3ca;border-color:#2c5849}
-.desk-start-dialog {margin:auto;inset:0;height:fit-content;max-height:85dvh;width:min(460px,calc(100vw - 24px));border-radius:14px}
-#deskStartAccount {overflow-wrap:anywhere}
-.start-settings {display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;margin:12px 0}
-.start-settings dt {color:var(--muted)}
-.start-settings dd {margin:0;text-align:right}
 .desk-account-dialog {width:min(550px,100vw)}
 .connection-credentials {grid-column:1/-1;border-top:1px solid var(--line);padding:8px 0}
 .connection-credentials summary {cursor:pointer;padding:5px 0;color:var(--accent)}
@@ -89,12 +88,14 @@ main {padding:18px 26px}
  .trade-shell {display:block}
  .desk-header {padding:12px 14px;gap:8px}
  .desk-title h1 {font-size:18px}
- .desk-top-actions {gap:8px}
+ .desk-top-actions {flex:0 0 auto;gap:8px}
  main {padding:12px}
- .desk-starter {margin-bottom:12px;padding:13px;gap:10px}
- .desk-starter h2 {font-size:17px}
+ .desk-starter {grid-template-columns:minmax(0,1fr);margin-bottom:12px;padding:13px;gap:10px}
+ .strategy-tabs button {font-size:13px;padding:4px 8px}
+ .strategy-chooser>.text-button {white-space:nowrap;font-size:12px;padding-inline:4px}
+ .strategy-account select {font-size:16px}
  .starter-actions {width:100%}
- .starter-actions button {flex:1 1 130px;min-width:0;padding:8px}
+ .starter-actions button {flex:1 1 auto;min-width:0;padding:7px;font-size:13px}
  .desk-dialog {padding:14px}
  .desk-dialog .field-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
  .desk-dialog .field-grid .field-wide {grid-column:1/-1}

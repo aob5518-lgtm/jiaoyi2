@@ -1,6 +1,6 @@
 (function(){
  "use strict";
- function mount(root, {accountId, embedded=false, onCreated, onBusy=()=>{}}={}){
+ function mount(root, {accountId, embedded=false, onCreated, onState}={}){
  const $=id=>root.getElementById(id),node=(tag,text,cls)=>{const e=document.createElement(tag);e.textContent=text??"";if(cls)e.className=cls;return e;};
  const keys=["entryBars","exitBars","atrPeriod","stopAtr","riskPerTrade","leverage","direction"],form=$("config-form");
  const state={id:accountId??new URLSearchParams(location.search).get("account")??"",accounts:[],defaults:null,data:null,busy:false,dirty:false,editBase:null,hash:null,confirmHash:null,confirmAllowed:false,online:false,loaded:false,ticket:0,filter:"all"};
@@ -28,6 +28,7 @@
   list("config-changes",valid?changes:[]);
   $("save").disabled=state.busy||!state.online||!valid||!state.dirty;
   $("save-start").hidden=!!(state.data?.running||state.data?.pending||state.data?.riskLock);
+  $("save-start").textContent=embedded?"保存并启动模拟":"保存并检查启动";
   $("save-start").disabled=$("save").disabled;
  }
  function details(target,entries){const box=$(target);box.replaceChildren();for(const [label,value] of entries){const section=node("section");section.append(node("span",label),node("strong",value));box.append(section);}}
@@ -66,6 +67,7 @@
   $("confirm-start").disabled=state.busy||!state.online||!state.confirmAllowed||state.confirmHash!==state.data?.configHash;
   if($("confirm").open&&state.confirmHash!==state.data?.configHash)$("start-error").textContent="已保存参数发生变化，请取消并重新检查后确认。";
   const s=state.data;$("empty").hidden=!state.loaded||!!state.id;$("desk").hidden=!s;
+  onState?.({snapshot:s,loaded:state.loaded,busy:state.busy,online:state.online,dirty:state.dirty});
   if(!embedded)rail();
   if(!s)return;
   if(!embedded){$("title").textContent=s.name;$("instrument").textContent="Binance 永续 · "+s.symbol+" / USDT";}
@@ -106,7 +108,7 @@
    const data=state.id?await api("status?id="+encodeURIComponent(state.id)):null;if(ticket!==state.ticket)return;state.data=data?.snapshot||null;state.online=true;state.loaded=true;render();
   }catch(e){if(ticket!==state.ticket)return;state.online=false;if(state.data)state.data={...state.data,fresh:false,price:null,nextEntry:null,floating:state.data.position?null:0,equity:state.data.position?null:state.data.equity,decision:{code:"MARKET_UNAVAILABLE",reason:e.message}};msg(e.message);render();}
  }
- async function run(fn,errorId){if(state.busy||disposed)return;state.ticket++;state.busy=true;onBusy(true);render();try{await fn();}catch(e){if(e.snapshot?.id===state.id)state.data=e.snapshot;if(errorId)$(errorId).textContent=e.message;else msg(e.message);}finally{state.busy=false;onBusy(false);if(!disposed)render();}}
+ async function run(fn,errorId){if(state.busy||disposed)return;state.ticket++;state.busy=true;render();try{await fn();}catch(e){if(e.snapshot?.id===state.id)state.data=e.snapshot;if(errorId)$(errorId).textContent=e.message;else msg(e.message);}finally{state.busy=false;if(!disposed)render();}}
  function edit(){if(!state.data)return;state.hash=state.data.configHash;state.editBase=state.data.config;setFields(state.data.config);$("config-error").textContent="";$("config-title").textContent=state.data.name;$("config-note").textContent=state.data.activeConfig?"当前仓位或委托使用锁定参数。本次保存从下一轮生效。":"保存后，可单独检查并启动策略。";$("parameters").showModal();}
  function cancelEdit(){if(state.busy||state.dirty&&!confirm("放弃本次尚未保存的参数修改？"))return;state.dirty=false;state.editBase=null;$("parameters").close();render();}
  $("edit").onclick=$("quick-edit").onclick=edit;$("cancel-edit").onclick=cancelEdit;$("parameters").addEventListener("cancel",e=>{e.preventDefault();cancelEdit();});
@@ -121,7 +123,7 @@
    state.dirty=false;state.editBase=null;$("parameters").close();
    msg(r.message);await load();saved=true;
   },"config-error");
-  if(saved&&andCheck&&!$("start").disabled)checkStart();
+  if(saved&&andCheck&&!$("start").disabled){if(embedded)startDirect();else checkStart();}
  };
  $("reset").onclick=()=>{setFields(state.defaults);render();};
  async function openCreate(){
@@ -154,6 +156,21 @@
  $("cancel-start").onclick=()=>{if(!state.busy)$("confirm").close();};
  for(const id of ["confirm","create"])$(id).addEventListener("cancel",e=>{if(state.busy)e.preventDefault();});
  $("pause").onclick=()=>run(async()=>{const r=await api("control",{id:state.id,action:"pause"});msg(r.message);await load();});
+ function startDirect(){
+  if(!state.data||$("start").disabled)return;
+  const {id,configHash}=state.data;
+  return run(async()=>{
+   msg("正在检查原生行情并启动模拟…");
+   try{
+    const result=await api("control",{id,action:"start",confirm:true,expectedHash:configHash});
+    if(result.snapshot)state.data=result.snapshot;
+    msg(result.message);
+   }catch(error){
+    msg("启动未完成："+error.message);
+   }
+   await load();
+  });
+ }
  $("close").onclick=()=>{const s=state.data;if(!s?.position||!confirm("平掉 "+s.name+" 的模拟仓位并暂停新开仓？"))return;run(async()=>{const r=await api("control",{id:s.id,action:"close",confirm:true,positionId:s.position.id});msg(r.message);await load();});};
  if(!embedded){
  $("refresh").onclick=()=>{if(!state.busy)load();};$("search").oninput=rail;
@@ -188,6 +205,7 @@
  load();
  const timer=setInterval(()=>{if(!state.busy&&document.visibilityState==="visible")load();},10000);
  return {
+  edit,openCreate,start:startDirect,pause:()=>$("pause").click(),
   canLeave:()=>!state.busy&&(!state.dirty||confirm("放弃尚未保存的海龟 4H 参数？")),
   refresh:()=>{if(!state.busy)load();},
   dispose(){disposed=true;state.ticket++;clearInterval(timer);for(const dialog of root.querySelectorAll("dialog[open]"))dialog.close();}

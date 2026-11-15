@@ -5,7 +5,7 @@
 <title>JUST AGENT · 交易工作台</title>
 <link rel="stylesheet" href="/hypothesis/workbench.css?v=core2">
 <link rel="stylesheet" href="/quant/desk.css?v=core2">
-<link rel="stylesheet" href="/quant/production.css?v=onepage1">
+<link rel="stylesheet" href="/quant/production.css?v=strategy2">
 </head>
 <body>
 <div class="trade-shell">
@@ -22,19 +22,25 @@
 <header class="desk-header">
   <button id="toggleAccounts" class="icon-button" aria-controls="accountRail" aria-expanded="true">账户列表</button>
   <div class="desk-title"><span class="eyebrow">JUST AGENT</span><h1 id="deskAccount">正在读取账户</h1><p id="deskInstrument">—</p></div>
-  <div class="desk-top-actions"><select id="connectionSwitcher" aria-label="快速切换账户"><option>读取账户…</option></select><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button></div>
+  <div class="desk-top-actions"><select id="connectionSwitcher" hidden aria-label="账户管理使用的账户"><option>读取账户…</option></select><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button></div>
 </header>
 <main>
 <p id="deskMessage" class="notice desk-notice" role="status" hidden></p>
-<section class="desk-starter" id="deskStarter" aria-label="账户操作">
- <div><span id="deskStarterLabel" class="tag">读取账户</span><h2 id="deskStarterTitle">交易总览</h2><p id="deskStarterHint">正在同步账户状态。</p></div>
+<section class="desk-starter" id="deskStarter" aria-label="策略与账户操作">
+ <div class="strategy-chooser">
+  <div role="group" class="strategy-tabs" aria-label="选择策略">
+   <button type="button" data-strategy="classic" aria-pressed="true">经典补仓</button>
+   <button type="button" data-strategy="turtle" aria-pressed="false">海龟趋势 4H</button>
+  </div>
+  <button type="button" class="text-button" data-strategy="history" aria-pressed="false" hidden>历史账户</button>
+ </div>
+ <div class="strategy-account"><label for="deskAccountPicker">模拟账户</label><select id="deskAccountPicker"><option>读取账户…</option></select></div>
  <div class="starter-actions">
   <button id="deskPrimaryAction" class="primary" type="button" hidden></button>
-  <button id="deskEditShortcut" class="icon-button" type="button" data-go="parameters" hidden>编辑参数 <span id="parameterDirty" class="dirty-dot" hidden aria-label="有未保存参数"></span></button>
-  <button id="deskTurtleShortcut" class="icon-button" type="button" hidden>海龟趋势 4H</button>
-  <button id="deskCreateClassic" class="icon-button" type="button" hidden>新建经典模拟账户</button>
-  <button id="deskBackAccount" class="icon-button" type="button" hidden>返回原账户</button>
+  <button id="deskEditShortcut" class="icon-button" type="button" data-go="parameters" hidden>策略参数 <span id="parameterDirty" class="dirty-dot" hidden aria-label="有未保存参数"></span></button>
+  <button id="deskNewAccount" class="icon-button" type="button" hidden>新建模拟账户</button>
  </div>
+ <p id="deskStarterHint" role="status">正在同步账户。</p>
 </section>
 <section id="deskTurtlePane" aria-label="海龟趋势 4H" data-template="/turtle.html" data-stylesheet="/turtle/desk.css?v=3" hidden></section>
 <section id="page-trading" aria-label="交易总览">
@@ -86,7 +92,7 @@
     <fieldset class="panel parameter-group"><legend><span>03</span> 止盈设置</legend><div class="field-grid">
       <label class="field-wide">整仓止盈目标<div class="input-unit"><input name="takeProfit" type="number" min=".01" max="99" step="any" required><span>%</span></div><small id="takeProfitHelp">以保证金毛收益率计算，不是币价涨跌幅。手续费与滑点会减少净收益。</small></label>
     </div><p class="risk-note">经典规则没有自动止损。暂停新增后，已有模拟仓位仍检查止盈；需要退出时请在总览手动平仓。</p></fieldset>
-    <div class="save-bar"><div><strong id="deskSaveState">参数尚未修改</strong></div><button id="deskResetDraft" type="button" class="icon-button" disabled>撤销修改</button><button id="deskSave" type="submit" disabled>仅保存</button><button id="deskSaveTop" class="primary" type="submit" disabled>保存并检查启动</button></div>
+    <div class="save-bar"><div><strong id="deskSaveState">参数尚未修改</strong></div><button id="deskResetDraft" type="button" class="icon-button" disabled>撤销修改</button><button id="deskSave" type="submit" disabled>仅保存</button><button id="deskSaveTop" class="primary" type="submit" disabled>保存并启动模拟</button></div>
   </form>
   <aside class="parameter-preview" aria-label="参数效果预览">
     <article class="panel"><div class="panel-heading"><h2>资金用量</h2><span class="tag">参数预览</span></div><dl class="budget-facts"><dt>首仓预计保证金</dt><dd id="previewFirstMargin">—</dd><dt>每次补仓预计保证金</dt><dd id="previewAddMargin">—</dd><dt>最多开仓笔数</dt><dd id="previewOrderCount">—</dd><dt>最大名义仓位</dt><dd id="previewNotional">—</dd><dt>最大计划保证金</dt><dd id="previewMargin">—</dd></dl><p id="deskBudget" class="muted">填写参数后自动计算。</p><small>不含交易成本，不表示账户最大亏损。</small></article>
@@ -117,22 +123,15 @@
     <div class="connection-actions"><button type="submit" class="primary">保存账户配置</button><button id="selectConnection" type="button">切换到此账户</button></div>
     <details class="connection-test"><summary>连接测试</summary><p class="muted">只读取交易所账户信息，不提交订单。</p><button id="checkConnection" type="button">测试已保存连接</button></details>
   </form><p class="muted">留空保留已配置密钥。</p>
-  <button class="text-button" id="connectionToSettings" disabled>配置经典策略 →</button>
+  <button class="text-button" id="connectionToSettings" disabled>配置该账户策略 →</button>
   </article></div>
-</dialog>
-<dialog id="deskStartDialog" class="desk-dialog desk-start-dialog" aria-labelledby="deskStartTitle">
- <div class="desk-dialog-head"><h2 id="deskStartTitle">启动前检查</h2><button type="button" class="icon-button" data-dismiss="start">关闭</button></div>
- <p id="deskStartAccount"></p>
- <dl id="deskStartSettings" class="start-settings"></dl>
- <p id="deskStartStatus" role="status"></p>
- <div class="starter-actions"><button id="deskStartRetry" type="button">重新检查</button><button id="deskStartConfirm" type="button" class="primary" disabled>确认启动模拟</button></div>
 </dialog>
 </main>
 </div>
 </div>
 <script src="/quant/settings-preview.js?v=core2"></script>
-<script src="/turtle/desk.js?v=3"></script>
-<script src="/quant/desk.js?v=onepage1"></script>
+<script src="/turtle/desk.js?v=4"></script>
+<script src="/quant/desk.js?v=strategy2"></script>
 <script src="/hypothesis/connections.js?v=onepage1"></script>
 <script src="/quant/production.js?v=onepage1"></script>
 </body>

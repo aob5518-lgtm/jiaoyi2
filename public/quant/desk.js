@@ -1,7 +1,10 @@
 (function () {
  "use strict";
  const $ = id => document.getElementById(id);
- const state = {data: null, id: new URLSearchParams(location.search).get("account") || "", busy: false, offline: true, dirty: false, request: 0, offset: 0, trades: [], filter: "all", switching: false, drawer: "", queuedDrawer: "", turtleBusy: false};
+ const query = new URLSearchParams(location.search);
+ const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",history:"历史账户"};
+ const fromAccount = account => account.strategyType==="turtle_4h_v1"?"turtle":account.eligible?"classic":"history";
+ const state = {data:null,id:query.get("account")||"",mode:Object.hasOwn(strategies,query.get("strategy"))?query.get("strategy"):"",empty:false,lastAccounts:{},busy:false,offline:true,dirty:false,request:0,offset:0,trades:[],filter:"all",switching:false,drawer:"",queuedDrawer:"",turtle:null};
  const labels = {hyperliquid: "Hyperliquid", binance: "Binance", extended: "Extended"};
  const keys = ["side", "leverage", "baseAmount", "addAmount", "maxAdds", "addTrigger", "takeProfit"];
  const format = (value, digits = 2) => value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? "—" : Number(value).toLocaleString("zh-CN", {maximumFractionDigits: digits});
@@ -29,10 +32,15 @@
  }
  function openDrawer(page, {newAccount=false}={}) {
   if (!["parameters","accounts"].includes(page)) return;
-  if(state.busy||state.switching||state.turtleBusy)return;
+  if(state.busy||state.switching||state.turtle?.busy)return;
   if(state.drawer===page)return;
   if(!closeDrawer())return;
-  if(page==="parameters"&&!state.data?.selected.eligible)return;
+  if(page==="parameters"&&state.mode==="turtle"){
+   if(state.turtle?.snapshot)turtleDesk.edit();
+   else if(!state.empty)state.queuedDrawer="parameters";
+   return;
+  }
+  if(page==="parameters"&&(state.mode!=="classic"||state.empty||!state.data?.selected.eligible))return;
   state.drawer=page;
   message("");
   closeRail();
@@ -95,16 +103,19 @@
  }
  function renderList() {
   const box = $("deskAccounts");
+  const scroll=box.scrollTop;
+  const focused=box.contains(document.activeElement)?document.activeElement.dataset.accountId:null;
   box.replaceChildren();
   const query = $("deskSearch").value.trim().toLowerCase();
-  const all = state.data?.accounts || [];
+  const all = accountsFor(state.mode);
   const matches = all.filter(a => [a.name, a.platform, a.symbol, a.strategy].join(" ").toLowerCase().includes(query) &&
    (state.filter === "all" || state.filter === "running" && a.running || state.filter === "position" && a.hasPosition));
   $("deskCount").textContent = all.length + " 个账户 · " + all.filter(a => a.running).length + " 个监控中";
   for (const account of matches) {
    const button = node("button", "", "account-select"), head = node("span", "", "rail-name");
    button.setAttribute("aria-pressed", String(account.id === state.id));
-   button.disabled = state.busy || state.switching || state.turtleBusy;
+   button.disabled = state.busy || state.switching || !!state.turtle?.busy;
+   button.dataset.accountId=account.id;
    const turtle=account.strategyType==="turtle_4h_v1";
    head.append(node("strong", account.name), node("small", turtle?"海龟 4H":account.error ? "异常" : !account.eligible ? "只读" : account.running ? "运行" : account.ready ? "暂停" : "可配置"));
    const net = account.floating == null ? null : Number(account.floating) + Number(account.realized || 0);
@@ -113,29 +124,57 @@
    button.append(head, node("span", (labels[account.platform] || account.platform) + " · " + account.symbol + " / " + account.quoteAsset, "rail-pair"), foot);
    button.title = account.name;
    button.onclick = () => {
-    if (state.busy || state.switching || state.turtleBusy) return;
+    if (state.busy || state.switching || state.turtle?.busy) return;
     selectAccount(account.id);
    };
    box.append(button);
   }
   if (!matches.length) {
-   box.append(node("p", "未找到账户", "muted"));
+   box.append(node("p", "此策略下没有匹配的账户", "muted"));
   }
+  box.scrollTop=scroll;
+  [...box.children].find(button=>button.dataset.accountId===focused)?.focus({preventScroll:true});
  }
  const form = $("deskSettings");
  const field = name => form.elements.namedItem(name);
- let turtleDesk, turtleTarget=null, turtleRequest=0, previewTurtle=false;
+ let turtleDesk, turtleTarget=null, turtleRequest=0;
+ function accountsFor(mode,accounts=state.data?.accounts||[]){
+  return accounts.filter(account=>fromAccount(account)===mode);
+ }
+ function preferred(mode,accounts=state.data?.accounts||[]){
+  const list=accountsFor(mode,accounts);
+  return list.find(a=>a.id===state.lastAccounts[mode])
+   ||list.find(a=>a.running)
+   ||list.find(a=>a.ready&&!a.error)
+   ||list[0];
+ }
+ function allowSelection(id){
+  const allowed=document.dispatchEvent(new CustomEvent("just-account-selecting",{detail:id,cancelable:true}));
+  if(!allowed)document.dispatchEvent(new CustomEvent("just-account-switch-finished",{detail:{success:false,cancelled:true}}));
+  return allowed;
+ }
  function selectAccount(id){
-  const select=$("connectionSwitcher");
-  if(![...select.options].some(option=>option.value===id))return message("账户切换器正在同步，请稍后重试。");
-  if(id===state.id&&previewTurtle){hideTurtle();render();loadTrades();closeRail();return;}
-  if(id===state.id){closeRail();return;}
-  select.value=id;
-  select.dispatchEvent(new Event("change"));
+  const account=state.data?.accounts.find(a=>a.id===id);
+  if(!account||state.id===id)return;
+  if(!allowSelection(id)){render();return;}
+  state.mode=fromAccount(account);
+  resetSelection(id);
+ }
+ function selectStrategy(mode){
+  if(!state.data||mode===state.mode||!Object.hasOwn(strategies,mode))return;
+  const id=preferred(mode)?.id||"";
+  if(!allowSelection(id))return;
+  state.mode=mode;
+  state.filter="all";
+  $("deskSearch").value="";
+  for(const element of document.querySelectorAll("[data-filter]"))element.setAttribute("aria-pressed",String(element.dataset.filter==="all"));
+  resetSelection(id);
  }
  function rememberAccount(){
   const url=new URL(location.href);
-  url.searchParams.set("account",state.id);
+  if(state.id)url.searchParams.set("account",state.id);
+  else url.searchParams.delete("account");
+  if(state.mode)url.searchParams.set("strategy",state.mode);
   history.replaceState(null,"",url);
  }
  function hideTurtle(){
@@ -143,7 +182,7 @@
    turtleRequest++;turtleDesk?.dispose();turtleDesk=null;turtleTarget=null;
    $("deskTurtlePane").shadowRoot?.replaceChildren();
   }
-  previewTurtle=false;
+  state.turtle=null;
   $("deskTurtlePane").hidden=true;
   $("page-trading").hidden=false;
  }
@@ -166,13 +205,23 @@
    style.rel="stylesheet";style.href=pane.dataset.stylesheet;
    const nodes=regions.map(region=>document.importNode(region,true));
    nodes[1].querySelector("a[href='/#accounts']")?.remove();
-   root.replaceChildren(style,...nodes);
+   const wrap=node("div","","embedded-workbench");
+   wrap.append(...nodes);
+   root.replaceChildren(style,wrap);
    turtleDesk=window.JustTurtleDesk.mount(root,{
     accountId:id,embedded:true,
-   onBusy(value){state.turtleBusy=value;renderList();if(state.data)renderStarter(state.data.selected,state.data.snapshot);},
+    onState(value){
+     if(ticket!==turtleRequest)return;
+     state.turtle=value;
+     if(state.data)renderStarter(state.data.selected,state.data.snapshot);
+     if(value.snapshot&&state.queuedDrawer==="parameters"){
+      state.queuedDrawer="";
+      openDrawer("parameters");
+     }
+    },
     onCreated(newId){
-     previewTurtle=false;
      state.id=newId;
+     state.empty=false;
      rememberAccount();
      document.dispatchEvent(new CustomEvent("just-reload-accounts",{detail:newId}));
      load();
@@ -186,52 +235,58 @@
   }
  }
  function renderStarter(account,snapshot){
-  const turtle=account.strategyType==="turtle_4h_v1",embedded=turtle||previewTurtle;
-  const eligible=state.data.accounts.filter(a=>a.eligible&&!a.error);
-  const active=eligible.find(a=>!a.running&&!a.hasPosition&&a.ready)
-   ||eligible.find(a=>!a.running&&!a.hasPosition)||eligible[0];
-  const blocked=state.busy||state.switching||state.turtleBusy||state.offline;
-  $("deskStarterLabel").textContent=embedded?"Paper · 海龟趋势 4H":account.eligible?"Paper · 经典补仓":"历史账户 · 只读";
-  $("deskStarterTitle").textContent=embedded?"海龟趋势 4H":account.eligible?"交易操作":account.name+" 仅供查看";
-  $("deskStarterHint").textContent=embedded?(previewTurtle?"创建独立模拟账户后，在本页设置并启动。":"") :
-   !account.eligible?"此账户用于查看历史。选择可操作账户或新建模拟账户即可启动。":
-   snapshot.blocked||state.data.ledgerBlocked?"当前账户暂时锁定。":
-   account.running?"经典模拟正在运行。":account.ready?"可编辑参数，或直接检查并启动模拟。":"保存经典参数后即可检查并启动。";
-  $("deskStarterHint").hidden=!$("deskStarterHint").textContent;
-  const primary=$("deskPrimaryAction"),edit=$("deskEditShortcut");
-  primary.hidden=embedded;
-  if(account.eligible){
-   const action=account.running?"pause":"start";
-   const underlying=document.querySelector('[data-action="'+action+'"]');
-   primary.textContent=account.running?"暂停新增":account.ready?"检查并启动模拟":"配置并启动";
-   primary.disabled=blocked||(account.ready?underlying.disabled:!account.eligible||snapshot.blocked||state.data.ledgerBlocked);
-   primary.onclick=()=>account.ready?underlying.click():openDrawer("parameters");
-  }else{
-   primary.textContent=active?"切到可操作账户":"新建经典模拟账户";
-   primary.disabled=blocked;
-   primary.onclick=()=>active?selectAccount(active.id):openDrawer("accounts",{newAccount:true});
+  const turtle=state.mode==="turtle",historical=state.mode==="history",paper=state.turtle?.snapshot;
+  const blocked=state.busy||state.switching||state.offline||!!state.turtle?.busy;
+  const list=accountsFor(state.mode),picker=$("deskAccountPicker");
+  const byName=JSON.stringify(list.map(a=>[a.id,a.name,a.symbol,a.quoteAsset]));
+  if(picker.dataset.options!==byName){
+   picker.dataset.options=byName;
+   picker.replaceChildren(...list.map(a=>{const option=node("option",a.name+" · "+a.symbol+"/"+a.quoteAsset);option.value=a.id;return option;}));
+   if(!list.length)picker.append(node("option","暂无"+(historical?"历史账户":"模拟账户")));
   }
-  edit.hidden=embedded||!account.eligible||!account.ready;
-  edit.disabled=blocked;
-  $("deskTurtleShortcut").hidden=embedded;
-  $("deskTurtleShortcut").disabled=blocked;
-  $("deskCreateClassic").hidden=embedded||account.eligible||!active;
-  $("deskBackAccount").hidden=!previewTurtle;
-  $("deskBackAccount").disabled=blocked;
-  $("deskCreateClassic").disabled=blocked;
-  $("deskStarter").classList.toggle("turtle-preview",previewTurtle);
+  picker.value=state.id||picker.options[0]?.value||"";
+  picker.disabled=blocked||!list.length;
+  picker.labels[0].textContent=historical?"历史账户":"模拟账户";
+  for(const button of document.querySelectorAll("[data-strategy]")){
+   button.disabled=blocked;
+   button.setAttribute("aria-pressed",String(button.dataset.strategy===state.mode));
+   if(button.dataset.strategy==="history")button.hidden=!accountsFor("history").length;
+  }
+  const primary=$("deskPrimaryAction"),edit=$("deskEditShortcut"),create=$("deskNewAccount");
+  primary.hidden=historical;
+  edit.hidden=historical||state.empty;
+  create.hidden=historical||state.empty;
+  edit.disabled=blocked||turtle&&!paper;
+  create.disabled=blocked||turtle&&!state.turtle?.loaded;
+  const openNew=()=>turtle?turtleDesk?.openCreate():openDrawer("accounts",{newAccount:true});
+  create.onclick=openNew;
+  let hint="";
+  if(historical){
+   hint=list.length?"查看历史记录。选择上方策略即可回到模拟交易。":"暂无历史账户。";
+  }else if(state.empty){
+   primary.textContent="新建模拟账户";
+   primary.onclick=openNew;
+   primary.disabled=create.disabled;
+   hint=turtle?"新建 Binance ETH 或 BTC 模拟账户后即可配置。":"新建模拟账户后即可配置经典补仓。";
+  }else if(turtle){
+   primary.textContent=paper?.running?"暂停新增":"启动模拟";
+   primary.onclick=()=>paper?.running?turtleDesk.pause():turtleDesk.start();
+   primary.disabled=blocked||!state.turtle?.online||!paper||(!paper.running&&(state.turtle.dirty||paper.riskLock||!!paper.pending));
+   hint=!paper?"正在同步海龟 4H 参数…":paper.riskLock?"该模拟账户当前风控锁定。":paper.pending?"当前有待确认委托。":state.turtle.dirty?"请先保存参数。":paper.running?"海龟 4H 正在监控。":"点击启动后自动核对原生行情。";
+  }else{
+   const underlying=document.querySelector(account.running?'[data-action="pause"]':'[data-action="start"]');
+   primary.textContent=account.running?"暂停新增":account.ready?"启动模拟":"配置并启动";
+   primary.onclick=()=>account.ready?underlying.click():openDrawer("parameters");
+   primary.disabled=blocked||(account.ready?underlying.disabled:snapshot.blocked||state.data.ledgerBlocked);
+   hint=snapshot.blocked?"当前账户暂时锁定。":state.dirty?"请先保存参数。":account.running?"经典模拟正在运行。":account.ready?"":"填写经典参数后即可启动。";
+  }
+  $("deskStarterHint").textContent=state.offline?"工作台尚未同步。":hint;
+  $("deskStarterHint").hidden=!$("deskStarterHint").textContent;
   document.querySelector(".price-cards").hidden=!account.eligible;
   document.querySelector(".price-panel [data-go=parameters]").hidden=!account.eligible;
  }
- $("deskTurtleShortcut").onclick=()=>{
-  if(state.busy||state.switching||!state.data||state.dirty&&!confirm("有未保存的经典参数，放弃草稿？"))return;
-  state.dirty=false;closeRail();message("");
-  const existing=state.data.accounts.find(a=>a.strategyType==="turtle_4h_v1");
-  if(existing)return selectAccount(existing.id);
-  previewTurtle=true;render();showTurtle("");
- };
- $("deskBackAccount").onclick=()=>{if(!state.turtleBusy){hideTurtle();render();loadTrades();}};
- $("deskCreateClassic").onclick=()=>openDrawer("accounts",{newAccount:true});
+ for(const button of document.querySelectorAll("[data-strategy]"))button.onclick=()=>selectStrategy(button.dataset.strategy);
+ $("deskAccountPicker").onchange=event=>selectAccount(event.target.value);
  function settingsValues() {
   return Object.fromEntries(keys.map(name => [name, name === "side" ? field(name).value : field(name).value.trim() === "" ? NaN : Number(field(name).value) / (["addTrigger", "takeProfit"].includes(name) ? 100 : 1)]));
  }
@@ -262,8 +317,20 @@
   const data = state.data;
   $("deskHealth").textContent = state.offline ? "数据未同步" : "服务在线";
   $("deskHealth").className = "connection" + (state.offline ? "" : " ready");
-  if (!data) {for (const name of keys) field(name).disabled = true;$("deskSave").disabled = true;$("deskSaveTop").disabled = true;return;}
+  if (!data) {
+   for(const element of document.querySelectorAll("[data-strategy],#deskAccountPicker,#deskPrimaryAction,#deskEditShortcut,#deskNewAccount"))element.disabled=true;
+   for (const name of keys) field(name).disabled = true;
+   $("deskSave").disabled = $("deskSaveTop").disabled = true;
+   return;
+  }
   const a = data.selected, s = data.snapshot, p = s.position, unit = a.quoteAsset;
+  if(state.empty||state.mode==="turtle"){
+   $("deskAccount").textContent=state.empty?strategies[state.mode]:a.name;
+   $("deskInstrument").textContent=state.empty?"请选择或新建账户":(labels[a.platform]||a.platform)+" · "+a.symbol+" / "+unit;
+   $("page-trading").hidden=true;
+   renderList();renderStarter(a,s);
+   return;
+  }
   $("deskAccount").textContent = a.name;
   $("deskInstrument").textContent = (labels[a.platform] || a.platform) + " · " + a.symbol + " / " + unit;
   $("deskMode").textContent = a.paper ? "Paper · 模拟" : "Live · 原账户";
@@ -307,14 +374,32 @@
  async function load() {
   const ticket = ++state.request;
   try {
-   const data = await api("/api/v4/desk" + (state.id ? "?id=" + encodeURIComponent(state.id) : ""));
+   const get = id => api("/api/v4/desk" + (id ? "?id=" + encodeURIComponent(id) : ""));
+   let data = await get(state.id);
    if (ticket !== state.request) return;
+   if(!state.mode){
+    const selectedMode=fromAccount(data.selected);
+    state.mode=selectedMode!=="history"?selectedMode:accountsFor("classic",data.accounts).length?"classic":accountsFor("turtle",data.accounts).length?"turtle":"classic";
+   }
+   const list=accountsFor(state.mode,data.accounts);
+   const account=list.find(a=>a.id===state.id)||preferred(state.mode,data.accounts);
+   if(account&&account.id!==data.selected.id){
+    data=await get(account.id);
+    if(ticket!==state.request)return;
+    if(data.selected.id!==account.id)throw Error("未找到所选账户，请刷新后重试。");
+   }
    state.data = data;
-   state.id = data.selected.id;
+   state.id = account?.id||"";
+   state.empty = !account;
+   if(state.id)state.lastAccounts[state.mode]=state.id;
+   rememberAccount();
+   const legacyPicker=$("connectionSwitcher");
+   if([...legacyPicker.options].some(option=>option.value===state.id))legacyPicker.value=state.id;
    state.offline = false;
+   if(state.mode==="turtle")showTurtle(state.id);
+   else hideTurtle();
    render();
-   if(data.selected.strategyType==="turtle_4h_v1")showTurtle(data.selected.id);
-   else if(!previewTurtle){hideTurtle();loadTrades();}
+   if(state.mode!=="turtle"&&state.id)loadTrades();
   } catch (error) {
    if (ticket !== state.request) return;
    state.offline = true;
@@ -366,84 +451,44 @@
   const link = node("a"), url = URL.createObjectURL(new Blob(["\uFEFF" + rows.map(row => row.map(cell).join(",")).join("\r\n")], {type: "text/csv;charset=utf-8"}));
   link.href = url;link.download = "just-agent-trades.csv";link.click();setTimeout(() => URL.revokeObjectURL(url), 1000);
  };
- let checkedStart=null;
- function closeStart(){
-  if(state.busy)return;
-  checkedStart=null;$("deskStartDialog").close();
- }
- async function checkStart(){
+ function startClassic(){
   const account=state.data?.selected;
-  if(!account?.eligible||!account.ready||state.busy||state.dirty||state.switching||state.offline)return;
-  const dialog=$("deskStartDialog");
-  if(!dialog.open)dialog.showModal();
-  checkedStart=null;
-  $("deskStartAccount").textContent=account.name+" · "+account.symbol+" / "+account.quoteAsset+" · Paper 模拟";
-  $("deskStartSettings").replaceChildren();
-  $("deskStartStatus").textContent="正在核对当前参数、行情与风险状态…";
-  $("deskStartConfirm").disabled=$("deskStartRetry").disabled=true;
-  state.request++;state.busy=true;render();
-  try{
-   const result=await api("/api/v4/desk/preflight?id="+encodeURIComponent(account.id));
-   if(result.settings){
-    const c=result.settings;
-    const settings=[
-     ["方向",c.side==="long"?"做多":"做空"],
-     ["首仓名义金额",format(c.baseAmount)+" "+account.quoteAsset],
-     ["杠杆",format(c.leverage)+" 倍"],
-     ["补仓",c.maxAdds?c.maxAdds+" 次，每次 "+format(c.addAmount)+" "+account.quoteAsset:"关闭"],
-     ["止盈目标",format(c.takeProfit*100,6)+"% 保证金毛收益"]
-    ];
-    for(const [label,value] of settings){
-     $("deskStartSettings").append(node("dt",label),node("dd",value));
-    }
-   }
-   $("deskStartStatus").textContent=result.allowed?"检查通过。确认后按当前参数启动经典模拟。":result.blockers.join("；");
-   if(result.allowed)checkedStart={id:account.id};
-  }catch(error){$("deskStartStatus").textContent=error.message;}
-  finally{state.busy=false;$("deskStartRetry").disabled=false;$("deskStartConfirm").disabled=!checkedStart;render();}
+  if(state.mode!=="classic"||!account?.eligible||!account.ready||account.running||state.busy||state.dirty||state.switching||state.offline)return;
+  message("正在核对行情并启动 "+account.name+"…","neutral");
+  return mutate("control",{action:"start"},"已启动经典模拟，等待有效行情。");
  }
- $("deskStartRetry").onclick=checkStart;
- $("deskStartConfirm").onclick=async()=>{
-  if(!checkedStart||state.busy||checkedStart.id!==state.id)return;
-  const button=$("deskStartConfirm");
-  button.disabled=true;
-  const ok=await mutate("control",{action:"start"},"已启动经典模拟，等待有效行情。");
-  if(ok)closeStart();
-  else $("deskStartStatus").textContent=$("deskMessage").textContent+" 请重新检查。";
- };
- $("deskStartDialog").addEventListener("cancel",event=>{event.preventDefault();closeStart();});
  for (const button of document.querySelectorAll("[data-action]")) button.onclick = async () => {
   const action = button.dataset.action, a = state.data?.selected;
   if (!a || button.disabled) return;
-  if(action==="start")return checkStart();
+  if(action==="start")return startClassic();
   if(action==="close"&&!confirm("平掉 "+a.name+" 的模拟仓位并暂停？"))return;
   mutate("control", {action, ...(action === "close" ? {confirm: true} : {})}, action === "pause" ? "已暂停新增交易。" : "模拟仓位已平，策略已暂停。");
  };
- form.oninput = () => {state.dirty = true;updateBudget();for (const button of document.querySelectorAll('[data-action="start"]')) button.disabled = true;};
+ form.oninput = () => {state.dirty=true;render();};
  $("deskResetDraft").onclick = () => {if (!state.dirty || state.busy || !confirm("撤销未保存的参数修改，恢复当前已保存值？")) return;state.dirty = false;render();};
  form.onsubmit = async event => {
   event.preventDefault();
   if(!form.reportValidity())return;
-  const andCheck=event.submitter?.id==="deskSaveTop";
+  const andStart=event.submitter?.id==="deskSaveTop";
   if(!await mutate("settings",{settings:settingsValues()},"经典参数已保存。"))return;
   closeDrawer();
-  if(andCheck)checkStart();
+  if(andStart)startClassic();
  };
  $("deskRefresh").onclick = async () => {message("");await load();turtleDesk?.refresh();};
  $("deskSearch").oninput = renderList;
  $("deskPrev").onclick = () => {state.offset = Math.max(0,state.offset - 30);loadTrades();};
  $("deskNextPage").onclick = () => {state.offset += 30;loadTrades();};
  document.addEventListener("just-account-selecting", event => {
-  if (state.busy || state.switching || state.turtleBusy || turtleDesk&&!turtleDesk.canLeave() || state.dirty && !confirm("当前参数尚未保存，确认放弃修改并切换账户？")) return event.preventDefault();
+  if (state.busy || state.switching || state.turtle?.busy || turtleDesk&&!turtleDesk.canLeave() || state.dirty && !confirm("当前参数尚未保存，确认放弃修改并切换账户？")) return event.preventDefault();
   state.switching = true;state.request++;render();
  });
  document.addEventListener("just-account-switch-finished", event => {
   state.switching = false;
   if (!event.detail.success) {if (!event.detail.cancelled) message("账户切换失败，已保留原账户和参数。");render();}
  });
- document.addEventListener("just-account-selected", async event => {
+ async function resetSelection(id){
   state.switching = false;
-  state.id = event.detail;state.data = null;state.dirty = false;state.offset = 0;state.offline = true;state.trades = [];
+  state.id=id;state.data=null;state.dirty=false;state.offset=0;state.offline=true;state.trades=[];
   hideTurtle();rememberAccount();
   closeRail();
   $("deskAccount").textContent = "正在切换账户…";
@@ -451,8 +496,14 @@
   $("deskTrades").replaceChildren();
   $("deskExport").disabled = true;$("deskSave").disabled = true;$("deskSaveTop").disabled = true;
   for (const button of document.querySelectorAll("[data-action]")) button.disabled = true;
-  message("");await load();
+  message("");render();await load();
   if(state.queuedDrawer){const drawer=state.queuedDrawer;state.queuedDrawer="";openDrawer(drawer);}
+ }
+ document.addEventListener("just-account-selected",event=>{
+  const account=state.data?.accounts.find(a=>a.id===event.detail);
+  // New connection records arrive just before the refreshed account list.
+  state.mode=account?fromAccount(account):"classic";
+  resetSelection(event.detail);
  });
  $("openConnections").onclick = () => openDrawer("accounts");
  document.addEventListener("just-go-page", event => {
@@ -460,7 +511,7 @@
   else openDrawer(event.detail);
  });
  for (const button of document.querySelectorAll("[data-go]")) button.onclick = () => openDrawer(button.dataset.go);
- for(const button of document.querySelectorAll("[data-dismiss]"))button.onclick=button.dataset.dismiss==="start"?closeStart:closeDrawer;
+ for(const button of document.querySelectorAll("[data-dismiss]"))button.onclick=closeDrawer;
  for(const page of ["parameters","accounts"])$("page-"+page).addEventListener("cancel",event=>{event.preventDefault();closeDrawer();});
  $("toggleAccounts").onclick = () => {
   if (matchMedia("(max-width:760px)").matches) {
@@ -477,7 +528,7 @@
   openDrawer(page);
  }
  window.addEventListener("hashchange",openLegacyLink);
- window.addEventListener("beforeunload", event => {if (state.dirty||state.busy||state.turtleBusy) {event.preventDefault();event.returnValue = "";}});
+ window.addEventListener("beforeunload", event => {if (state.dirty||state.busy||state.turtle?.busy||state.turtle?.dirty) {event.preventDefault();event.returnValue = "";}});
  for (const button of document.querySelectorAll("[data-filter]")) button.onclick = () => {
   state.filter = button.dataset.filter;
   for (const option of document.querySelectorAll("[data-filter]")) option.setAttribute("aria-pressed", String(option === button));
