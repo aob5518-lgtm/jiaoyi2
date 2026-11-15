@@ -32,6 +32,7 @@
    <button type="button" data-strategy="classic" aria-pressed="true">经典补仓</button>
    <button type="button" data-strategy="turtle" aria-pressed="false">海龟趋势 4H</button>
    <button type="button" data-strategy="reversal" aria-pressed="false">找底摸顶 4H</button>
+   <button type="button" data-strategy="carry" aria-pressed="false">资金费率对冲</button>
   </div>
   <button type="button" class="text-button" data-strategy="history" aria-pressed="false" hidden>历史账户</button>
  </div>
@@ -76,7 +77,7 @@
   <div class="history-tools"><div><small>累计已实现净盈亏</small><strong id="deskHistoryNet">—</strong></div><button id="deskExport" class="icon-button" type="button" disabled>导出本页</button></div>
   <p id="deskHistoryStatus" role="status" class="muted"></p>
   <div class="desk-pager"><button id="deskPrev" disabled>上一页</button><small id="deskHistoryCount">—</small><button id="deskNextPage" disabled>下一页</button></div>
-  <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>平仓时间</th><th>方向</th><th>开仓 → 平仓</th><th>净盈亏</th><th>手续费</th><th>原因</th></tr></thead><tbody id="deskTrades"></tbody></table></div>
+  <div class="desk-table-wrap"><table class="desk-table"><thead><tr id="deskHistoryColumns"></tr></thead><tbody id="deskTrades"></tbody></table></div>
 </dialog>
 <dialog id="page-parameters" class="desk-dialog desk-parameter-dialog" aria-labelledby="deskParameterTitle">
   <div class="desk-dialog-head"><div><h2 id="deskParameterTitle">经典策略参数</h2><p id="deskConfigAccount">当前账户</p></div><button type="button" class="icon-button" data-dismiss="parameters">关闭</button></div>

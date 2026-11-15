@@ -146,6 +146,22 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#page-history').open && document.querySelector('#deskTrades').textContent.includes('暂无已结算交易')");
    await dismiss("history");
    results.push({width,height,scenario:"reversal-create-save-start-history",...await fit()});
+   await click('[data-strategy="carry"]');
+   await until(`${root}?.querySelector('#empty h2')?.textContent.includes('资金费率对冲') && !document.querySelector('#deskPrimaryAction').disabled`);
+   await click("#deskPrimaryAction");
+   await evaluate(`${root}.querySelector('#create-form').requestSubmit()`);
+   await until("document.querySelector('#deskAccountPicker').value==='new-carry' && !document.querySelector('#deskEditShortcut').disabled");
+   if(server.controls.length!==3)throw Error("Creating a carry account started it");
+   await click("#deskEditShortcut");
+   await until(`${root}.querySelector('#parameters').open && !!${root}.querySelector('[name=allocationPct]') && !${root}.querySelector('[name=riskPerTrade]')`);
+   await evaluate(`const form=${root}.querySelector('#config-form');form.elements.allocationPct.value='25';form.elements.allocationPct.dispatchEvent(new Event('input',{bubbles:true}));form.querySelector('#save-start').click();`);
+   await until(`${root}.querySelector('#run').textContent.includes('RUNNING') && ${root}.querySelector('#carry-forecast').textContent.includes('预计往返成本')`);
+   if(server.controls.at(-1)?.id!=="new-carry")throw Error("Carry control reached the wrong account");
+   await screenshot(width+"x"+height+"-carry");
+   await click("#deskHistoryShortcut");
+   await until("document.querySelector('#page-history').open && document.querySelector('#deskTrades [data-label=资金费]')?.textContent==='9' && document.querySelector('#deskTrades [data-label=交易成本]')?.textContent==='4'");
+   await dismiss("history");
+   results.push({width,height,scenario:"carry-create-save-start-separate-fees-and-pnl",...await fit()});
   }
   await call("Page.navigate",{url:"http://127.0.0.1:"+port+"/?scenario=save-failed#parameters"});
   await until("document.querySelector('#page-parameters').open && !document.querySelector('#deskSave').disabled");

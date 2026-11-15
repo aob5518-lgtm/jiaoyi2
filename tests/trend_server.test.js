@@ -59,6 +59,25 @@ test("找底摸顶使用独立认证路由、策略配置和完整分页账本�
  assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
  assert.equal(fs.existsSync(path.join(f.directory,"turtle_4h_paper.json")),false);
 });
+test("资金费率对冲仅创建独立且停止的 Paper 账户，拒绝凭据与跨策略路由，支持保存和读取历史",async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"}),route="/api/v4/carry",C=require("../strategy/funding_carry/config");
+ assert.equal((await f.call(route+"/accounts",undefined,false)).code,401);
+ assert.equal((await f.call(route+"/accounts",{name:"Carry",symbol:"BTC",tradeMode:"live"})).code,400);
+ const created=await f.call(route+"/accounts",{name:"Carry",symbol:"BTC"});
+ assert.equal(created.code,200);
+ const id=created.data.id;
+ const status=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(status.running,false);
+ assert.equal(status.allowLive,false);
+ assert.equal(status.carry.phase,"flat");
+ assert.equal((await f.call("/api/v4/desk?id="+id)).data.selected.strategy,"资金费率对冲");
+ assert.equal((await f.call("/api/v4/connections/update",{id,apiSecret:"test"})).code,400);
+ assert.equal((await f.call("/api/v4/reversal/status?id="+id)).code,400);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:status.configHash,config:{allocationPct:.25}})).code,200);
+ assert.equal((await f.call(route+"/history?id="+id)).data.total,0);
+ assert.equal((await f.call(route+"/status?id="+id)).data.snapshot.configHash,C.hash({allocationPct:.25}));
+ assert.ok(fs.existsSync(path.join(f.directory,"funding_carry_paper.json")));
+});
 test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及重启保留账本", async t => {
  const f=setup(t), route="/api/v4/desk", settings={side:"long",leverage:1,baseAmount:100,addAmount:100,maxAdds:1,addTrigger:.01,takeProfit:.01};
  fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");

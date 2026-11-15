@@ -2,6 +2,7 @@
 const http = require("http"), fs = require("fs"), path = require("path");
 const turtleConfig=require("../strategy/turtle_4h/config");
 const reversalConfig=require("../strategy/reversal_4h/config");
+const carryConfig=require("../strategy/funding_carry/config");
 const root = path.resolve(__dirname, "../public");
 const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css"]);
 function start(port = 0) {
@@ -31,20 +32,25 @@ function start(port = 0) {
    const config=turtleAccounts.get(a.id);
    const history=profile===turtleConfig&&turtleSaveAttempts>2?turtleTrades:[];
    const realized=history.reduce((total,trade)=>total+trade.netPnl,0);
-   return {id:a.id,name:a.name,symbol:a.symbol,mode:"Paper",config,configHash:profile.hash(config),history,decision:{code:profile.waitCode||"WAIT_BREAKOUT",reason:"等待收盘"},market:{state:"fresh",quoteTime:Date.now()},fresh:true,balance:10000+realized,equity:10000+realized,floating:0,realized,price:2500,running:a.running,nextEntry:{upper:2520,lower:2400,direction:config.direction,closesAt:Date.now()+3600000}};
+   return {id:a.id,name:a.name,symbol:a.symbol,mode:"Paper",config,configHash:profile.hash(config),history,decision:{code:profile.waitCode||"WAIT_BREAKOUT",reason:"等待收盘"},market:{state:"fresh",quoteTime:Date.now()},fresh:true,balance:10000+realized,equity:10000+realized,floating:0,realized,price:2500,running:a.running,nextEntry:{upper:2520,lower:2400,direction:config.direction,closesAt:Date.now()+3600000},
+    ...(profile===carryConfig?{carry:{phase:"flat",spot:2500,perp:2504,basisBps:16,rate:.0003,nextFundingAt:Date.now()+3600000,expected:8,cost:10,edge:-2},decision:{code:"COST_BLOCK",reason:"预计交易成本超过收益"}}:{})};
   };
-  if(/^\/api\/v4\/(turtle|reversal)\//.test(url.pathname)){
+  if(/^\/api\/v4\/(turtle|reversal|carry)\//.test(url.pathname)){
    const route=url.pathname.split("/").at(-1);
-   const reversal=url.pathname.startsWith("/api/v4/reversal/"), profile=reversal?reversalConfig:turtleConfig;
+   const mode=url.pathname.split("/")[3],profile={turtle:turtleConfig,reversal:reversalConfig,carry:carryConfig}[mode];
    if(req.method==="GET"&&route==="accounts")return json(200,{ok:true,accounts,defaults:profile.defaults});
    if(req.method==="GET"&&route==="status"){
     const a=accounts.find(x=>x.id===url.searchParams.get("id"));
     return json(200,{ok:true,snapshot:turtleSnapshot(a,profile)});
    }
-   if(req.method==="GET"&&route==="history")return json(200,{ok:true,total:0,items:[]});
+   if(req.method==="GET"&&route==="history"){
+    const items=mode==="carry"?[{time:Date.now(),spotEntry:2500,spotExit:2505,perpEntry:2504,perpExit:2507,fundingPnl:9,basisPnl:2,
+     unhedgedPnl:0,tradingFee:3,slippageAmount:1,netPnl:7,reason:"rate_reversed"}]:[];
+    return json(200,{ok:true,total:items.length,items});
+   }
    return requestBody().then(input=>{
     if(route==="accounts"){
-     const a={...input,id:reversal?"new-reversal":"new-turtle",strategyType:profile.ID,strategy:profile.label||"海龟趋势 4H",platform:"binance",quoteAsset:"USDT",paper:true,running:false};
+     const a={...input,id:"new-"+mode,strategyType:profile.ID,strategy:profile.label||"海龟趋势 4H",platform:"binance",quoteAsset:"USDT",paper:true,running:false};
      turtleAccounts.set(a.id,profile.normalize(input.config));accounts.push(a);
      return json(200,{ok:true,id:a.id,message:"独立模拟账户已创建"});
     }
@@ -54,7 +60,7 @@ function start(port = 0) {
      return json(200,{ok:true,snapshot,preflight:{allowed:true,configHash:snapshot.configHash,blockers:[],checkedAt:Date.now()}});
     }
     if(route==="config"){
-     if(!reversal&&a.running&&++turtleSaveAttempts<=2)return json(400,{ok:false,error:"正在更新账户，请稍后重试"});
+     if(mode==="turtle"&&a.running&&++turtleSaveAttempts<=2)return json(400,{ok:false,error:"正在更新账户，请稍后重试"});
      if(input.expectedHash!==profile.hash(turtleAccounts.get(a.id)))return json(400,{ok:false,error:"参数版本已变更"});
      turtleAccounts.set(a.id,profile.normalize(input.config));
      return json(200,{ok:true,message:"参数已保存"});

@@ -23,7 +23,7 @@ main {padding:18px 26px}
  background:#13222e;
 }
 .strategy-chooser {display:flex;align-items:center;justify-content:space-between;gap:8px;grid-column:1/-1}
-.strategy-tabs {display:inline-flex;gap:4px;padding:4px;background:#0d171f;border:1px solid #2c4152;border-radius:10px}
+.strategy-tabs {display:inline-flex;flex-wrap:wrap;min-width:0;gap:4px;padding:4px;background:#0d171f;border:1px solid #2c4152;border-radius:10px}
 .strategy-tabs button {border:1px solid transparent;background:transparent;min-height:37px;padding:5px 13px;white-space:nowrap;font-weight:600}
 .strategy-tabs [aria-pressed="true"] {background:#1e3d4c;border-color:#3d6f81;color:#a3edff}
 .strategy-account {min-width:0;display:grid;gap:5px}

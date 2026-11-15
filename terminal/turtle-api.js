@@ -29,7 +29,7 @@ async function handle(req,res,parsed,d){
    const a={id:crypto.randomUUID(),name:input.name.trim(),platform:"binance",symbol:input.symbol,quoteAsset:"USDT",strategyType:C.ID,strategyMode:(C.label||"海龟趋势 4H")+" · Paper",[configKey]:c,running:false,tradeMode:"simulation",simulationEnabled:true,simulationBalance:equity,interval:15000,side:"long",leverage:c.leverage??1,maxAdds:0,baseAmount:1,addAmount:1,takeProfit:.01,addTrigger:.01};
    C.assertAccount(a);const before=d.configuration(),next=structuredClone(before);next.accounts.push(a);
    // The independent empty book may safely precede account registration; failed registration never starts a strategy.
-   d.engine.commit(a,B.initial(a,C));d.save(next);return send(200,{ok:true,id:a.id,message:"独立模拟账户已创建，保持停止；无需交易密钥"});
+   d.engine.commit(a,d.engine.initial?d.engine.initial(a):B.initial(a,C));d.save(next);return send(200,{ok:true,id:a.id,message:"独立模拟账户已创建，保持停止；无需交易密钥"});
   }
   fields(input,["id","config","expectedHash","action","confirm","positionId"]);
   const a=d.getAccountById(input.id);C.assertAccount(a);st=d.state(a.id);
@@ -59,14 +59,16 @@ async function handle(req,res,parsed,d){
     d.engine.control(a,st,"pause");
     try {await d.engine.tick(a,st,{manual:true});}
     catch(error){return send(409,{ok:false,error:"已暂停新增，退出委托未提交："+error.message,snapshot:d.engine.view(a,st)});}
-    return send(200,{ok:true,message:"已暂停新增，退出委托等待模拟成交",snapshot:d.engine.view(a,st)});
+    const snapshot=d.engine.view(a,st);
+    const message=!snapshot.position?"已暂停新增，模拟仓位已结算":C.startMessage?snapshot.decision.reason:"已暂停新增，退出委托等待模拟成交";
+    return send(200,{ok:true,message,snapshot});
    }
    if(input.action==="start"){
     if(input.confirm!==true||input.expectedHash!==C.hash(a[configKey]))throw Error("请确认当前已保存的参数后再启动");
     if(d.engine.get(a)?.running)return send(200,{ok:true,message:"当前模拟监控已运行",snapshot:d.engine.view(a,st)});
     await d.engine.refresh(a);
    }
-   d.engine.control(a,st,input.action);return send(200,{ok:true,snapshot:d.engine.view(a,st),message:input.action==="start"?"4H 模拟监控已启动；等待下一根已收盘信号":"已暂停新开仓；已有仓位继续执行退出保护"});
+   d.engine.control(a,st,input.action);return send(200,{ok:true,snapshot:d.engine.view(a,st),message:input.action==="start"?(C.startMessage||"4H 模拟监控已启动；等待下一根已收盘信号"):"已暂停新开仓；已有仓位继续执行退出保护"});
   }
   throw Error("接口不存在");
  }catch(e){return send(400,{ok:false,error:e.message});}finally{if(lock){st.terminalMutating=false;d.unlock(lock);}}

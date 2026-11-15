@@ -2,8 +2,8 @@
  "use strict";
  const $ = id => document.getElementById(id);
  const query = new URLSearchParams(location.search);
- const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",reversal:"找底摸顶 4H",history:"历史账户"};
- const paperStrategies = {turtle:"turtle_4h_v1",reversal:"reversal_4h_v1"};
+ const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",reversal:"找底摸顶 4H",carry:"资金费率对冲",history:"历史账户"};
+ const paperStrategies = {turtle:"turtle_4h_v1",reversal:"reversal_4h_v1",carry:"funding_carry_v1"};
  const isPaperMode = mode => Object.hasOwn(paperStrategies,mode);
  const fromAccount = account => Object.keys(paperStrategies).find(mode=>paperStrategies[mode]===account.strategyType) || (account.eligible?"classic":"history");
  const state = {data:null,id:query.get("account")||"",mode:Object.hasOwn(strategies,query.get("strategy"))?query.get("strategy"):"",empty:false,lastAccounts:{},busy:false,offline:true,dirty:false,request:0,offset:0,trades:[],filter:"all",switching:false,drawer:"",queuedDrawer:"",turtle:null};
@@ -291,7 +291,7 @@
    primary.disabled=blocked||!state.turtle?.online||!paper||paper.running||state.turtle.dirty||paper.riskLock||!!paper.pending;
    pause.disabled=blocked||!state.turtle?.online||!paper?.running;
    pause.onclick=()=>turtleDesk.pause();
-   hint=!paper?"正在同步"+strategies[state.mode]+"…":paper.riskLock?"该模拟账户当前风控锁定。":paper.pending?"当前有待确认委托。":state.turtle.dirty?"请先保存参数。":paper.running?"运行中 · 等待有效的 4H 信号":"已暂停 · 点击「启动模拟」恢复监控";
+   hint=!paper?"正在同步"+strategies[state.mode]+"…":paper.riskLock?"该模拟账户当前风控锁定。":paper.pending?"当前有待核对记录。":state.turtle.dirty?"请先保存参数。":paper.running?(state.mode==="carry"?"运行中 · 监控费率与双边盘口":"运行中 · 等待有效的 4H 信号"):"已暂停 · 点击「启动模拟」恢复监控";
   }else{
    const startControl=document.querySelector('[data-action="start"]'),pauseControl=document.querySelector('[data-action="pause"]');
    primary.textContent=account.ready?"启动模拟":"配置并启动";
@@ -435,7 +435,10 @@
   catch (error) {message(error.message);return false;}
   finally {state.busy = false;render();}
  }
- const tradeReasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出",take_profit:"止盈",mean_target:"回归中轨止盈",time_stop:"到期退出"};
+ const tradeReasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出",take_profit:"止盈",mean_target:"回归中轨止盈",time_stop:"到期退出",
+  hedge_failed:"对冲失败，退出单腿",risk_exit:"风控退出",funding_gap:"资金费待核对",rate_reversed:"资金费率反转"};
+ const historyColumns=["平仓时间","方向","开仓 → 平仓","净盈亏","手续费","原因"];
+ const carryColumns=["平仓时间","现货 / 永续","资金费","基差损益","单腿损益","交易成本","净盈亏","原因"];
  const historyPageSize=30;
  let historyRequest=0;
  async function loadTrades() {
@@ -443,6 +446,8 @@
   const {id,offset,mode}=state, ticket=++historyRequest;
   const turtle=isPaperMode(mode),snapshot=turtle?state.turtle?.snapshot:state.data?.snapshot;
   const account=state.data?.selected;
+  const columns=mode==="carry"?carryColumns:historyColumns;
+  $("deskHistoryColumns").replaceChildren(...columns.map(label=>node("th",label)));
   const current=()=>ticket===historyRequest&&id===state.id&&offset===state.offset&&state.drawer==="history";
   const box=$("deskTrades"), status=$("deskHistoryStatus");
   $("deskHistoryAccount").textContent=(account?.name||"")+" · "+(account?.quoteAsset||"")+" · 北京时间";
@@ -458,20 +463,27 @@
    if(turtle&&(!snapshot||snapshot.id!==id))throw Error("模拟记录尚未同步，请稍后重试。");
    const records=turtle?snapshot.history:null;
    const data=mode==="turtle"?{total:records.length,items:records.slice(offset,offset+historyPageSize)}:
-    await api("/api/v4/"+(mode==="reversal"?"reversal":"desk")+"/history?id="+encodeURIComponent(id)+"&offset="+offset);
+    await api("/api/v4/"+(turtle?mode:"desk")+"/history?id="+encodeURIComponent(id)+"&offset="+offset);
    if(!current())return;
    state.trades=data.items;
    status.textContent=mode==="turtle"?"显示最近 50 笔已结算交易。":"";
    for(const item of data.items) {
     const row = node("tr");
-   row.append(node("td", time(item.time)), node("td", item.side === "long" ? "做多" : item.side === "short" ? "做空" : item.side),
+   if(mode==="carry"){
+    const spot=format(item.spotEntry,6)+" → "+format(item.spotExit,6);
+    const perp=item.perpEntry==null?"未成交":format(item.perpEntry,6)+" → "+format(item.perpExit,6);
+    const amounts=[item.fundingPnl,item.basisPnl,item.unhedgedPnl,item.tradingFee+item.slippageAmount,item.netPnl];
+    row.append(node("td",time(item.time)),node("td","现货 "+spot+" / 永续 "+perp),
+     ...amounts.map((value,i)=>node("td",format(value,4),i===4?(value>0?"positive":value<0?"negative":""):"")),
+     node("td",tradeReasons[item.reason]||item.reason||"—"));
+   }else row.append(node("td", time(item.time)), node("td", item.side === "long" ? "做多" : item.side === "short" ? "做空" : item.side),
       node("td", format(item.entryPrice, 6) + " → " + format(item.exitPrice, 6)),
       node("td", format(item.netPnl, 4), item.netPnl > 0 ? "positive" : item.netPnl < 0 ? "negative" : ""),
       node("td", format(item.tradingFee, 4)), node("td", tradeReasons[item.reason]||item.reason||"—"));
-    [...row.children].forEach((cell, i) => cell.dataset.label = ["平仓时间", "方向", "开仓 → 平仓", "净盈亏", "手续费", "原因"][i]);
+    [...row.children].forEach((cell, i) => cell.dataset.label = columns[i]);
     box.append(row);
    }
-   if (!data.items.length) {const row = node("tr"), td = node("td", "暂无已结算交易", "empty-cell");td.colSpan = 6;row.append(td);box.append(row);}
+   if (!data.items.length) {const row = node("tr"), td = node("td", "暂无已结算交易", "empty-cell");td.colSpan = columns.length;row.append(td);box.append(row);}
    $("deskHistoryCount").textContent = "共 " + data.total + " 笔";
    $("deskPrev").disabled = offset === 0;
    $("deskNextPage").disabled = offset + historyPageSize >= data.total;
@@ -489,7 +501,10 @@
    if (typeof value === "string" && /^[=+\-@\s]/.test(s)) s = "'" + s;
    return '"' + s.replace(/"/g, '""') + '"';
   };
-  const rows = [["时间","方向","开仓价","平仓价","净盈亏","手续费","退出原因"], ...state.trades.map(t => [time(t.time),t.side,t.entryPrice,t.exitPrice,t.netPnl,t.tradingFee,t.reason])];
+  const rows = state.mode==="carry"?
+   [["时间","现货开仓","现货退出","永续开仓","永续退出","资金费","基差损益","单腿损益","手续费","滑点与价差","净盈亏","退出原因"],
+    ...state.trades.map(t=>[time(t.time),t.spotEntry,t.spotExit,t.perpEntry,t.perpExit,t.fundingPnl,t.basisPnl,t.unhedgedPnl,t.tradingFee,t.slippageAmount,t.netPnl,t.reason])]:
+   [["时间","方向","开仓价","平仓价","净盈亏","手续费","退出原因"], ...state.trades.map(t => [time(t.time),t.side,t.entryPrice,t.exitPrice,t.netPnl,t.tradingFee,t.reason])];
   const link = node("a"), url = URL.createObjectURL(new Blob(["\uFEFF" + rows.map(row => row.map(cell).join(",")).join("\r\n")], {type: "text/csv;charset=utf-8"}));
   link.href = url;link.download = "just-agent-trades.csv";link.click();setTimeout(() => URL.revokeObjectURL(url), 1000);
  };
