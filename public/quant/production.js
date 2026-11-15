@@ -3,7 +3,6 @@
  const page=document.getElementById("page-trading");
  const price=page.querySelector(".price-panel");
  const execution=page.querySelector(".execution-panel");
- const history=page.querySelector(".history-panel");
  const controls=price.querySelector(".control-row");
  const element=(tag,cls,text)=>{
   const node=document.createElement(tag);
@@ -20,7 +19,7 @@
  safety.append(safetyTitle,close);
  // The main toolbar owns start and pause. Keep their existing handlers and state.
  controls.hidden=true;
- primary.append(price,execution,history);
+ primary.append(price,execution);
  side.append(safety);
  grid.append(primary,side);
  page.append(grid);

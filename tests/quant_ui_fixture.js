@@ -6,6 +6,8 @@ const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/con
 function start(port = 0) {
  let count = 64, scenario = "";
  const saved = new Map(), submissions = [], controls=[], turtleAccounts=new Map();
+ let turtleSaveAttempts=0;
+ const turtleTrades=Array.from({length:32},(_,i)=>({time:Date.UTC(2026,10,15)-i*3600000,side:"short",entryPrice:2500,exitPrice:2510,netPnl:-10.2,tradingFee:.4,reason:"hard_sl"}));
  let accounts = [];
  const makeAccounts = () => Array.from({length: count}, (_, i) => ({
   id: "sample-" + i, name: i === 0 ? "经典模拟 · ETH" : i === 1 ? "超长账户名称测试".repeat(9) : "模拟账户 " + (i + 1),
@@ -18,7 +20,7 @@ function start(port = 0) {
  const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   const json = (code, data) => {res.writeHead(code, {"Content-Type": "application/json"});res.end(JSON.stringify(data));};
-  if (url.pathname === "/") {scenario = url.searchParams.get("scenario") || "";server.scenario = scenario;saved.clear();submissions.length=0;controls.length=0;turtleAccounts.clear();if ([64,100,150].includes(Number(url.searchParams.get("count")))) count=Number(url.searchParams.get("count"));accounts=makeAccounts();selected=accounts[0].id;}
+  if (url.pathname === "/") {scenario = url.searchParams.get("scenario") || "";server.scenario = scenario;saved.clear();submissions.length=0;controls.length=0;turtleAccounts.clear();turtleSaveAttempts=0;if ([64,100,150].includes(Number(url.searchParams.get("count")))) count=Number(url.searchParams.get("count"));accounts=makeAccounts();selected=accounts[0].id;}
   const requestBody=async()=>{
    let body="";
    for await(const part of req)body+=part;
@@ -26,7 +28,9 @@ function start(port = 0) {
   };
   const turtleSnapshot=a=>{
    const config=turtleAccounts.get(a.id);
-   return {id:a.id,name:a.name,symbol:a.symbol,mode:"Paper",config,configHash:turtleConfig.hash(config),history:[],decision:{code:"WAIT_BREAKOUT",reason:"等待收盘"},market:{state:"fresh",quoteTime:Date.now()},fresh:true,balance:10000,equity:10000,floating:0,realized:0,price:2500,running:a.running,nextEntry:{upper:2520,lower:2400,direction:config.direction,closesAt:Date.now()+3600000}};
+   const history=turtleSaveAttempts>2?turtleTrades:[];
+   const realized=history.reduce((total,trade)=>total+trade.netPnl,0);
+   return {id:a.id,name:a.name,symbol:a.symbol,mode:"Paper",config,configHash:turtleConfig.hash(config),history,decision:{code:"WAIT_BREAKOUT",reason:"等待收盘"},market:{state:"fresh",quoteTime:Date.now()},fresh:true,balance:10000+realized,equity:10000+realized,floating:0,realized,price:2500,running:a.running,nextEntry:{upper:2520,lower:2400,direction:config.direction,closesAt:Date.now()+3600000}};
   };
   if(url.pathname.startsWith("/api/v4/turtle/")){
    const route=url.pathname.split("/").at(-1);
@@ -46,7 +50,12 @@ function start(port = 0) {
      const snapshot=turtleSnapshot(a);
      return json(200,{ok:true,snapshot,preflight:{allowed:true,configHash:snapshot.configHash,blockers:[],checkedAt:Date.now()}});
     }
-    if(route==="config"){turtleAccounts.set(a.id,input.config);return json(200,{ok:true,message:"参数已保存"});}
+    if(route==="config"){
+     if(a.running&&++turtleSaveAttempts<=2)return json(400,{ok:false,error:"正在更新账户，请稍后重试"});
+     if(input.expectedHash!==turtleConfig.hash(turtleAccounts.get(a.id)))return json(400,{ok:false,error:"参数版本已变更"});
+     turtleAccounts.set(a.id,turtleConfig.normalize(input.config));
+     return json(200,{ok:true,message:"参数已保存"});
+    }
     if(route==="control"){
      controls.push(input);
      if(input.action==="start"&&(input.confirm!==true||input.expectedHash!==turtleConfig.hash(turtleAccounts.get(a.id))))return json(400,{ok:false,error:"请核对当前参数后启动"});
@@ -98,7 +107,7 @@ function start(port = 0) {
    const snapshot = a.hasPosition ? {equity:10140.35,floating:-12.45,realized:152.8,available:9889.35,margin:251,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:"等待补仓或止盈条件",lastAction:"模拟补仓 #1",settings:cfg,position:{side:"long",entry:2562.31,qty:.2008,adds:1,nextAdd:2470.15,takeProfit:2588.19}} :
     {equity:10000,realized:0,floating:0,available:10000,margin:0,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:a.ready?"等待启动":"保存经典参数后，可启动模拟交易",settings:a.ready?cfg:undefined,position:null};
    if (a.hasPosition) snapshot.plan = {first:{price:2530,amount:cfg.baseAmount,status:"已成交"},add:{price:2470.15,amount:200,quantity:200/2470.15,lastPrice:2495,done:1,limit:3,status:"等待触发"},exit:{price:2588.19,status:"监测止盈"},fills:[{at:Date.now()-100000,kind:"open",price:2530,qty:.1,notional:253},{at:Date.now()-30000,kind:"add",price:2495,qty:.1008,notional:251.496}]};
-   return json(200,{ok:true,selected:a,accounts,snapshot,defaultSettings:cfg});
+   return json(200,{ok:true,selected:a,accounts:accounts.map(account=>account.strategyType==="turtle_4h_v1"?{...account,running:false}:account),snapshot,defaultSettings:cfg});
   }
   if (url.pathname === "/api/v4/desk/history") return json(200,{ok:true,total:1,items:[{time:Date.now(),side:"long",entryPrice:2480,exitPrice:2510,netPnl:10.2,tradingFee:.4,reason:"策略止盈"}]});
   const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
@@ -110,6 +119,7 @@ function start(port = 0) {
  server.listen(port,"127.0.0.1");
  server.submissions=submissions;
  server.controls=controls;
+ server.turtleSaveAttempts=()=>turtleSaveAttempts;
  return server;
 }
 module.exports = {start};

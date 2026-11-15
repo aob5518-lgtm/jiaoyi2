@@ -24,7 +24,10 @@
   const c=values(),valid=keys.every(k=>form.elements[k].validity.valid)&&c.exitBars<c.entryBars;
   const changes=state.editBase?differences(state.editBase,c):[];
   state.dirty=changes.length>0;
-  $("preview").textContent=valid?"按当前已结算权益，草稿的单笔计划风险为 "+amount(state.data?.balance*c.riskPerTrade)+"（"+percent(c.riskPerTrade)+"）。":"请填写有效参数。退出通道须短于入场通道。";
+  const invalid=keys.find(key=>!form.elements[key].validity.valid);
+  $("preview").textContent=invalid?labels[invalid]+"："+form.elements[invalid].validationMessage:
+   !valid?"退出通道须短于入场通道。":!state.dirty?"当前参数已保存。修改后即可保存。":
+   "草稿单笔计划风险 "+amount(state.data?.balance*c.riskPerTrade)+"（"+percent(c.riskPerTrade)+"）。";
   list("config-changes",valid?changes:[]);
   $("save").disabled=state.busy||!state.online||!valid||!state.dirty;
   $("save-start").hidden=!!(state.data?.running||state.data?.pending||state.data?.riskLock);
@@ -67,7 +70,7 @@
   $("confirm-start").disabled=state.busy||!state.online||!state.confirmAllowed||state.confirmHash!==state.data?.configHash;
   if($("confirm").open&&state.confirmHash!==state.data?.configHash)$("start-error").textContent="已保存参数发生变化，请取消并重新检查后确认。";
   const s=state.data;$("empty").hidden=!state.loaded||!!state.id;$("desk").hidden=!s;
-  onState?.({snapshot:s,loaded:state.loaded,busy:state.busy,online:state.online,dirty:state.dirty});
+  onState?.({snapshot:s,accounts:state.accounts,loaded:state.loaded,busy:state.busy,online:state.online,dirty:state.dirty});
   if(!embedded)rail();
   if(!s)return;
   if(!embedded){$("title").textContent=s.name;$("instrument").textContent="Binance 永续 · "+s.symbol+" / USDT";}
@@ -94,8 +97,10 @@
   $("edit").disabled=$("quick-edit").disabled=state.busy||!state.online;
   $("exit-actions").hidden=!p;
   $("control-note").textContent=state.busy?"正在处理，请稍候…":state.dirty?"先保存参数，再检查启动。":s.riskLock?"风险锁定，不能启动。":s.pending?"委托尚未结束，请等待确认。":s.running?"监控运行中，等待新的有效 4H 信号。":"检查原生行情、交易规格与风险状态后启动。";
-  const trades=$("trades");trades.replaceChildren();for(const t of s.history){const tr=node("tr");const entries=[time(t.time),t.side==="long"?"多 LONG":"空 SHORT",fmt(t.entryPrice,6)+" → "+fmt(t.exitPrice,6),fmt(t.netPnl)+" USDT",reasons[t.reason]||t.reason];entries.forEach((v,i)=>{const td=node("td",v,i===3?(t.netPnl>0?"positive":t.netPnl<0?"negative":""):"");td.dataset.label=["时间","方向","开仓 → 平仓","净收益","退出原因"][i];tr.append(td);});trades.append(tr);}
-  if(!s.history.length){const tr=node("tr"),td=node("td","暂无已结算模拟交易","empty-cell");td.colSpan=5;tr.append(td);trades.append(tr);}
+  if(!embedded){
+   const trades=$("trades");trades.replaceChildren();for(const t of s.history){const tr=node("tr");const entries=[time(t.time),t.side==="long"?"多 LONG":"空 SHORT",fmt(t.entryPrice,6)+" → "+fmt(t.exitPrice,6),fmt(t.netPnl)+" USDT",reasons[t.reason]||t.reason];entries.forEach((v,i)=>{const td=node("td",v,i===3?(t.netPnl>0?"positive":t.netPnl<0?"negative":""):"");td.dataset.label=["时间","方向","开仓 → 平仓","净收益","退出原因"][i];tr.append(td);});trades.append(tr);}
+   if(!s.history.length){const tr=node("tr"),td=node("td","暂无已结算模拟交易","empty-cell");td.colSpan=5;tr.append(td);trades.append(tr);}
+  }
   if($("parameters").open){
    if(state.hash!==s.configHash){$("config-error").textContent="已保存参数发生变化。草稿已保留，请关闭编辑后重新核对。";$("save").disabled=$("save-start").disabled=true;}
   }
@@ -109,20 +114,38 @@
   }catch(e){if(ticket!==state.ticket)return;state.online=false;if(state.data)state.data={...state.data,fresh:false,price:null,nextEntry:null,floating:state.data.position?null:0,equity:state.data.position?null:state.data.equity,decision:{code:"MARKET_UNAVAILABLE",reason:e.message}};msg(e.message);render();}
  }
  async function run(fn,errorId){if(state.busy||disposed)return;state.ticket++;state.busy=true;render();try{await fn();}catch(e){if(e.snapshot?.id===state.id)state.data=e.snapshot;if(errorId)$(errorId).textContent=e.message;else msg(e.message);}finally{state.busy=false;if(!disposed)render();}}
- function edit(){if(!state.data)return;state.hash=state.data.configHash;state.editBase=state.data.config;setFields(state.data.config);$("config-error").textContent="";$("config-title").textContent=state.data.name;$("config-note").textContent=state.data.activeConfig?"当前仓位或委托使用锁定参数。本次保存从下一轮生效。":"保存后，可单独检查并启动策略。";$("parameters").showModal();}
+ function edit(){if(!state.data)return;state.hash=state.data.configHash;state.editBase=state.data.config;setFields(state.data.config);$("config-error").textContent="";$("config-progress").textContent="";$("config-title").textContent=state.data.name;$("config-note").textContent=state.data.activeConfig?"当前仓位或委托使用锁定参数。本次保存从下一轮生效。":"保存参数后，下次开仓使用新设置。";$("parameters").showModal();}
  function cancelEdit(){if(state.busy||state.dirty&&!confirm("放弃本次尚未保存的参数修改？"))return;state.dirty=false;state.editBase=null;$("parameters").close();render();}
  $("edit").onclick=$("quick-edit").onclick=edit;$("cancel-edit").onclick=cancelEdit;$("parameters").addEventListener("cancel",e=>{e.preventDefault();cancelEdit();});
- form.oninput=()=>render();
+ form.oninput=()=>{$("config-error").textContent="";render();};
+ async function saveConfig(input){
+  const busyErrors=["正在更新账户，请稍后重试","账户操作繁忙"];
+  const deadline=performance.now()+16000;
+  for(;;){
+   try{return await api("config",input);}
+   catch(error){
+    if(!busyErrors.includes(error.message))throw error;
+    if(performance.now()>=deadline)throw Error("行情同步仍在进行，修改已保留。请再次点击「保存参数」。");
+    $("config-progress").textContent="正在等待本轮行情同步结束，随后自动保存…";
+    await new Promise(resolve=>setTimeout(resolve,500));
+    if(disposed)throw error;
+   }
+  }
+ }
  form.onsubmit=async e=>{
   e.preventDefault();
   if($("save").disabled||!form.reportValidity())return;
-  const c=values(),andCheck=e.submitter?.id==="save-start";
+  const input={id:state.id,config:values(),expectedHash:state.hash};
+  const andCheck=e.submitter?.id==="save-start";
   let saved=false;
+  $("config-error").textContent="";
+  $("config-progress").textContent="正在保存参数…";
   await run(async()=>{
-   const r=await api("config",{id:state.id,config:c,expectedHash:state.hash});
+   const r=await saveConfig(input);
    state.dirty=false;state.editBase=null;$("parameters").close();
    msg(r.message);await load();saved=true;
   },"config-error");
+  $("config-progress").textContent="";
   if(saved&&andCheck&&!$("start").disabled){if(embedded)startDirect();else checkStart();}
  };
  $("reset").onclick=()=>{setFields(state.defaults);render();};

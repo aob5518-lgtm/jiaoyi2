@@ -37,7 +37,9 @@
  <div class="strategy-account"><label for="deskAccountPicker">模拟账户</label><select id="deskAccountPicker"><option>读取账户…</option></select></div>
  <div class="starter-actions">
   <button id="deskPrimaryAction" class="primary" type="button" hidden></button>
+  <button id="deskPauseAction" class="icon-button" type="button" hidden>暂停新增</button>
   <button id="deskEditShortcut" class="icon-button" type="button" data-go="parameters" hidden>策略参数 <span id="parameterDirty" class="dirty-dot" hidden aria-label="有未保存参数"></span></button>
+  <button id="deskHistoryShortcut" class="icon-button" type="button" data-go="history" disabled>盈亏历史</button>
   <button id="deskNewAccount" class="icon-button" type="button" hidden>新建模拟账户</button>
  </div>
  <p id="deskStarterHint" role="status">正在同步账户。</p>
@@ -67,12 +69,14 @@
 <details class="panel execution-panel"><summary>本轮成交明细<span>首仓与每次补仓的实际价格</span></summary>
   <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>时间</th><th>动作</th><th>成交价</th><th>成交数量</th><th>成交金额</th></tr></thead><tbody id="deskFills"></tbody></table></div>
 </details>
-<article class="panel history-panel">
-  <div class="panel-heading"><div><h2>交易记录</h2><small id="deskHistoryAccount">当前账户 · 已结算记录</small></div><button id="deskExport" class="icon-button" disabled>导出本页</button></div>
-  <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>平仓时间</th><th>方向</th><th>开仓 → 平仓</th><th>净盈亏</th><th>手续费</th><th>原因</th></tr></thead><tbody id="deskTrades"></tbody></table></div>
-  <div class="desk-pager"><button id="deskPrev" disabled>上一页</button><small id="deskHistoryCount">—</small><button id="deskNextPage" disabled>下一页</button></div>
-</article>
 </section>
+<dialog id="page-history" class="desk-dialog desk-history-dialog history-panel" aria-labelledby="deskHistoryTitle">
+  <div class="desk-dialog-head"><div><h2 id="deskHistoryTitle">盈亏历史</h2><p id="deskHistoryAccount">当前账户 · 已结算交易</p></div><button type="button" class="icon-button" data-dismiss="history">关闭</button></div>
+  <div class="history-tools"><div><small>累计已实现净盈亏</small><strong id="deskHistoryNet">—</strong></div><button id="deskExport" class="icon-button" type="button" disabled>导出本页</button></div>
+  <p id="deskHistoryStatus" role="status" class="muted"></p>
+  <div class="desk-pager"><button id="deskPrev" disabled>上一页</button><small id="deskHistoryCount">—</small><button id="deskNextPage" disabled>下一页</button></div>
+  <div class="desk-table-wrap"><table class="desk-table"><thead><tr><th>平仓时间</th><th>方向</th><th>开仓 → 平仓</th><th>净盈亏</th><th>手续费</th><th>原因</th></tr></thead><tbody id="deskTrades"></tbody></table></div>
+</dialog>
 <dialog id="page-parameters" class="desk-dialog desk-parameter-dialog" aria-labelledby="deskParameterTitle">
   <div class="desk-dialog-head"><div><h2 id="deskParameterTitle">经典策略参数</h2><p id="deskConfigAccount">当前账户</p></div><button type="button" class="icon-button" data-dismiss="parameters">关闭</button></div>
   <p id="deskConfigHint" class="config-hint" role="status">正在读取参数…</p>
@@ -92,7 +96,7 @@
     <fieldset class="panel parameter-group"><legend><span>03</span> 止盈设置</legend><div class="field-grid">
       <label class="field-wide">整仓止盈目标<div class="input-unit"><input name="takeProfit" type="number" min=".01" max="99" step="any" required><span>%</span></div><small id="takeProfitHelp">以保证金毛收益率计算，不是币价涨跌幅。手续费与滑点会减少净收益。</small></label>
     </div><p class="risk-note">经典规则没有自动止损。暂停新增后，已有模拟仓位仍检查止盈；需要退出时请在总览手动平仓。</p></fieldset>
-    <div class="save-bar"><div><strong id="deskSaveState">参数尚未修改</strong></div><button id="deskResetDraft" type="button" class="icon-button" disabled>撤销修改</button><button id="deskSave" type="submit" disabled>仅保存</button><button id="deskSaveTop" class="primary" type="submit" disabled>保存并启动模拟</button></div>
+    <div class="save-bar"><div><strong id="deskSaveState">参数尚未修改</strong></div><button id="deskResetDraft" type="button" class="icon-button" disabled>撤销修改</button><button id="deskSave" type="submit" disabled>保存参数</button><button id="deskSaveTop" class="primary" type="submit" disabled>保存并启动模拟</button></div>
   </form>
   <aside class="parameter-preview" aria-label="参数效果预览">
     <article class="panel"><div class="panel-heading"><h2>资金用量</h2><span class="tag">参数预览</span></div><dl class="budget-facts"><dt>首仓预计保证金</dt><dd id="previewFirstMargin">—</dd><dt>每次补仓预计保证金</dt><dd id="previewAddMargin">—</dd><dt>最多开仓笔数</dt><dd id="previewOrderCount">—</dd><dt>最大名义仓位</dt><dd id="previewNotional">—</dd><dt>最大计划保证金</dt><dd id="previewMargin">—</dd></dl><p id="deskBudget" class="muted">填写参数后自动计算。</p><small>不含交易成本，不表示账户最大亏损。</small></article>

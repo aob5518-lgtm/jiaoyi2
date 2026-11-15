@@ -74,6 +74,11 @@ main {padding:18px 26px}
 .desk-dialog .parameter-preview .panel {padding:12px}
 .desk-dialog .config-hint {margin:0 0 14px}
 .desk-dialog .desk-inline-error {color:#ffb0b8}
+.desk-history-dialog {width:min(1000px,calc(100% - 24px))}
+.history-tools {display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}
+.history-tools small {display:block;color:var(--muted);margin-bottom:4px}
+.history-tools strong {font-size:22px;font-variant-numeric:tabular-nums}
+#deskHistoryStatus:empty {display:none}
 .desk-notice[data-tone="success"] {background:#142923;color:#a9e3ca;border-color:#2c5849}
 .desk-account-dialog {width:min(550px,100vw)}
 .connection-credentials {grid-column:1/-1;border-top:1px solid var(--line);padding:8px 0}
