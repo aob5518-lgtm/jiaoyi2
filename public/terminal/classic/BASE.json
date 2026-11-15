@@ -1,0 +1,12 @@
+{
+  "sourceUI": "eb840d7ad63905e7c4650f4b65bfe37a25317986",
+  "existingControllersUnchanged": true,
+  "files": {
+    "public/quant/core-eb840d7/desk.js": "2a8620054085f2b8a0433fb58e4c3d45b0542086055c723ca7f06d4b5e6ec309",
+    "public/quant/core-eb840d7/settings-preview.js": "c62939977d2ccca74abcd4e21d226a11040ea2f57205f9cff21d78e3b94e0eb4",
+    "public/quant/core-eb840d7/connections.js": "941e96d4fa002a82b0d79c01c17e6a880fbf5cc5c09a603c1b468107ec97f6dc",
+    "public/quant/core-eb840d7/desk.css": "5a47890f0cb0bcdbb13eb794856521191c3d21734c7963df59d5a2d61531c688",
+    "public/hypothesis/workbench.css": "511dd97d3bb1fff53f421294d756465e707a61c3d4c9ba0d269d475a4ab13009"
+  },
+  "hashEncoding": "UTF-8 LF"
+}
