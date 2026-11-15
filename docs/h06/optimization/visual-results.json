@@ -1,0 +1,162 @@
+[
+  {
+    "width": 1920,
+    "height": 1080,
+    "tab": "overview",
+    "scroll": 1905,
+    "client": 1905,
+    "main": 1653
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "tab": "strategies",
+    "scroll": 1920,
+    "client": 1920,
+    "main": 1668
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "tab": "history",
+    "scroll": 1920,
+    "client": 1920,
+    "main": 1668
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "tab": "analysis",
+    "scroll": 1905,
+    "client": 1905,
+    "main": 1653
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "tab": "overview",
+    "scroll": 1585,
+    "client": 1585,
+    "main": 1333
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "tab": "strategies",
+    "scroll": 1585,
+    "client": 1585,
+    "main": 1333
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "tab": "history",
+    "scroll": 1600,
+    "client": 1600,
+    "main": 1348
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "tab": "analysis",
+    "scroll": 1585,
+    "client": 1585,
+    "main": 1333
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "tab": "overview",
+    "scroll": 1351,
+    "client": 1351,
+    "main": 1099
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "tab": "strategies",
+    "scroll": 1351,
+    "client": 1351,
+    "main": 1099
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "tab": "history",
+    "scroll": 1351,
+    "client": 1351,
+    "main": 1099
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "tab": "analysis",
+    "scroll": 1351,
+    "client": 1351,
+    "main": 1099
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "tab": "overview",
+    "scroll": 390,
+    "client": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "tab": "strategies",
+    "scroll": 390,
+    "client": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "tab": "history",
+    "scroll": 390,
+    "client": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "tab": "analysis",
+    "scroll": 390,
+    "client": 390,
+    "main": 390
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "tab": "overview",
+    "scroll": 375,
+    "client": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "tab": "strategies",
+    "scroll": 375,
+    "client": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "tab": "history",
+    "scroll": 375,
+    "client": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "tab": "analysis",
+    "scroll": 375,
+    "client": 375,
+    "main": 375
+  }
+]

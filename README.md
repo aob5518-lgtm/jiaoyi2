@@ -156,3 +156,28 @@ npm test
 ```
 
 测试覆盖 V1/V2/V3 隔离、多空信号、评分与硬阻断、三种入场引擎、结构止损、Effective Risk、净 R/成本口径、再入场、Shadow、无前视事后分析、周末限制、历史凭证、未知订单恢复、Live 安全以及旧策略回归。
+
+## H06 MACD Signal Scale-In V1（独立研究策略）
+
+新增策略 ID：`macd_scale_in_v1`。仅支持 Binance ETHUSDT / BTCUSDT USD-M 永续的 Research、Shadow 和独立 Paper，**禁止 Live**。
+
+- 默认1H、12/26/9、已收盘 DIF/DEA 交叉；柱体动量和组合信号为独立实验。
+- 方向支持只做多、只做空、双向；同轮只保持一个方向。
+- 轮初冻结已结算权益，保证金层级默认1% / 1% / 2% / 2%，必须亏损且出现新的同向信号才补仓。
+- 净保证金ROI达到100%只平一次50%，之后不再补仓；反向信号与独立硬止损按状态处理。
+- 单轮净亏损默认/硬上限1%、日亏损默认/硬上限2%、保证金预算最高6%；杠杆默认1x。
+- 独立 `macd_scale_in_runtime.json`，不复用经典、4H、V3或Short-Term的账本。
+- 统一终端创建新H06账户、配置全部参数和查看四层执行、成本与轮次复盘；不自动迁移或启动旧账户。
+
+研究回放不是Paper收益，也不证明该策略具有正期望。详见：
+
+- [实现与安全审查](docs/h06/IMPLEMENTATION.md)
+- [完整交付及研究报告](docs/h06/REPORT.md)
+- [部署与回滚方案（本轮不部署）](docs/h06/DEPLOYMENT.md)
+
+本机隔离前向研究：`node scripts/h06_forward.js --directory .h06-research --mode Shadow --symbol ETH --port 3376 --start`。
+该服务仅绑定本机，需独立认证，无真实交易接口；原生行情不可用时保持阻断和空仓。
+
+H06第二轮优化与独立验证见 [optimization/REPORT.md](docs/h06/optimization/REPORT.md)：执行证据去重、准确的机会/提交/成交统计、陈旧浮盈保护、4H回放一致性及按补仓层数的亏损复盘。默认交易参数保持不变，候选研究不自动晋升为默认。
+
+H06专项整改见 [remediation/REPORT.md](docs/h06/remediation/REPORT.md)：100%ROI机制核验、48组已使用历史的杠杆/补仓/退出对照、订单配置快照、独立成交事件统计及原生接口验收记录。原生前向仍受网络超时阻断，PR保持草稿，不部署、不修改默认参数。

@@ -1,0 +1,5 @@
+/* H06 uses the existing account navigation and terminal; no separate application. */
+.h06-config{display:block}.h06-config>.form-grid{margin:18px 0 24px}.h06-config details{border-top:1px solid var(--line);padding-top:18px}.h06-config details>.form-grid{margin-top:18px}.h06-config input,.h06-config select{font-size:15px;min-height:46px}.h06-config label{font-size:13px}.h06-config .notice{margin-top:22px}.layers .facts{grid-template-columns:1fr;gap:5px}.layers .facts dd{margin-bottom:9px;overflow-wrap:anywhere}.account-card{flex:0 0 auto;min-height:86px}.account-list{overflow-y:auto}
+@media(max-width:760px){.h06-config .form-grid{grid-template-columns:1fr}.h06-config input,.h06-config select{font-size:16px}.layers{grid-template-columns:1fr}.h06-config button[type=submit]{width:100%;min-height:48px}}
+
+.h06-only{display:block;margin-bottom:12px}.h06-config .form-grid{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:1100px){.h06-config .form-grid{grid-template-columns:1fr 1fr}}@media(max-width:760px){.h06-config .form-grid{grid-template-columns:1fr}}
