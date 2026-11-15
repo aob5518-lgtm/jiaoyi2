@@ -3,6 +3,7 @@ const http = require("http"), fs = require("fs"), path = require("path");
 const turtleConfig=require("../strategy/turtle_4h/config");
 const reversalConfig=require("../strategy/reversal_4h/config");
 const carryConfig=require("../strategy/funding_carry/config");
+const pullbackConfig=require("../strategy/pullback_15m/config");
 const root = path.resolve(__dirname, "../public");
 const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css"]);
 function start(port = 0) {
@@ -33,11 +34,12 @@ function start(port = 0) {
    const history=profile===turtleConfig&&turtleSaveAttempts>2?turtleTrades:[];
    const realized=history.reduce((total,trade)=>total+trade.netPnl,0);
    return {id:a.id,name:a.name,symbol:a.symbol,mode:"Paper",config,configHash:profile.hash(config),history,decision:{code:profile.waitCode||"WAIT_BREAKOUT",reason:"等待收盘"},market:{state:"fresh",quoteTime:Date.now()},fresh:true,balance:10000+realized,equity:10000+realized,floating:0,realized,price:2500,running:a.running,nextEntry:{upper:2520,lower:2400,direction:config.direction,closesAt:Date.now()+3600000},
-    ...(profile===carryConfig?{carry:{phase:"flat",spot:2500,perp:2504,basisBps:16,rate:.0003,nextFundingAt:Date.now()+3600000,expected:8,cost:10,edge:-2},decision:{code:"COST_BLOCK",reason:"预计交易成本超过收益"}}:{})};
+    ...(profile===carryConfig?{carry:{phase:"flat",spot:2500,perp:2504,basisBps:16,rate:.0003,nextFundingAt:Date.now()+3600000,expected:8,cost:10,edge:-2},decision:{code:"COST_BLOCK",reason:"预计交易成本超过收益"}}:{}),
+    ...(profile===pullbackConfig?{decision:{code:"WAIT_PULLBACK",reason:"等待回踩"},analysis:{trend:"long",breakoutLevel:2480}}:{})};
   };
-  if(/^\/api\/v4\/(turtle|reversal|carry)\//.test(url.pathname)){
+  if(/^\/api\/v4\/(turtle|reversal|carry|pullback)\//.test(url.pathname)){
    const route=url.pathname.split("/").at(-1);
-   const mode=url.pathname.split("/")[3],profile={turtle:turtleConfig,reversal:reversalConfig,carry:carryConfig}[mode];
+   const mode=url.pathname.split("/")[3],profile={turtle:turtleConfig,reversal:reversalConfig,carry:carryConfig,pullback:pullbackConfig}[mode];
    if(req.method==="GET"&&route==="accounts")return json(200,{ok:true,accounts,defaults:profile.defaults});
    if(req.method==="GET"&&route==="status"){
     const a=accounts.find(x=>x.id===url.searchParams.get("id"));

@@ -77,7 +77,7 @@ async function handle(req, res, parsed, d) {
     requireFields(input, checking ? ["id"] : ["id", "name", "address", ...secrets]);
     const account = d.getAccountById(input.id);
     if (!account) throw Error("账户不存在");
-    if(["turtle_4h_v1","reversal_4h_v1","funding_carry_v1"].includes(account.strategyType)&&!checking&&Object.keys(credentialPatch(input)).length)throw Error("独立模拟账户禁止添加交易密钥或地址");
+    if(["turtle_4h_v1","reversal_4h_v1","funding_carry_v1","pullback_15m_v1"].includes(account.strategyType)&&!checking&&Object.keys(credentialPatch(input)).length)throw Error("独立模拟账户禁止添加交易密钥或地址");
     if (checking) {
       try {
         const summary = await d.checkConnection(account);

@@ -13,6 +13,7 @@ classic_paper_runtime.json
 turtle_4h_paper.json
 reversal_4h_paper.json
 funding_carry_paper.json
+pullback_15m_paper.json
 .classic-only
 strategy_migrations.json
 .trade-locks/

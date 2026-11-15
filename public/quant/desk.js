@@ -2,8 +2,8 @@
  "use strict";
  const $ = id => document.getElementById(id);
  const query = new URLSearchParams(location.search);
- const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",reversal:"找底摸顶 4H",carry:"资金费率对冲",history:"历史账户"};
- const paperStrategies = {turtle:"turtle_4h_v1",reversal:"reversal_4h_v1",carry:"funding_carry_v1"};
+ const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",reversal:"找底摸顶 4H",carry:"资金费率对冲",pullback:"短线顺势回踩",history:"历史账户"};
+ const paperStrategies = {turtle:"turtle_4h_v1",reversal:"reversal_4h_v1",carry:"funding_carry_v1",pullback:"pullback_15m_v1"};
  const isPaperMode = mode => Object.hasOwn(paperStrategies,mode);
  const fromAccount = account => Object.keys(paperStrategies).find(mode=>paperStrategies[mode]===account.strategyType) || (account.eligible?"classic":"history");
  const state = {data:null,id:query.get("account")||"",mode:Object.hasOwn(strategies,query.get("strategy"))?query.get("strategy"):"",empty:false,lastAccounts:{},busy:false,offline:true,dirty:false,request:0,offset:0,trades:[],filter:"all",switching:false,drawer:"",queuedDrawer:"",turtle:null};
@@ -291,7 +291,8 @@
    primary.disabled=blocked||!state.turtle?.online||!paper||paper.running||state.turtle.dirty||paper.riskLock||!!paper.pending;
    pause.disabled=blocked||!state.turtle?.online||!paper?.running;
    pause.onclick=()=>turtleDesk.pause();
-   hint=!paper?"正在同步"+strategies[state.mode]+"…":paper.riskLock?"该模拟账户当前风控锁定。":paper.pending?"当前有待核对记录。":state.turtle.dirty?"请先保存参数。":paper.running?(state.mode==="carry"?"运行中 · 监控费率与双边盘口":"运行中 · 等待有效的 4H 信号"):"已暂停 · 点击「启动模拟」恢复监控";
+   const watching={carry:"监控费率与双边盘口",pullback:"监控 1H 方向与 15m 回踩"}[state.mode]||"等待有效的 4H 信号";
+   hint=!paper?"正在同步"+strategies[state.mode]+"…":paper.riskLock?"该模拟账户当前风控锁定。":paper.pending?"当前有待核对记录。":state.turtle.dirty?"请先保存参数。":paper.running?"运行中 · "+watching:"已暂停 · 点击「启动模拟」恢复监控";
   }else{
    const startControl=document.querySelector('[data-action="start"]'),pauseControl=document.querySelector('[data-action="pause"]');
    primary.textContent=account.ready?"启动模拟":"配置并启动";
@@ -435,7 +436,7 @@
   catch (error) {message(error.message);return false;}
   finally {state.busy = false;render();}
  }
- const tradeReasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出",take_profit:"止盈",mean_target:"回归中轨止盈",time_stop:"到期退出",
+ const tradeReasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出",take_profit:"止盈",mean_target:"回归中轨止盈",swing_target:"达到前波段目标",time_stop:"到期退出",
   hedge_failed:"对冲失败，退出单腿",risk_exit:"风控退出",funding_gap:"资金费待核对",rate_reversed:"资金费率反转"};
  const historyColumns=["平仓时间","方向","开仓 → 平仓","净盈亏","手续费","原因"];
  const carryColumns=["平仓时间","现货 / 永续","资金费","基差损益","单腿损益","交易成本","净盈亏","原因"];

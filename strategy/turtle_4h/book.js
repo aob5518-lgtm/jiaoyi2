@@ -16,7 +16,7 @@ function protection(price, quote, side, atr, entry, config, cost) {
  const unitRisk=sign*(price-stopFill)+price*cost.entryFeeRate+stopFill*cost.exitFeeRate;
  const netReward=sign*(targetFill-price)-price*cost.entryFeeRate-targetFill*cost.exitFeeRate;
  if(!(stop>0&&target>0&&distance>0&&distance<=3*atr&&sign*(exitQuote-entry.stop)>0&&sign*(exitQuote-stop)>0)) {
-  throw Error("STRUCTURE_RISK：反转结构已失效或结构止损超出 3 ATR");
+  throw Error("STRUCTURE_RISK：结构已失效或结构止损超出 3 ATR");
  }
  if(!(unitRisk>0&&netReward/unitRisk>=config.minNetR)) {
   throw Error("COST_BLOCK：扣除预计交易成本后的收益风险比低于 "+config.minNetR+"R");
@@ -33,6 +33,7 @@ function plan(b,a,c,data,analysis,profile=C){
  const raw=Math.min(budget/unitRisk,b.balance*leverage/(price*(1+cost.entryFeeRate*leverage))),qty=floorQty(raw,data.rules.step);
  if(!(distance>0&&Number.isFinite(distance)&&qty>=data.rules.minQty&&qty<=data.rules.maxQty&&qty*price>=data.rules.minNotional))throw Error("SIZE_BLOCK：风险预算不足或数量不符合原生规格");
  return {qty,side,budget,atr:analysis.atr,distance,cost,config:{...c},configHash:profile.hash(c),signalAt:analysis.closedAt,revision:profile.REVISION,
+  ...(analysis.setupAt?{setupAt:analysis.setupAt}:{}),
   ...(entry?{entry:{...entry},netR:levels.netR}:{})};
 }
 function submit(b,kind,meta,time){
@@ -59,7 +60,8 @@ function advance(before,e,c,profile=C){
  if(b.position){const p=b.position,movement=(p.side==="long"?1:-1)*(mid-p.entry);p.mfe=Math.max(p.mfe,movement);p.mae=Math.min(p.mae,movement);}
  if(b.pending){
   const o=b.pending,isOpen=o.kind==="open";
-  if(isOpen&&(!b.running||b.riskLock||e.blocker||!e.marketOK||time-o.submittedAt>60000)){
+  if(isOpen&&(!b.running||b.riskLock||e.blocker||!e.marketOK||time-o.submittedAt>60000||
+     profile.maxSignalDelay&&time-o.meta.signalAt>profile.maxSignalDelay)){
    o.status="CANCELLED";o.finishedAt=time;b.pending=null;decide(b,"ENTRY_CANCELLED",e.blocker||"开仓条件已变化或委托过期，未伪造成交",time);return b;
   }
   if(q.time<=Math.max(b.lastQuoteTime,o.submittedAt)){decide(b,"WAIT_NEW_QUOTE","委托等待新的原生盘口证据",time);return b;}
@@ -103,9 +105,9 @@ function advance(before,e,c,profile=C){
   if(p.target){
    const targetReached=p.side==="long"?q.bid>=p.target:q.ask<=p.target;
    if(targetReached||time-p.openedAt>=p.config.maxHoldBars*profile.BAR){
-    submit(b,"close",{reason:targetReached?"mean_target":"time_stop"},time);return b;
+    submit(b,"close",{reason:targetReached?(profile.targetReason||"mean_target"):"time_stop"},time);return b;
    }
-   decide(b,"POSITION_MANAGED","持仓中，按本轮锁定的止损、回归目标和最长持仓时间管理",time);return b;
+   decide(b,"POSITION_MANAGED","持仓中，按本轮锁定的止损、目标和最长持仓时间管理",time);return b;
   }
   // A stopped monitor still maintains the protective stop and channel exit.
   if(e.marketOK&&analysis.closedAt>p.signalAt){
@@ -126,6 +128,11 @@ function advance(before,e,c,profile=C){
  }
  b.lastSignalAt=analysis.closedAt;
  if(!analysis.side){decide(b,analysis.code,analysis.reason,time);return b;}
+ if(profile.maxSignalDelay){
+  if(time-analysis.closedAt>profile.maxSignalDelay){decide(b,"SIGNAL_EXPIRED","错过确认后的入场窗口，等待新结构",time);return b;}
+  if(analysis.setupAt&&analysis.setupAt<=(b.lastSetupAt||0)){decide(b,"WAIT_BREAKOUT","该突破结构已评估，等待新结构",time);return b;}
+  b.lastSetupAt=analysis.setupAt||0;
+ }
  let m;
  try {m=plan(b,e.account,c,e.data,analysis,profile);}
  catch(error){

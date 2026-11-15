@@ -162,6 +162,22 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#page-history').open && document.querySelector('#deskTrades [data-label=资金费]')?.textContent==='9' && document.querySelector('#deskTrades [data-label=交易成本]')?.textContent==='4'");
    await dismiss("history");
    results.push({width,height,scenario:"carry-create-save-start-separate-fees-and-pnl",...await fit()});
+   await click('[data-strategy="pullback"]');
+   await until(`${root}?.querySelector('#empty h2')?.textContent.includes('短线顺势回踩') && !document.querySelector('#deskPrimaryAction').disabled`);
+   await click("#deskPrimaryAction");
+   await evaluate(`${root}.querySelector('#create-form').requestSubmit()`);
+   await until("document.querySelector('#deskAccountPicker').value==='new-pullback' && !document.querySelector('#deskEditShortcut').disabled");
+   if(server.controls.length!==4)throw Error("Creating a short-term pullback account started it");
+   await click("#deskEditShortcut");
+   await until(`${root}.querySelector('#parameters').open && !!${root}.querySelector('[name=breakoutBars]') && !${root}.querySelector('[name=bandBars]')`);
+   await evaluate(`const form=${root}.querySelector('#config-form');form.elements.riskPerTrade.value='0.4';form.elements.riskPerTrade.dispatchEvent(new Event('input',{bubbles:true}));form.querySelector('#save-start').click();`);
+   await until(`${root}.querySelector('#run').textContent.includes('RUNNING') && ${root}.querySelector('#decision-code').textContent==='等待回踩' && ${root}.querySelector('#lower').textContent==='2,480'`);
+   if(server.controls.at(-1)?.id!=="new-pullback")throw Error("Pullback control reached the wrong account");
+   await screenshot(width+"x"+height+"-pullback");
+   await click("#deskHistoryShortcut");
+   await until("document.querySelector('#page-history').open && document.querySelector('#deskTrades').textContent.includes('暂无已结算交易')");
+   await dismiss("history");
+   results.push({width,height,scenario:"short-term-pullback-create-save-start-and-history",...await fit()});
   }
   await call("Page.navigate",{url:"http://127.0.0.1:"+port+"/?scenario=save-failed#parameters"});
   await until("document.querySelector('#page-parameters').open && !document.querySelector('#deskSave').disabled");

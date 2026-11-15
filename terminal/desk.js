@@ -1,6 +1,7 @@
 "use strict";
 const C = require("./classic-paper");
 const {number, historyRows} = require("./model");
+const paperLabels = {funding_carry_v1:"资金费率对冲",reversal_4h_v1:"找底摸顶 4H",turtle_4h_v1:"海龟趋势 4H",pullback_15m_v1:"短线顺势回踩"};
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -25,7 +26,7 @@ function accountRow(account, st, classic) {
   return {
     id: account.id, name: account.name, symbol: account.symbol, quoteAsset: account.quoteAsset,
     platform: account.platform, strategyType: account.strategyType, paper: account.tradeMode === "simulation" && account.simulationEnabled === true,
-    strategy: account.strategyType === "funding_carry_v1" ? "资金费率对冲" : account.strategyType === "reversal_4h_v1" ? "找底摸顶 4H" : account.strategyType === "turtle_4h_v1" ? "海龟趋势 4H" : C.eligible(account) ? "经典补仓" : "归档账户",
+    strategy: Object.hasOwn(paperLabels,account.strategyType)?paperLabels[account.strategyType]:C.eligible(account)?"经典补仓":"归档账户",
     ready: !!classic, eligible: C.eligible(account), running: classic?.running ?? !!st?.running,
     hasPosition: classic ? !!classic.position : Number(st?.positionQty || st?.realPositionSize || 0) > 0,
     floating: classic?.floating ?? null, realized: classic?.realized ?? null,

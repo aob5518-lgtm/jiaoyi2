@@ -85,7 +85,7 @@ function create(d){
    const c=b?.position?.config||b?.pending?.meta.config||a[configKey];
    if(r.configHash!==C.hash(c))blockers.push("参数刚更新，请重新检查行情");
    else if(["WARMUP","CANDLE_GAP","CANDLE_STALE"].includes(r.analysis.code))blockers.push(r.analysis.reason);
-   else if(r.analysis.closedAt+C.BAR<=time)blockers.push("等待最新 4H 收盘 K 线");
+   else if(r.analysis.closedAt+C.BAR<=time)blockers.push("等待最新 "+(C.interval||"4H")+" 收盘 K 线");
   }
   return {allowed:blockers.length===0,blockers,configHash:C.hash(a[configKey]),mode:"Paper",realOrderPermission:false,analysis:r?.analysis||null,checkedAt:m.state==="fresh"?r.evaluatedAt:null};
  }

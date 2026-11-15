@@ -78,6 +78,24 @@ test("资金费率对冲仅创建独立且停止的 Paper 账户，拒绝凭据�
  assert.equal((await f.call(route+"/status?id="+id)).data.snapshot.configHash,C.hash({allocationPct:.25}));
  assert.ok(fs.existsSync(path.join(f.directory,"funding_carry_paper.json")));
 });
+test("短线顺势回踩分离模拟账户、参数、历史与旧策略权限",async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"}),route="/api/v4/pullback",C=require("../strategy/pullback_15m/config");
+ assert.equal((await f.call(route+"/accounts",undefined,false)).code,401);
+ assert.equal((await f.call(route+"/accounts",{name:"Pullback",symbol:"BTC",tradeMode:"live"})).code,400);
+ const account=await f.call(route+"/accounts",{name:"Pullback",symbol:"BTC"});
+ assert.equal(account.code,200);
+ const id=account.data.id, current=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(current.running,false);
+ assert.equal(current.realOrderPermission,false);
+ assert.equal((await f.call("/api/v4/connections/update",{id,apiKey:"test"})).code,400);
+ assert.equal((await f.call("/api/v4/desk?id="+id)).data.selected.strategy,"短线顺势回踩");
+ assert.equal((await f.call("/api/v4/turtle/status?id="+id)).code,400);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:current.configHash,config:{minNetR:1.4}})).code,400);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:current.configHash,config:{riskPerTrade:.004}})).code,200);
+ assert.equal((await f.call(route+"/status?id="+id)).data.snapshot.configHash,C.hash({riskPerTrade:.004}));
+ assert.equal((await f.call(route+"/history?id="+id)).data.total,0);
+ assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
+});
 test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及重启保留账本", async t => {
  const f=setup(t), route="/api/v4/desk", settings={side:"long",leverage:1,baseAmount:100,addAmount:100,maxAdds:1,addTrigger:.01,takeProfit:.01};
  fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");

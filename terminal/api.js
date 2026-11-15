@@ -33,7 +33,7 @@ async function handle(req,res,parsed,d){
      if(route==="/api/v4/control"&&input.action==="pause"){d.classicPaper.control(a,"pause");return send(200,{ok:true,message:"经典模拟已暂停新增交易"});}
      throw Error("经典模拟账户请在量化后台管理，避免混用历史策略");
     }
-    if(["turtle_4h_v1","reversal_4h_v1","funding_carry_v1"].includes(x.type))throw Error("请使用工作台的独立模拟接口");
+    if(["turtle_4h_v1","reversal_4h_v1","funding_carry_v1","pullback_15m_v1"].includes(x.type))throw Error("请使用工作台的独立模拟接口");
     if(route==="/api/v4/control"){
      if(d.classicOnly&&input.action==="start")return send(410,{ok:false,error:"仅保留经典模拟工作台，旧策略不可启动"});
      if(input.expectedStrategy&&input.expectedStrategy!==x.type)throw Error("服务器策略已变更，请刷新后重试");const action=input.action;if(action==="pause"){d.running(a.id,false);x.st.running=false;if(x.compound)d.compound.stop(a);return send(200,{ok:true,message:"停止新开与补仓，已有持仓继续接受风险保护"});}

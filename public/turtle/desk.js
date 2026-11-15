@@ -2,17 +2,19 @@
  "use strict";
  function mount(root, {accountId, embedded=false, mode="turtle", onCreated, onState}={}){
  const $=id=>root.getElementById(id),node=(tag,text,cls)=>{const e=document.createElement(tag);e.textContent=text??"";if(cls)e.className=cls;return e;};
- const reversal=mode==="reversal",carry=mode==="carry",form=$("config-form");
+ const reversal=mode==="reversal",carry=mode==="carry",pullback=mode==="pullback",form=$("config-form");
  const labels={riskPerTrade:"单笔计划风险",leverage:"模拟杠杆",direction:"方向",entryBars:"入场通道",exitBars:"退出通道",atrPeriod:"ATR 周期",stopAtr:"初始止损倍数",
   bandBars:"布林带周期",bandWidth:"布林带宽度",maxAdx:"ADX 上限",minNetR:"最低净收益风险比",maxHoldBars:"最长持仓根数",
-  allocationPct:"每腿资金比例",maxHoldHours:"最长持仓小时",minEdgeBps:"最低净收益余量"};
+  allocationPct:"每腿资金比例",maxHoldHours:"最长持仓小时",minEdgeBps:"最低净收益余量",
+  breakoutBars:"突破观察根数",setupBars:"回踩形态有效根数"};
  const reversalFields=[
   ["bandBars","15","50","1"],["bandWidth","1.5","3","any"],["maxAdx","15","30","any"],
   ["minNetR","1.2","3","any"],["maxHoldBars","4","24","1"]
  ];
  const carryFields=[["allocationPct","5","30","any","占账户权益的百分比，20 表示每腿 20%"],
   ["maxHoldHours","24","168","1","到期后安排匹配退出"],["minEdgeBps","5","100","any","10 个基点 = 0.10%"]];
- const keys=carry?carryFields.map(([key])=>key):reversal?["riskPerTrade","direction",...reversalFields.map(([key])=>key)]:
+ const pullbackFields=[["breakoutBars","12","40","1"],["setupBars","6","20","1"],["minNetR","1.5","3","any"],["maxHoldBars","4","32","1"]];
+ const keys=carry?carryFields.map(([key])=>key):reversal||pullback?["riskPerTrade","direction",...(pullback?pullbackFields:reversalFields).map(([key])=>key)]:
   ["entryBars","exitBars","atrPeriod","stopAtr","riskPerTrade","leverage","direction"];
  if(reversal){
   $("empty").querySelector("h2").textContent="创建找底摸顶 4H 模拟账户";
@@ -39,6 +41,27 @@
   oscillators.id="reversal-indicators";
   $("decision").after(oscillators);
   $("position").parentElement.querySelector("p:last-child").textContent="结构止损、中轨目标与到期退出。暂停新增后，持仓保护继续。";
+ }
+ if(pullback){
+  $("empty").querySelector("h2").textContent="创建短线顺势回踩模拟账户";
+  $("empty").querySelector(".features").replaceChildren(...["1H 结构定方向","15m 突破后回踩确认","固定 1 倍 · 单笔默认计划风险 0.3%"].map(value=>node("span",value)));
+  $("create-form").elements.name.value="短线顺势回踩 · ETH Paper";
+  form.elements.leverage.closest("label").remove();
+  form.elements.riskPerTrade.max=".5";
+  const advanced=form.querySelector("details");
+  advanced.querySelector("summary").textContent="高级参数 · 形态与退出";
+  advanced.querySelector(".fields").replaceChildren(...pullbackFields.map(([key,min,max,step])=>{
+   const label=node("label",labels[key]), input=node("input");
+   Object.assign(input,{name:key,type:"number",min,max,step,required:true});
+   label.append(input);
+   return label;
+  }));
+  const levels=$("desk").querySelectorAll(".levels section");
+  [["1H 结构方向","完整收盘的 1 小时结构"],["15m 回踩观察价","当前结构的突破区域"],["下次 15m 收盘","北京时间"]].forEach(([label,hint],i)=>{
+   levels[i].querySelector("span").textContent=label;
+   levels[i].querySelector("small").textContent=hint;
+  });
+  $("position").parentElement.querySelector("p:last-child").textContent="按结构止损、前波段目标或到期退出。暂停新增后继续保护持仓。";
  }
  if(carry){
   $("empty").querySelector("h2").textContent="创建资金费率对冲模拟账户";
@@ -73,6 +96,8 @@
  Object.assign(codes,{WAIT_REVERSAL:"等待极值",WAIT_CONFIRMATION:"等待收盘确认",TREND_BLOCK:"趋势过强",REVERSAL_CONFIRMED:"反转已确认",DIRECTION_BLOCK:"方向限制",COST_BLOCK:"收益空间不足",STRUCTURE_RISK:"结构止损不合格"});
  Object.assign(codes,{MONITORING:"监控中",HEDGED:"对冲持有",UNHEDGED:"暂有单腿敞口",RATE_BLOCK:"费率非正",BASIS_BLOCK:"基差阻断",
   FUNDING_BLOCK:"等待资金费核对",EXIT_WAIT:"等待退出盘口",RECONCILING:"结算核对中",SETTLED:"已结算",COOLDOWN:"轮次冷却"});
+ Object.assign(codes,{WAIT_TREND:"等待方向",WAIT_PULLBACK:"等待回踩",WAIT_PULLBACK_CONFIRM:"等待回踩确认",
+  SETUP_INVALID:"形态失效",PULLBACK_CONFIRMED:"回踩已确认",SIGNAL_EXPIRED:"入场窗口已过"});
  const reasons={hard_sl:"保护止损",channel_exit:"通道退出",manual_close:"手动退出"};
  async function api(route,body){const r=await fetch("/api/v4/"+mode+"/"+route,{credentials:"same-origin",cache:"no-store",...(body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{})});if(r.status===401)throw Error("登录已过期，请重新登录");const v=await r.json();if(!r.ok||!v.ok){const error=Error(v.error||"请求失败");error.snapshot=v.snapshot;throw error;}return v;}
  function msg(s){$("message").textContent=s;$("message").hidden=!s;}
@@ -85,7 +110,7 @@
  function differences(from,to){return keys.filter(k=>percentField(k)?Math.abs(from[k]-to[k])>1e-15:from[k]!==to[k]).map(k=>labels[k]+" "+setting(k,from[k])+" → "+setting(k,to[k]));}
  function list(id,rows){const box=$(id);box.replaceChildren(...rows.map(value=>node("li",value)));box.hidden=!rows.length;}
  function preview(){
-  const c=values(),valid=keys.every(k=>form.elements[k].validity.valid)&&(carry||reversal||c.exitBars<c.entryBars);
+  const c=values(),valid=keys.every(k=>form.elements[k].validity.valid)&&(carry||reversal||pullback||c.exitBars<c.entryBars);
   const changes=state.editBase?differences(state.editBase,c):[];
   state.dirty=changes.length>0;
   const invalid=keys.find(key=>!form.elements[key].validity.valid);
@@ -151,17 +176,24 @@
   $("upper").textContent=next?.direction==="short"?"方向关闭":fmt(reversal?next?.lower:next?.upper,6);
   $("lower").textContent=next?.direction==="long"?"方向关闭":fmt(reversal?next?.upper:next?.lower,6);
   $("next").textContent=next?new Date(next.closesAt).toLocaleTimeString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false,hour:"2-digit",minute:"2-digit"}):"—";
+  if(pullback){
+   const a=s.fresh?s.analysis:null;
+   $("upper").textContent=a?.trend==="long"?"偏多":a?.trend==="short"?"偏空":a?"方向未成立":"—";
+   $("lower").textContent=fmt(a?.breakoutLevel,6);
+  }
   const p=s.position;$("position-state").textContent=p?(p.side==="long"?"LONG · 多仓":"SHORT · 空头持仓"):"FLAT · 当前空仓";$("side").textContent=p?(p.side==="long"?"LONG":"SHORT"):"FLAT";
   details("position",p?[["方向",p.side==="long"?"做多":"做空"],["数量",fmt(p.qty,6)+" "+s.symbol],["实际开仓价",fmt(p.entry,6)],["当前保护止损",fmt(p.stop,6)],["初始止损",fmt(p.initialStop,6)],["本轮计划风险",fmt(p.budget)+" USDT"],["实际价格与成本风险",fmt(p.actualRisk)+" USDT"],["开仓时间",time(p.openedAt)]]:[["仓位","当前空仓"],["补仓","本策略不补仓"]]);
   $("pending").textContent=s.pending?"当前委托："+(s.pending.kind==="open"?"开仓":"退出")+" · "+s.pending.status+"；等待新盘口确认":"当前无待成交委托";
-  if(reversal&&p){
+  if((reversal||pullback)&&p){
    const extra=node("section");
    extra.append(node("span","目标价 / 计划净 R"),node("strong",fmt(p.target,6)+" / "+fmt(p.plannedNetR)+"R"));
    $("position").append(extra);
   }
   const c=s.config;
   const summary=[["生效范围",s.activeConfig?"下一轮":"下次开仓"],["每笔计划风险",percent(c.riskPerTrade)],["模拟杠杆",(c.leverage??1)+"x"],["方向",direction[c.direction]]];
-  details("config-summary",[...summary,...(reversal?[
+  details("config-summary",[...summary,...(pullback?[
+   ["突破观察",c.breakoutBars+" 根 15m"],["有效期",c.setupBars*15+" 分钟"],["最低净收益风险比",fmt(c.minNetR)+"R"],["最长持仓",fmt(c.maxHoldBars/4)+" 小时"]
+  ]:reversal?[
    ["布林带",c.bandBars+" 根 · "+c.bandWidth+" 倍标准差"],["ADX 上限",fmt(c.maxAdx)],["最低净收益风险比",fmt(c.minNetR)+"R"],["最长持仓",c.maxHoldBars*4+" 小时"]
   ]:[["入场 / 退出通道",c.entryBars+" / "+c.exitBars+" 根"],["初始止损",c.stopAtr+" × ATR"+c.atrPeriod]])]);
   if(carry){
@@ -185,7 +217,7 @@
   $("pause").disabled=state.busy||!state.online||!s.running;$("close").disabled=state.busy||!state.online||!p||!!s.pending;
   $("edit").disabled=$("quick-edit").disabled=state.busy||!state.online;
   $("exit-actions").hidden=!p;
-  $("control-note").textContent=state.busy?"正在处理，请稍候…":state.dirty?"先保存参数，再检查启动。":s.riskLock?"风险锁定，不能启动。":s.pending?"委托尚未结束，请等待确认。":s.running?"监控运行中，等待新的有效 4H 信号。":"检查原生行情、交易规格与风险状态后启动。";
+  $("control-note").textContent=state.busy?"正在处理，请稍候…":state.dirty?"先保存参数，再检查启动。":s.riskLock?"风险锁定，不能启动。":s.pending?"委托尚未结束，请等待确认。":s.running?"监控运行中，等待新的有效信号。":"检查原生行情、交易规格与风险状态后启动。";
   if(!embedded){
    const trades=$("trades");trades.replaceChildren();for(const t of s.history){const tr=node("tr");const entries=[time(t.time),t.side==="long"?"多 LONG":"空 SHORT",fmt(t.entryPrice,6)+" → "+fmt(t.exitPrice,6),fmt(t.netPnl)+" USDT",reasons[t.reason]||t.reason];entries.forEach((v,i)=>{const td=node("td",v,i===3?(t.netPnl>0?"positive":t.netPnl<0?"negative":""):"");td.dataset.label=["时间","方向","开仓 → 平仓","净收益","退出原因"][i];tr.append(td);});trades.append(tr);}
    if(!s.history.length){const tr=node("tr"),td=node("td","暂无已结算模拟交易","empty-cell");td.colSpan=5;tr.append(td);trades.append(tr);}
