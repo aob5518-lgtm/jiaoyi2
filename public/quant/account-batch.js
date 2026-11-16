@@ -71,6 +71,7 @@
         box.disabled = busy;
         box.onchange = () => {if (box.checked) selected.add(account.id); else selected.delete(account.id);selection();};
         const title = node("span", "");
+        title.title = account.name;
         title.append(node("strong", account.name), node("small", [
           account.platform, account.symbol + "/" + account.quoteAsset,
           account.tradeMode === "live" ? "真实连接" : "模拟",

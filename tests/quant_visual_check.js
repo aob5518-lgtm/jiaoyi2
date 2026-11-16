@@ -245,8 +245,8 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await click("#openAccountBatch");
    await until("document.querySelectorAll('#batchAccounts .batch-row').length>=150 && !document.querySelector('#batchSelectAll').disabled");
    await click("#batchSelectAll");
-   const bulk=await evaluate("({count:document.querySelectorAll('#batchAccounts input:checked').length,height:document.querySelector('#batchAccounts').clientHeight,scroll:document.querySelector('#batchAccounts').scrollHeight})");
-   if(bulk.count<150||bulk.scroll<=bulk.height)throw Error("Batch account list does not have an independent scroll area");
+   const bulk=await evaluate("({count:document.querySelectorAll('#batchAccounts input:checked').length,height:document.querySelector('#batchAccounts').clientHeight,scroll:document.querySelector('#batchAccounts').scrollHeight,checkbox:Math.min(...Array.from(document.querySelectorAll('#batchAccounts input')).map(n=>n.getBoundingClientRect().width))})");
+   if(bulk.count<150||bulk.scroll<=bulk.height||bulk.checkbox<18)throw Error("Batch account list lost its independent scroll area or compressed its checkboxes");
    await fitDialogs();await screenshot(width+"x"+height+"-account-batch");
    await click("#batchSelectAll");
    await evaluate("Array.from(document.querySelectorAll('.batch-row')).filter(r=>['模拟账户 3','模拟账户 4'].includes(r.querySelector('strong').textContent)||r.textContent.startsWith('超长')).forEach(r=>r.querySelector('input').click())");

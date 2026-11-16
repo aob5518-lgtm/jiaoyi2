@@ -15,9 +15,9 @@
 .batch-tools select{flex:0 1 145px}
 .batch-list,.batch-results{max-height:min(42dvh,360px);overflow:auto;margin:12px 0;padding:0;list-style:none}
 .batch-row{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px;border-bottom:1px solid #253244;cursor:pointer}
-.batch-row input,.batch-all input{width:18px;height:18px;min-height:auto;accent-color:#60cbe2}
+.batch-row input,.batch-all input{flex:0 0 18px;width:18px;height:18px;min-height:auto;accent-color:#60cbe2}
 .batch-row>span{min-width:0;overflow-wrap:anywhere}
-.batch-row strong,.batch-row small{display:block}
+.batch-row strong,.batch-row small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .batch-row small,.batch-summary{color:#9bacc0}
 .batch-all{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:13px}
 .batch-results li{padding:8px 0;border-bottom:1px solid #253244;overflow-wrap:anywhere}
