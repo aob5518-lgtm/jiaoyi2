@@ -106,6 +106,12 @@
   $("position").parentElement.querySelector("p:last-child").textContent="暂停新增后继续处理当前两腿和资金费对账。";
  }
  const state={id:accountId??new URLSearchParams(location.search).get("account")??"",accounts:[],defaults:null,data:null,busy:false,dirty:false,editBase:null,hash:null,confirmHash:null,confirmAllowed:false,online:false,loaded:false,ticket:0,filter:"all"};
+ const hero=node("div","","holding-hero");
+ for(const [id,title] of [["cycle-entry","当前持仓均价"],["cycle-leverage","本轮开仓杠杆"],["cycle-size","持仓数量"]]){
+  const item=node("section"),value=node("strong","无持仓");value.id=id;item.append(node("span",title),value);hero.append(item);
+ }
+ $("price").parentElement.after(hero);
+ if(carry){hero.children[0].querySelector("span").textContent="永续腿入场均价";hero.children[1].querySelector("span").textContent="永续腿本轮杠杆";}
  let disposed=false,leverageLookup=null;
  const fmt=(x,n=2)=>x==null||!Number.isFinite(Number(x))?"—":Number(x).toLocaleString("zh-CN",{maximumFractionDigits:n}),time=x=>x?new Date(x).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}):"—",percent=x=>fmt(x*100,6)+"%";
  const direction={both:"双向",long:"仅做多",short:"仅做空"};
@@ -228,7 +234,11 @@
    $("lower").textContent=fmt(a?.breakoutLevel,6);
   }
   const p=s.position;$("position-state").textContent=p?(p.side==="long"?"LONG · 多仓":"SHORT · 空头持仓"):"FLAT · 当前空仓";$("side").textContent=p?(p.side==="long"?"LONG":"SHORT"):"FLAT";
-  details("position",p?[["方向",p.side==="long"?"做多":"做空"],["数量",fmt(p.qty,6)+" "+s.symbol],["实际开仓价",fmt(p.entry,6)],["当前保护止损",fmt(p.stop,6)],["初始止损",fmt(p.initialStop,6)],["本轮计划风险",fmt(p.budget)+" USDT"],["实际价格与成本风险",fmt(p.actualRisk)+" USDT"],["开仓时间",time(p.openedAt)]]:[["仓位","当前空仓"],["补仓","本策略不补仓"]]);
+  $("cycle-entry").textContent=p?fmt(carry?p.perp?.price:p.entry,6):"当前空仓";
+  $("cycle-leverage").textContent=p?.config?.leverage>0?fmt(p.config.leverage,2)+"×":p?"待核验":"无持仓";
+  $("cycle-size").textContent=p?fmt(p.qty,8)+" "+s.symbol:"0 "+s.symbol;
+  if(carry&&p&&!p.perp){$("cycle-entry").textContent="尚未成交";$("cycle-leverage").textContent="永续腿未成交";}
+  details("position",p?[["方向",p.side==="long"?"做多":"做空"],["数量",fmt(p.qty,6)+" "+s.symbol],["实际开仓价",fmt(p.entry,6)],["本轮杠杆",p.config?.leverage>0?p.config.leverage+"×":"未采集"],["当前保护止损",fmt(p.stop,6)],["初始止损",fmt(p.initialStop,6)],["本轮计划风险",fmt(p.budget)+" USDT"],["实际价格与成本风险",fmt(p.actualRisk)+" USDT"],["开仓时间",time(p.openedAt)]]:[["仓位","当前空仓"],["补仓","本策略不补仓"]]);
   $("pending").textContent=s.pending?"当前委托："+(s.pending.kind==="open"?"开仓":"退出")+" · "+s.pending.status+"；等待新盘口确认":"当前无待成交委托";
   if((reversal||pullback)&&p){
    const extra=node("section");

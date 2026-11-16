@@ -2185,6 +2185,7 @@ async function getHyperAccount(address, symbol) {
   return {
     rawPerp: perpData,
     rawSpot: spotData,
+    nativeEvidenceValid:Array.isArray(perpData?.assetPositions)&&Array.isArray(spotData?.balances)&&require("./terminal/native-account-view").completeNumbers([perpData?.marginSummary?.accountValue,perpData?.withdrawable]),
     balance: Number(balance),
     available: Number(available),
     positions,
@@ -2290,6 +2291,7 @@ async function getBinanceAccount(account) {
 
   return {
     balance: Number(data.totalWalletBalance || 0),
+    nativeEvidenceValid:Array.isArray(data.positions)&&require("./terminal/native-account-view").completeNumbers([data.totalWalletBalance,data.availableBalance]),
     available: Number(data.availableBalance || 0),
     positions: Array.isArray(data.positions) ? data.positions : []
   };
@@ -2426,6 +2428,7 @@ async function getExtendedAccount(account) {
 
   return {
     balance: Number(balanceData.equity ?? balanceData.balance ?? 0),
+    nativeEvidenceValid:Array.isArray(positionsResp?.data)&&require("./terminal/native-account-view").completeNumbers([balanceData.equity??balanceData.balance,balanceData.availableForTrade??balanceData.availableBalance]),
     available: Number(balanceData.availableForTrade ?? balanceData.availableBalance ?? 0),
     currentPos,
     positions
@@ -3426,10 +3429,42 @@ function verifyDeskLegacyFlat(account, st) {
   }
   if (simulationOrdersMap[account.id]?.length || st.profitHistory?.length) throw Error("原账户有未归档的交易记录，请使用新的模拟账户");
 }
+const connectionSnapshots=new Map(),connectionReads=new Map(),connectionGenerations=new Map();
+function invalidateConnectionRead(id){connectionGenerations.set(id,(connectionGenerations.get(id)||0)+1);connectionSnapshots.delete(id);}
+async function readNativeConnection(account){
+ const prior=connectionSnapshots.get(account.id);
+ if(prior&&Date.now()-prior.at<10000){if(prior.error)throw Error(prior.error);return prior.summary;}
+ const generation=connectionGenerations.get(account.id)||0,pending=connectionReads.get(account.id);
+ if(pending?.generation===generation)return pending.promise;
+ const read={generation};
+ read.promise=(async()=>{
+  let timer;
+  try{
+   const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error("NATIVE_TIMEOUT")),12000);});
+   const summary=await Promise.race([checkAccountConnection(account),timeout]);
+   if(generation!==(connectionGenerations.get(account.id)||0))throw Error("CONNECTION_CHANGED");
+   connectionSnapshots.set(account.id,{at:Date.now(),summary});return summary;
+  }catch{
+   const error="原生账户读取失败或连接已更新，请重新检查交易所连接";
+   if(generation===(connectionGenerations.get(account.id)||0))connectionSnapshots.set(account.id,{at:Date.now(),error});
+   throw Error(error);
+  }finally{clearTimeout(timer);if(connectionReads.get(account.id)===read)connectionReads.delete(account.id);}
+ })();
+ connectionReads.set(account.id,read);return read.promise;
+}
 function deskReadOnlyStatus(account, st) {
   const model = require("./terminal/model");
   const overview = model.overview(account, st, isTrendOnly(account) ? trendRuntime.get(account) : {}, isCompound(account) ? compoundRuntime.report(account) : null);
   const paper = account.tradeMode === "simulation" && account.simulationEnabled === true;
+  if(!paper){
+   const read=connectionSnapshots.get(account.id),fresh=read?.summary&&Date.now()-read.at<=30000,summary=fresh?read.summary:null;
+   const positions=summary?.positions||[],selected=positions.filter(p=>p.symbol===account.symbol&&(!p.quoteAsset||p.quoteAsset===account.quoteAsset)),p=selected.length===1?selected[0]:null;
+   const pnl=positions.length&&positions.some(p=>p.unrealizedPnl===null)?null:summary?positions.reduce((s,p)=>s+p.unrealizedPnl,0):null;
+   return {equity:summary?.balance??null,valuationBasis:"native_balance",floating:pnl,floatingBasis:"native_unrealized",realized:null,
+    available:summary?.available??null,margin:null,position:p,positions,native:true,mark:p?.mark??null,updatedAt:summary?.checkedAt??null,
+    market:summary?"原生账户已同步":"原生账户待核验",notice:read?.error||(!summary?"尚无有效原生账户数据":positions.length?"真实账户持仓仅展示；研究策略没有实盘执行权限":"交易所查询返回空仓；未自动启动策略"),
+    lastAction:"只读同步账户，未提交交易订单"};
+  }
   const quoted = Number(st?.currentPrice) > 0 && !st?.activeError;
   const legacyEmpty = ["classic", "connection_only"].includes(account.strategyType) && !overview.position &&
     !st.profitHistory?.length && !simulationOrdersMap[account.id]?.length;
@@ -4658,8 +4693,7 @@ async function checkAccountConnection(account) {
     result = await getExtendedAccount(account);
   } else throw Error("Unsupported platform");
   const balance = Number(result.balance ?? result.totalWalletBalance);
-  const positions = Array.isArray(result.positions) ? result.positions : result.currentPos ? [result.currentPos] : [];
-  return {balance: Number.isFinite(balance) ? balance : null, positionCount: positions.filter(item => Number(item.positionAmt ?? item.position?.szi ?? item.size ?? 0) !== 0).length};
+  return require("./terminal/native-account-view").summarize(account,result);
 }
 
 const server = http.createServer((req, res) => {
@@ -5004,14 +5038,14 @@ const server = http.createServer((req, res) => {
     if (!isAuthenticated(req)) return jsonRes(res, 401, {ok: false, error: "请先登录"});
     return require("./terminal/desk").handle(req, res, parsed, {
       classicPaper, getAccountById, getCurrentAccount, accounts: () => config.accounts, state: id => stateMap[id],
-      json: jsonRes, verifyLegacyFlat: verifyDeskLegacyFlat, readOnlyStatus: deskReadOnlyStatus,
+      json: jsonRes, verifyLegacyFlat: verifyDeskLegacyFlat, readOnlyStatus: deskReadOnlyStatus,readNative:readNativeConnection,
       legacyHistory: account => isCompound(account) ? compoundRuntime.get(account).history.filter(row => row.filledQty > 0) : stateMap[account.id]?.profitHistory,
       price: getMarketPrice, lock: acquireAccountTradeLock, unlock: releaseAccountTradeLock, leverageRules
     });
   }
   if(pathname.startsWith("/api/v4/")){
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
-    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,classicPaper,classicOnly,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:checkAccountConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
+    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,classicPaper,classicOnly,independentEngine:independentPaperEngine,connectionChanged:invalidateConnectionRead,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:readNativeConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
   }
 
   if(pathname.startsWith("/api/compound")){

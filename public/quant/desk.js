@@ -2,7 +2,7 @@
  "use strict";
  const $ = id => document.getElementById(id);
  const query = new URLSearchParams(location.search);
- const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",reversal:"找底摸顶 4H",carry:"资金费率对冲",pullback:"短线顺势回踩",swing:"图示波段 1H",history:"历史账户"};
+ const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",reversal:"找底摸顶 4H",carry:"资金费率对冲",pullback:"短线顺势回踩",swing:"图示波段 1H",history:"真实与历史账户"};
  const paperStrategies = {turtle:"turtle_4h_v1",reversal:"reversal_4h_v1",carry:"funding_carry_v1",pullback:"pullback_15m_v1",swing:"chart_swing_1h_v1"};
  const isPaperMode = mode => Object.hasOwn(paperStrategies,mode);
  const fromAccount = account => Object.keys(paperStrategies).find(mode=>paperStrategies[mode]===account.strategyType) || (account.eligible?"classic":"history");
@@ -76,6 +76,20 @@
   $("deskOpenStatus").textContent = plan ? p ? plan.first.price == null ? "旧记录未采集首仓价" : "实际首仓成交价" : plan.first.reference ? "当前报价估算，启动后市价模拟成交" : plan.first.status : "保存参数后生成开仓计划";
   $("deskOpenAmount").textContent = amount(plan?.first.amount);
   $("deskAverage").textContent = format(p?.entry, 6);
+  $("holdingEntry").textContent=p?format(p.entry,6):"当前空仓";
+  $("holdingEntryHint").textContent=p?account.quoteAsset+" · 成交后的加权持仓均价":"开仓成交后显示，不使用计划价替代";
+  $("holdingLeverage").textContent=p?.leverage>0?format(p.leverage,2)+"×":p?"待核验":"无持仓";
+  $("holdingLeverageHint").textContent=p?.leverage>0?(account.paper?"本轮锁定配置":"交易所原生读取"):"下一轮设置不代表当前持仓杠杆";
+  $("holdingSize").textContent=p?format(p.qty,8)+" "+account.symbol:"0 "+account.symbol;
+  $("holdingNotional").textContent=p&&price>0?"当前名义金额 "+amount(p.qty*price):"持仓金额随行情更新";
+  if(snapshot.native&&snapshot.positions?.length>1){
+   $("holdingEntryHint").textContent="共有 "+snapshot.positions.length+" 笔原生持仓，逐笔明细见下方";
+   if(!p){$("holdingEntry").textContent="查看逐笔持仓";$("holdingSize").textContent="多笔持仓";}
+  }
+  if(snapshot.native&&!snapshot.updatedAt){
+   $("holdingEntry").textContent="待同步";$("holdingEntryHint").textContent="原生账户数据尚未通过读取";
+   $("holdingLeverage").textContent="待核验";$("holdingSize").textContent="待同步";
+  }
   $("deskAddPrice").textContent = format(plan?.add.price, 6);
   $("deskAddStatus").textContent = plan?.add.status || "等待经典参数";
   $("deskAddAmount").textContent = amount(plan?.add.amount);
@@ -92,6 +106,13 @@
    "补仓次数": plan ? plan.add.done + " / " + plan.add.limit : "—",
    "本轮最近成交": format(plan?.add.lastPrice ?? plan?.first.price, 6)
   })) {const item = node("span", label);item.append(node("b", value));strip.append(item);}
+  if(snapshot.native){
+   strip.replaceChildren(...(snapshot.positions||[]).map(p=>{
+    const item=node("span",(p.market||p.symbol)+" · "+(p.side==="long"?"多":"空"));
+    item.append(node("b","均价 "+format(p.entry,6)+" · "+(p.leverage>0?format(p.leverage)+"×":"杠杆待核验")+" · 数量 "+format(p.qty,8)));
+    return item;
+   }));
+  }
   const box = $("deskFills");
   box.replaceChildren();
   for (const fill of plan?.fills || []) {
@@ -169,7 +190,7 @@
  }
  let turtleDesk, turtleTarget=null, turtleRequest=0;
  function accountsFor(mode,accounts=state.data?.accounts||[]){
-  const list=accounts.filter(account=>fromAccount(account)===mode);
+  const list=accounts.filter(account=>!account.archivedAt&&fromAccount(account)===mode);
   if(!isPaperMode(mode)||!state.turtle)return list;
   const running=new Map(state.turtle.accounts.map(account=>[account.id,account.running]));
   const snapshot=state.turtle.snapshot;
@@ -290,7 +311,7 @@
   for(const button of document.querySelectorAll("[data-strategy]")){
    button.disabled=blocked;
    button.setAttribute("aria-pressed",String(button.dataset.strategy===state.mode));
-   if(button.dataset.strategy==="history")button.hidden=!accountsFor("history").length;
+   if(button.dataset.strategy==="history"){button.hidden=!accountsFor("history").length;button.textContent="真实与历史账户";}
   }
   const primary=$("deskPrimaryAction"),pause=$("deskPauseAction"),edit=$("deskEditShortcut"),create=$("deskNewAccount");
   primary.hidden=historical;
@@ -305,7 +326,7 @@
   create.onclick=openNew;
   let hint="";
   if(historical){
-   hint=list.length?"查看历史记录。选择上方策略即可回到模拟交易。":"暂无历史账户。";
+   hint=!account.paper?"真实账户连接：展示交易所原生持仓；当前研究策略未开放实盘执行。":list.length?"查看历史记录。选择上方策略即可回到模拟交易。":"暂无历史账户。";
   }else if(state.empty){
    primary.textContent="新建模拟账户";
    primary.onclick=openNew;
@@ -383,13 +404,16 @@
   $("deskAccount").textContent = a.name;
   $("deskInstrument").textContent = (labels[a.platform] || a.platform) + " · " + a.symbol + " / " + unit;
   $("deskMode").textContent = a.paper ? "Paper · 模拟" : "Live · 原账户";
-  $("deskRun").textContent = !a.eligible?"只读":a.error || s.blocked ? "当前异常" : a.running ? "运行中" : a.ready ? "已暂停" : "待配置";
+  $("deskRun").textContent = !a.eligible?(a.paper?"只读":a.running?"原策略监控中":"真实账户连接"):a.error || s.blocked ? "当前异常" : a.running ? "运行中" : a.ready ? "已暂停" : "待配置";
   $("deskMarket").textContent = state.offline ? "连接中断" : a.error ? "行情或执行异常" : s.market;
   $("deskStrategy").textContent = a.strategy;
   money("deskEquity", s.equity, unit);
   money("deskFloating", s.floating, unit, true);
   money("deskRealized", s.realized, unit, true);
   money("deskAvailable", s.available, unit);
+  $("deskEquity").previousElementSibling.textContent=s.valuationBasis==="native_balance"?"交易所账户余额":"账户权益";
+  $("deskFloating").previousElementSibling.textContent=s.floatingBasis==="native_unrealized"?"交易所未实现盈亏":"浮动净盈亏";
+  $("deskFloating").nextElementSibling.textContent=s.floatingBasis==="native_unrealized"?"原生口径，未扣预计退出成本":"预计扣除平仓成本";
   $("deskMargin").textContent = "占用保证金 " + format(s.margin);
   $("deskPositionBadge").textContent = p ? p.side === "long" ? "多仓" : "空头" : a.paper ? "空仓" : "原账户";
   renderPlan(a, s);
@@ -584,8 +608,13 @@
   message("");render();await load();
   if(state.queuedDrawer){const drawer=state.queuedDrawer;state.queuedDrawer="";openDrawer(drawer);}
  }
+ document.addEventListener("just-accounts-updated",()=>load());
+ document.addEventListener("just-connection-checked",()=>load());
  document.addEventListener("just-account-selected",event=>{
-  const account=state.data?.accounts.find(a=>a.id===event.detail);
+  const fromConnection=event.account?{...event.account,eligible:event.account.tradeMode==="simulation"&&event.account.simulationEnabled&&event.account.connectionOnly}:null;
+  const account=state.data?.accounts.find(a=>a.id===event.detail)||fromConnection;
+  state.filter="all";$("deskSearch").value="";
+  for(const button of document.querySelectorAll("[data-filter]"))button.setAttribute("aria-pressed",String(button.dataset.filter==="all"));
   // New connection records arrive just before the refreshed account list.
   state.mode=account?fromAccount(account):"classic";
   resetSelection(event.detail);

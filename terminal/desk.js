@@ -26,9 +26,9 @@ function readBody(req) {
 function accountRow(account, st, classic) {
   return {
     id: account.id, name: account.name, symbol: account.symbol, quoteAsset: account.quoteAsset,
-    platform: account.platform, strategyType: account.strategyType, paper: account.tradeMode === "simulation" && account.simulationEnabled === true,
-    strategy: Object.hasOwn(paperLabels,account.strategyType)?paperLabels[account.strategyType]:C.eligible(account)?"经典补仓":"归档账户",
-    ready: !!classic, eligible: C.eligible(account), running: classic?.running ?? !!st?.running,
+    platform: account.platform, strategyType: account.strategyType, archivedAt:account.archivedAt||null, paper: account.tradeMode === "simulation" && account.simulationEnabled === true,
+    strategy: Object.hasOwn(paperLabels,account.strategyType)?paperLabels[account.strategyType]:C.eligible(account)?"经典补仓":account.tradeMode==="live"?"真实账户连接":"归档账户",
+    ready: !!classic, eligible: !account.archivedAt&&C.eligible(account), running: classic?.running ?? !!st?.running,
     hasPosition: classic ? !!classic.position : Number(st?.positionQty || st?.realPositionSize || 0) > 0,
     floating: classic?.floating ?? null, realized: classic?.realized ?? null,
     error: classic?.blocked ? classic.notice : st?.activeError || null
@@ -36,6 +36,7 @@ function accountRow(account, st, classic) {
 }
 async function preflight(account, st, d) {
   const book = d.classicPaper.get(account.id), blockers = [];
+  if(account.archivedAt)blockers.push("账户已移出列表，请先恢复账户");
   if(!C.eligible(account))blockers.push("请选择可配置的经典模拟账户");
   if(!book)blockers.push("请先保存经典策略参数");
   if(st.riskLock||st.legacyLedgerBlocked)blockers.push("账户风险或账本尚未完成核对");
@@ -72,9 +73,11 @@ async function handle(req, res, parsed, d) {
       if (!["/api/v4/desk", "/api/v4/desk/preflight"].includes(route)) return send(404, {ok: false, error: "接口不存在"});
       st = d.state(account.id);
       if(route==="/api/v4/desk/preflight")return send(200,{ok:true,...await preflight(account,st,d)});
+      if(!(account.tradeMode==="simulation"&&account.simulationEnabled===true)&&d.readNative){try{await d.readNative(account);}catch{/* Return unavailable fields, not stale cached numbers. */}}
       const snapshot = classic || d.readOnlyStatus(account, st);
-      return send(200, {ok: true, selected: accountRow(account, st, classic),
-        accounts: d.accounts().map(a => accountRow(a, d.state(a.id), d.classicPaper.view(a))),
+      const selected={...accountRow(account,st,classic),...(snapshot.native?{hasPosition:!!snapshot.positions?.length}:{})};
+      return send(200, {ok: true, selected,
+        accounts: d.accounts().map(a => a.id===account.id?selected:accountRow(a, d.state(a.id), d.classicPaper.view(a))),
         snapshot, defaultSettings: C.defaults, ledgerBlocked: d.classicPaper.corrupt()});
     }
     if (req.method !== "POST" || !["/api/v4/desk/settings", "/api/v4/desk/control"].includes(route)) return send(405, {ok: false, error: "操作不支持"});
@@ -83,6 +86,7 @@ async function handle(req, res, parsed, d) {
     const settings = route.endsWith("/settings");
     if (Object.keys(input).some(key => !(settings ? ["id", "settings"] : ["id", "action", "confirm"]).includes(key))) throw Error("请求字段不支持");
     const account = d.getAccountById(input.id);
+    if(account?.archivedAt&&!["pause","close"].includes(input.action))throw Error("账户已移出列表，请先恢复账户");
     if (!account || !C.eligible(account)) throw Error("经典补仓仅适用于明确的模拟经典账户或未绑定的模拟账户");
     st = d.state(account.id);
     if (!st || st.tickRunning || st.placingOrder || st.terminalMutating) throw Error("正在处理本轮行情，请稍后重试");

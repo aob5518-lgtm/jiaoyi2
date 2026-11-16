@@ -36,7 +36,9 @@ function start(port = 0) {
    const realized=history.reduce((total,trade)=>total+trade.netPnl,0);
    return {id:a.id,name:a.name,symbol:a.symbol,mode:"Paper",config,configHash:profile.hash(config),history,decision:{code:profile.waitCode||"WAIT_BREAKOUT",reason:"等待收盘"},market:{state:"fresh",quoteTime:Date.now()},fresh:true,balance:10000+realized,equity:10000+realized,floating:0,realized,price:2500,running:a.running,nextEntry:{upper:2520,lower:2400,direction:config.direction,closesAt:Date.now()+3600000},
     ...(profile===carryConfig?{carry:{phase:"flat",spot:2500,perp:2504,basisBps:16,rate:.0003,nextFundingAt:Date.now()+3600000,expected:8,cost:10,edge:-2},decision:{code:"COST_BLOCK",reason:"预计交易成本超过收益"}}:{}),
-    ...(profile===pullbackConfig?{decision:{code:"WAIT_PULLBACK",reason:"等待回踩"},analysis:{trend:"long",breakoutLevel:2480}}:{})};
+    ...(profile===pullbackConfig?{decision:{code:"WAIT_PULLBACK",reason:"等待回踩"},analysis:{trend:"long",breakoutLevel:2480}}:{}),
+    ...(server.positionSnapshots&&profile!==carryConfig?{position:{side:"long",qty:.2,entry:2475,stop:2400,initialStop:2400,atr:10,
+     budget:20,actualRisk:20,config:{...config,leverage:3},openedAt:Date.now()-3600000},activeConfig:{...config,leverage:3},nextCycleOnly:true}:{} )};
   };
   if(/^\/api\/v4\/(turtle|reversal|carry|pullback|swing)\//.test(url.pathname)){
    const route=url.pathname.split("/").at(-1);
@@ -78,10 +80,22 @@ function start(port = 0) {
   }
   if (req.method==="POST"&&url.pathname==="/api/v4/connections/create"){
    return requestBody().then(input=>{
-    const a={...input,id:"new-classic",quoteAsset:"USDT",strategyType:"connection_only",strategy:"未绑定",paper:true,eligible:true,ready:false,running:false};
+    const live=input.accountMode==="live";
+    const a={...input,id:live?"new-live":"new-classic",tradeMode:live?"live":"simulation",simulationEnabled:!live,quoteAsset:"USDT",strategyType:"connection_only",strategy:"未绑定",paper:!live,eligible:!live,ready:false,running:false,lifecycleVersion:"fixture-version"};
     accounts.push(a);
-    return json(200,{ok:true,account:a,message:"模拟账户已创建"});
+    return json(200,{ok:true,account:{...a,connectionOnly:true},message:live?"真实账户连接已创建，保持停止":"模拟账户已创建"});
    }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
+  }
+  if(req.method==="POST"&&/^\/api\/v4\/connections\/(archive-preview|archive|restore|update|check)$/.test(url.pathname)){
+   return requestBody().then(input=>{
+    const a=accounts.find(a=>a.id===input.id),action=url.pathname.split("/").at(-1);
+    if(action==="check")return json(200,{ok:true,checkedAt:Date.now(),message:"原生读取成功",summary:{balance:25000,positionCount:1,positions:[{symbol:"ETH",side:"long",entry:2460.5,leverage:5,qty:.1}]}});
+    if(action==="archive-preview")return json(200,{ok:true,review:{allowed:!a.running&&!a.hasPosition&&a.id!=="new-live",version:"fixture-version",blockers:a.running||a.hasPosition||a.id==="new-live"?[{message:"仍有持仓或运行中"}]:[]}});
+    if(action==="archive"){a.archivedAt=Date.now();if(selected===a.id)selected=accounts.find(a=>!a.archivedAt).id;}
+    if(action==="restore")delete a.archivedAt;
+    if(action==="update")a.name=input.name;
+    return json(200,{ok:true,account:{...a,lifecycleVersion:"fixture-version"},message:action==="archive"?"账户已移出列表":action==="restore"?"账户已恢复显示":"已保存"});
+   });
   }
   if (req.method === "POST" && url.pathname === "/api/account/select") {
    let body = "";req.on("data", chunk => body += chunk);req.on("end", () => {
@@ -106,7 +120,7 @@ function start(port = 0) {
    }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
   }
   if (req.method !== "GET") return json(405, {ok: false, error: "合成验收，不执行交易"});
-  if (url.pathname === "/api/v4/connections") return json(200, {ok: true, currentAccountId: selected, accounts: accounts.map(a => ({...a, tradeMode: a.paper ? "simulation" : "live", simulationEnabled: a.paper, hasApiKey: a.id === "sample-0", hasApiSecret: a.id === "sample-0"}))});
+  if (url.pathname === "/api/v4/connections") return json(200, {ok: true, currentAccountId: selected, accounts: accounts.map(a => ({...a,connectionOnly:a.strategyType==="connection_only",lifecycleVersion:"fixture-version", tradeMode: a.paper ? "simulation" : "live", simulationEnabled: a.paper, hasApiKey: a.id === "sample-0", hasApiSecret: a.id === "sample-0"}))});
   if(url.pathname==="/api/v4/desk/preflight"){
    const a=accounts.find(x=>x.id===url.searchParams.get("id"));
    const allowed=!!(a?.eligible&&a.ready&&scenario!=="blocked");
@@ -118,9 +132,12 @@ function start(port = 0) {
    if (server.scenario === "offline") return json(503,{ok:false,error:"合成行情断流"});
    const a = accounts.find(x => x.id === (url.searchParams.get("id") || selected));
    const cfg = saved.get(a.id) || {side:"long",leverage:2,baseAmount:300,addAmount:200,maxAdds:3,addTrigger:.01,takeProfit:.02};
-   const snapshot = a.hasPosition ? {equity:10140.35,floating:-12.45,realized:152.8,available:9889.35,margin:251,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:"等待补仓或止盈条件",lastAction:"模拟补仓 #1",settings:cfg,position:{side:"long",entry:2562.31,qty:.2008,adds:1,nextAdd:2470.15,takeProfit:2588.19}} :
+   const snapshot = a.hasPosition ? {equity:10140.35,floating:-12.45,realized:152.8,available:9889.35,margin:251,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:"等待补仓或止盈条件",lastAction:"模拟补仓 #1",settings:cfg,position:{side:"long",entry:2562.31,leverage:2,qty:.2008,adds:1,nextAdd:2470.15,takeProfit:2588.19}} :
     {equity:10000,realized:0,floating:0,available:10000,margin:0,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:a.ready?"等待启动":"保存经典参数后，可启动模拟交易",settings:a.ready?cfg:undefined,position:null};
    if (a.hasPosition) snapshot.plan = {first:{price:2530,amount:cfg.baseAmount,status:"已成交"},add:{price:2470.15,amount:200,quantity:200/2470.15,lastPrice:2495,done:1,limit:3,status:"等待触发"},exit:{price:2588.19,status:"监测止盈"},fills:[{at:Date.now()-100000,kind:"open",price:2530,qty:.1,notional:253},{at:Date.now()-30000,kind:"add",price:2495,qty:.1008,notional:251.496}]};
+   if(!a.paper){const p={symbol:"ETH",side:"long",qty:.1,entry:2460.5,leverage:5,unrealizedPnl:4};
+    Object.assign(snapshot,{native:true,valuationBasis:"native_balance",floatingBasis:"native_unrealized",equity:25000,realized:null,floating:4,
+     position:p,positions:[p],updatedAt:Date.now(),market:"原生账户已同步",notice:"真实账户连接，未自动启动策略"});}
    return json(200,{ok:true,selected:a,accounts:accounts.map(account=>account.strategyType==="turtle_4h_v1"?{...account,running:false}:account),snapshot,defaultSettings:cfg});
   }
   if (url.pathname === "/api/v4/desk/history") return json(200,{ok:true,total:1,items:[{time:Date.now(),side:"long",entryPrice:2480,exitPrice:2510,netPnl:10.2,tradingFee:.4,reason:"策略止盈"}]});

@@ -19,6 +19,11 @@ main{padding:24px 30px;max-width:1530px;margin:0 auto}.workspace-status{display:
  .parameter-group{padding:12px 24px 22px}.parameter-preview .panel{padding:22px}
 }
 .page-heading>div{min-width:0;flex:1}#deskConfigAccount{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.holding-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0 18px}.holding-facts section{min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:9px;background:#14222e}.holding-facts span,.holding-facts small{display:block;font-size:12px;color:var(--muted)}.holding-facts strong{display:block;font-size:22px;font-variant-numeric:tabular-nums;margin:4px 0;overflow-wrap:anywhere}
+.connection-tools{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:end}.connection-tools label{min-width:0;font-size:12px;color:var(--muted)}.connection-tools label:last-child{grid-column:1/-1}.connection-tools input,.connection-tools select{width:100%;min-width:0}.connection-status{white-space:pre-line}.connection-summary{display:grid;gap:8px;overflow-wrap:anywhere}
+.connection-actions{position:sticky;bottom:0;z-index:2;background:var(--surface);padding:12px 0;flex-wrap:wrap}.connection-actions #connectionInlineStatus{flex:1 0 100%;grid-column:1/-1;margin:0;font-size:12px;white-space:pre-line;overflow-wrap:anywhere}.connection-actions #connectionInlineStatus:empty{display:none}
+.connection-tools label{grid-column:1/-1}
+@media(max-width:760px){.holding-facts{grid-template-columns:1fr 1fr}.holding-facts section:last-child{grid-column:1/-1}.holding-facts strong{font-size:20px}}
 /* A single account selector serves every page; editing never needs a second account list. */
 .connections-grid{grid-template-columns:minmax(0,1fr)}.connection-editor{max-width:1120px;width:100%}
 .save-bar{position:static;box-shadow:none;margin-bottom:0}.field-grid input,.field-grid select{scroll-margin-top:90px;scroll-margin-bottom:30px}

@@ -36,6 +36,7 @@ async function handle(req,res,parsed,d){
   }
   fields(input,["id","config","expectedHash","action","confirm","positionId"]);
   const a=d.getAccountById(input.id);C.assertAccount(a);st=d.state(a.id);
+  if(a.archivedAt&&!["pause","close"].includes(input.action))throw Error("账户已移出列表，请先恢复账户");
   if(!st||st.tickRunning||st.terminalMutating||d.engine.busy(a.id))throw Error("正在更新账户，请稍后重试");
   lock=d.lock(a.id);if(!lock)throw Error("账户操作繁忙");st.terminalMutating=true;
   if(route==="preflight"){

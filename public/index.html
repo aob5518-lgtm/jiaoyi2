@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>JUST AGENT · 交易工作台</title>
 <link rel="stylesheet" href="/hypothesis/workbench.css?v=core2">
-<link rel="stylesheet" href="/quant/desk.css?v=core2">
+<link rel="stylesheet" href="/quant/desk.css?v=ops1">
 <link rel="stylesheet" href="/quant/production.css?v=strategy2">
 </head>
 <body>
@@ -22,7 +22,7 @@
 <header class="desk-header">
   <button id="toggleAccounts" class="icon-button" aria-controls="accountRail" aria-expanded="true">账户列表</button>
   <div class="desk-title"><span class="eyebrow">JUST AGENT</span><h1 id="deskAccount">正在读取账户</h1><p id="deskInstrument">—</p></div>
-  <div class="desk-top-actions"><select id="connectionSwitcher" hidden aria-label="账户管理使用的账户"><option>读取账户…</option></select><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button></div>
+  <div class="desk-top-actions"><span id="deskHealth" class="connection">连接中</span><button id="deskRefresh" class="icon-button">刷新</button></div>
 </header>
 <main>
 <p id="deskMessage" class="notice desk-notice" role="status" hidden></p>
@@ -48,7 +48,7 @@
  </div>
  <p id="deskStarterHint" role="status">正在同步账户。</p>
 </section>
-<section id="deskTurtlePane" aria-label="模拟策略工作台" data-template="/turtle.html" data-stylesheet="/turtle/desk.css?v=swing1" hidden></section>
+<section id="deskTurtlePane" aria-label="模拟策略工作台" data-template="/turtle.html" data-stylesheet="/turtle/desk.css?v=ops1" hidden></section>
 <section id="page-trading" aria-label="交易总览">
 <div class="workspace-status"><div class="account-badges"><span id="deskMode" class="tag">—</span><span id="deskRun" class="tag">—</span><span id="deskMarket" class="tag">等待行情</span></div><small id="deskUpdated">等待同步</small></div>
 <div class="status-grid desk-metrics">
@@ -60,6 +60,11 @@
 <article class="panel price-panel">
   <div class="panel-heading"><h2>当前交易</h2><div class="heading-actions"><span id="deskPositionBadge" class="tag">—</span><button class="text-button" data-go="parameters">修改策略参数 →</button></div></div>
   <div class="market-price"><span>最新价格</span><strong id="deskPrice">—</strong><small id="deskPriceUnit">—</small></div>
+  <div id="deskHoldingFacts" class="holding-facts" aria-label="当前持仓数据">
+   <section><span>当前持仓均价</span><strong id="holdingEntry">—</strong><small id="holdingEntryHint">当前空仓</small></section>
+   <section><span>本轮开仓杠杆</span><strong id="holdingLeverage">—</strong><small id="holdingLeverageHint">有持仓时显示实际轮次配置</small></section>
+   <section><span>持仓数量 / 名义金额</span><strong id="holdingSize">—</strong><small id="holdingNotional">—</small></section>
+  </div>
   <div class="price-cards">
     <section><span class="card-kicker">首仓价格</span><strong id="deskOpenPrice">—</strong><small id="deskOpenStatus">等待参数</small><dl><dt>首仓金额</dt><dd id="deskOpenAmount">—</dd><dt>当前持仓均价</dt><dd id="deskAverage">—</dd></dl></section>
     <section class="add-card"><span class="card-kicker">下次补仓价格</span><strong id="deskAddPrice">—</strong><small id="deskAddStatus">等待首仓</small><dl><dt>本次补多少</dt><dd id="deskAddAmount">—</dd><dt>预计补仓数量</dt><dd id="deskAddQty">—</dd></dl></section>
@@ -110,12 +115,13 @@
 </dialog>
 <dialog id="page-accounts" class="desk-dialog desk-account-dialog" aria-labelledby="deskConnectionTitle">
   <div class="desk-dialog-head"><div><h2 id="deskConnectionTitle">账户管理</h2><p>管理当前账户的交易所连接。</p></div><button type="button" class="icon-button" data-dismiss="accounts">关闭</button></div>
-  <button id="newConnection" type="button" class="icon-button">新增经典模拟账户</button>
+  <div class="connection-tools"><button id="newConnection" type="button" class="icon-button">新增模拟账户</button><button id="newLiveConnection" type="button" class="icon-button">新增真实账户</button><label>查找账户<input id="connectionSearch" type="search" placeholder="名称、交易所、币种"></label><label>选择账户<select id="connectionSwitcher" aria-label="账户管理使用的账户"><option>读取账户…</option></select></label></div>
   <p id="connectionStatus" class="connection-status" role="status">正在读取账户配置…</p>
   <div class="connections-grid">
   <article class="panel connection-editor"><h2 id="connectionFormTitle">账户配置</h2><p id="connectionMode" class="muted"></p>
   <form id="connectionForm" autocomplete="off">
     <label>账户名称<input name="name" maxlength="60" required></label>
+    <label>账户类型<select name="accountMode"><option value="paper">模拟账户 · Paper</option><option value="live">真实账户连接 · Live</option></select><small id="connectionModeHelp">新账户保持停止，不会自动启动策略。</small></label>
     <label>交易所<select name="platform"><option value="hyperliquid">Hyperliquid</option><option value="binance">Binance USD-M</option><option value="extended">Extended</option></select></label>
     <label>币种<select name="symbol"><option>ETH</option><option>BTC</option><option>SOL</option><option>BNB</option></select></label>
     <label id="connectionEquityLabel">初始模拟资金<input name="initialEquity" type="number" min="100" max="10000000" value="10000"></label>
@@ -128,7 +134,8 @@
     <label data-exchanges="extended">Public Key<input name="publicKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
     <label data-exchanges="extended">Vault<input name="vault" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
     </details>
-    <div class="connection-actions"><button type="submit" class="primary">保存账户配置</button><button id="selectConnection" type="button">切换到此账户</button></div>
+    <div class="connection-actions"><p id="connectionInlineStatus" role="status"></p><button type="submit" class="primary">保存账户配置</button><button id="selectConnection" type="button">切换到此账户</button><button id="deleteConnection" type="button" class="exit-button" disabled>删除账户</button></div>
+    <p id="connectionDeleteHint" class="muted">删除仅移出列表，保留历史与账本。有持仓、订单或仍运行时不能删除。</p>
     <details class="connection-test"><summary>连接测试</summary><p class="muted">只读取交易所账户信息，不提交订单。</p><button id="checkConnection" type="button">测试已保存连接</button></details>
   </form><p class="muted">留空保留已配置密钥。</p>
   <button class="text-button" id="connectionToSettings" disabled>配置该账户策略 →</button>
@@ -140,9 +147,9 @@
 <script src="/quant/settings-preview.js?v=core2"></script>
 <script src="/quant/chart-swing-sample.js?v=1"></script>
 <script src="/quant/chart-swing-review.js?v=1"></script>
-<script src="/turtle/desk.js?v=swing1"></script>
-<script src="/quant/desk.js?v=swing1"></script>
-<script src="/hypothesis/connections.js?v=onepage1"></script>
+<script src="/turtle/desk.js?v=ops1"></script>
+<script src="/quant/desk.js?v=ops1"></script>
+<script src="/hypothesis/connections.js?v=ops1"></script>
 <script src="/quant/production.js?v=onepage1"></script>
 </body>
 </html>

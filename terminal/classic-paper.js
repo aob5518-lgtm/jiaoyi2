@@ -164,7 +164,7 @@ function create(directory) {
       equity: t.floating === null ? null : book.balance + t.floating, balance: book.balance, realized: book.realized,
       floating: t.floating, available: t.floating === null ? null : book.balance + t.floating - t.margin,
       margin: t.margin, mark: fresh ? q.price : null, updatedAt: q?.at || null, market: fresh ? "行情正常" : "等待最新行情",
-      position: p ? {side: book.settings.side, qty: p.qty, entry: p.entry, adds: p.adds, takeProfit: t.takeProfit, nextAdd: book.running ? t.nextAdd : null} : null,
+      position: p ? {side: book.settings.side, qty: p.qty, entry: p.entry, leverage:book.settings.leverage, leverageSource:"cycle_snapshot", adds: p.adds, takeProfit: t.takeProfit, nextAdd: book.running ? t.nextAdd : null} : null,
       notice: blocked ? "账户配置与账本不一致，已锁定" : q?.notice || book.lastAction, lastAction: book.lastAction
     };
   }

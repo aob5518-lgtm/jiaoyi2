@@ -41,6 +41,46 @@ test("图示波段认证接口创建独立停止 Paper 账本、保存自身参�
  assert.equal(vm.runInContext("JSON.stringify(config.accounts[0])",f.ctx),before);
  assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
 });
+test("Native account reads are shared, invalidated on credential changes and never publish late old positions",async t=>{
+ const f=setup(t);
+ vm.runInContext('let nativeCalls=0,nativeRelease;checkAccountConnection=async()=>{nativeCalls++;return new Promise(resolve=>nativeRelease=resolve);};',f.ctx);
+ const one=vm.runInContext('readNativeConnection(config.accounts[0]).catch(()=>null)',f.ctx);
+ const two=vm.runInContext('readNativeConnection(config.accounts[0]).catch(()=>null)',f.ctx);
+ assert.equal(vm.runInContext("nativeCalls",f.ctx),1);
+ vm.runInContext('invalidateConnectionRead("legacy");nativeRelease({balance:100,positions:[{entry:111,leverage:2}]})',f.ctx);
+ assert.equal(await one,null);assert.equal(await two,null);
+ assert.equal(vm.runInContext('connectionSnapshots.has("legacy")',f.ctx),false);
+ vm.runInContext('checkAccountConnection=async()=>({balance:200,checkedAt:Date.now(),positions:[{entry:222,leverage:7}]});',f.ctx);
+ const result=await vm.runInContext('readNativeConnection(config.accounts[0])',f.ctx);
+ assert.equal(result.positions[0].leverage,7);
+ f.ctx.setTimeout=callback=>setImmediate(callback);f.ctx.clearTimeout=clearImmediate;
+ vm.runInContext('invalidateConnectionRead("legacy");checkAccountConnection=()=>new Promise(()=>{});',f.ctx);
+ assert.equal(await vm.runInContext('readNativeConnection(config.accounts[0]).catch(()=>null)',f.ctx),null);
+ assert.equal(vm.runInContext('connectionSnapshots.get("legacy").summary===undefined',f.ctx),true);
+});
+
+test("Live connection creation and Paper archive/restore use real authenticated routes without granting trading or changing books",async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"}),route="/api/v4/connections",before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ assert.equal((await f.call(route+"/archive-preview",{id:"legacy"},false)).code,401);
+ const live=await f.call(route+"/create",{name:"Native ETH",platform:"binance",symbol:"ETH",accountMode:"live",confirmLive:true,apiKey:"fake-key",apiSecret:"fake-secret"});
+ assert.equal(live.code,200);
+ const a=JSON.parse(fs.readFileSync(path.join(f.directory,"config.json"))).accounts.find(a=>a.id===live.data.account.id);
+ assert.equal(a.tradeMode,"live");assert.equal(a.simulationEnabled,false);assert.equal(a.strategyType,"connection_only");assert.equal(a.running,false);
+ const status=(await f.call("/api/v4/desk?id="+a.id)).data;
+ assert.equal(status.snapshot.equity,null);assert.equal(status.snapshot.position,null);assert.equal(status.snapshot.native,true);
+ assert.equal((await f.call("/api/v4/control",{id:a.id,action:"start"})).code,410);
+ assert.doesNotMatch(JSON.stringify((await f.call(route)).data),/fake-secret|fake-key/);
+ const created=await f.call("/api/v4/swing/accounts",{name:"Archive Paper",symbol:"ETH"});
+ const id=created.data.id,file=path.join(f.directory,"chart_swing_1h_paper.json"),book=fs.readFileSync(file,"utf8");
+ const p=(await f.call(route+"/archive-preview",{id})).data.review;assert.equal(p.allowed,true,JSON.stringify(p));
+ const archived=await f.call(route+"/archive",{id,confirm:true,expectedVersion:p.version});assert.equal(archived.code,200);
+ assert.equal((await f.call("/api/v4/swing/control",{id,action:"start",confirm:true})).code,400);
+ assert.equal(fs.readFileSync(file,"utf8"),book);
+ assert.equal((await f.call(route+"/restore",{id,confirm:true,expectedVersion:archived.data.account.lifecycleVersion})).code,200);
+ assert.equal(fs.readFileSync(file,"utf8"),book);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),before);
+});
+
 test("海龟 4H 真实服务器路由要求登录，创建独立停止账户且保留原配置",async t=>{
  const f=setup(t),before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
  assert.equal((await f.call('/api/v4/turtle/accounts',undefined,false)).code,401);
