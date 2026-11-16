@@ -242,6 +242,7 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#deleteConnection').textContent==='删除账户' && !document.querySelector('#connectionForm [name=name]').disabled");
    await fitDialogs();await screenshot(width+"x"+height+"-accounts-restore");
    results.push({width,height,scenario:"account-live-create-delete-restore-position-leverage",...await fit()});
+   Object.assign(server.fixtureAccount("sample-3"),{strategyType:"trend_only_v3",running:true});
    await click("#openAccountBatch");
    await until("document.querySelectorAll('#batchAccounts .batch-row').length>=150 && !document.querySelector('#batchSelectAll').disabled");
    await click("#batchSelectAll");
@@ -252,18 +253,20 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await evaluate("Array.from(document.querySelectorAll('.batch-row')).filter(r=>['模拟账户 3','模拟账户 4'].includes(r.querySelector('strong').textContent)||r.textContent.startsWith('超长')).forEach(r=>r.querySelector('input').click())");
    await click("#batchApply");
    await until("document.querySelector('.site-dialog-message')?.textContent.includes('可删除 2 个，跳过 1 个')");
+   if(!await evaluate("document.querySelector('.site-dialog').textContent.includes('其中 1 个旧模拟策略将先暂停')"))throw Error("Legacy pause must be stated in the confirmation");
    await fitDialogs();await screenshot(width+"x"+height+"-batch-confirm");await respond(false);
-   if(server.accountChanges.length!==2)throw Error("Cancel wrote account changes");
+   if(server.accountChanges.length!==2||!server.fixtureAccount("sample-3").running)throw Error("Cancel wrote account changes");
    await until("!document.querySelector('#batchApply').disabled");await click("#batchApply");await respond();
    await until("document.querySelector('.site-dialog-message')?.textContent.includes('已删除 2 个，未处理 1 个')");
    if(server.accountChanges.slice(2).some(x=>x.id==="sample-1")||server.accountChanges.length!==4)throw Error("Batch hid a running account or skipped a settled account");
+   if(!server.accountChanges.some(x=>x.id==="sample-3"&&x.pausePaper===true)||server.fixtureAccount("sample-3").running)throw Error("Batch did not pause the confirmed legacy account");
    await respond();
    await evaluate("const s=document.querySelector('#batchScope');s.value='archived';s.dispatchEvent(new Event('change'))");
    await until("document.querySelectorAll('#batchAccounts .batch-row').length===2");
    await click("#batchSelectAll");await click("#batchApply");await respond();
    await until("document.querySelector('.site-dialog-message')?.textContent.includes('已恢复 2 个')");await respond();
    await until("!document.querySelector('#batchClose').disabled");
-   if(server.accountChanges.length!==6)throw Error("Bulk restore did not restore both accounts");
+   if(server.accountChanges.length!==6||server.fixtureAccount("sample-3").running)throw Error("Bulk restore must keep the legacy account paused");
    await click("#batchClose");await dismiss("accounts");
    results.push({width,height,scenario:"batch-cancel-skip-archive-restore",...bulk,...await fit()});
   }

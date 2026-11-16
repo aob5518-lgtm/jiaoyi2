@@ -1,7 +1,7 @@
 "use strict";
 const {test} = require("node:test"), assert = require("node:assert/strict"), http = require("http");
 const Connections = require("../terminal/connections"), Reset = require("../terminal/paper-reset");
-async function setup(t) {
+async function setup(t, overrides = {}) {
  let config = {currentAccountId: "paper", accounts: [
   {id: "paper", name: "Paper", platform: "binance", symbol: "ETH", quoteAsset: "USDT", tradeMode: "simulation", simulationEnabled: true, simulationBalance: 10000, strategyType: "classic", apiKey: "saved-key", apiSecret: "saved-secret", privateKey: "saved-private"},
   {id: "live", name: "Live", platform: "hyperliquid", symbol: "ETH", tradeMode: "live", simulationEnabled: false, privateKey: "live-private"}
@@ -15,7 +15,8 @@ async function setup(t) {
   simulationOrders:()=>[],
   lock: () => ({}), unlock() {}, json: (res, code, body) => {res.writeHead(code, {"Content-Type": "application/json"});res.end(JSON.stringify(body));},
   verifyLiveFlat: async () => {native++;if (failNative) throw Error("unknown native risk");},
-  checkConnection: async () => {checks++;if(failCheck)throw Error("invalid credentials");return {balance: 1, positionCount: 0};}
+  checkConnection: async () => {checks++;if(failCheck)throw Error("invalid credentials");return {balance: 1, positionCount: 0};},
+  ...overrides
  };
  const server = http.createServer((req, res) => Connections.handle(req, res, new URL(req.url, "http://localhost"), d));
  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -26,6 +27,96 @@ async function setup(t) {
  };
  return {call, states, config: () => config, counters: () => ({checks, native}), rejectNative: () => {failNative = true;},rejectSave:()=>{failSave=true;},rejectCheck:()=>{failCheck=true;}};
 }
+
+test("Sparse legacy simulation ledger allows a flat archive but corruption, historical gaps and open fills still block",async t=>{
+ const fs=require("node:fs"),path=require("node:path"),os=require("node:os");
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),"account-ledger-"));
+ t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ const file=path.join(directory,"simulation_orders.json");
+ let cache=[];
+ const x=await setup(t,{directory,simulationOrders:()=>cache});
+ const preview=async()=> (await x.call("/archive-preview",{id:"paper"})).data.review;
+ assert.equal((await preview()).allowed,false,"Missing file must remain blocked");
+ for(const contents of ["{","null","[]",'{"paper":null}','{"paper":{}}']){
+  fs.writeFileSync(file,contents);
+  assert.equal((await preview()).allowed,false,contents);
+ }
+ const sparse='{"other":[{"id":"other-history"}]}';
+ fs.writeFileSync(file,sparse);
+ let result=await preview();
+ assert.equal(result.allowed,true);
+ assert.equal(result.pauseRequired,false);
+ x.states.paper.profitHistory=[{netPnl:5}];
+ assert.equal((await preview()).allowed,false,"Missing evidence for recorded completed trades");
+ x.states.paper.profitHistory=[];
+ const fill={status:"FILLED",size:1,orderSide:"buy",symbol:"ETH",positionSide:"long"};
+ for(const orders of [[fill],[{status:"SUBMITTED"}]]){
+  cache=orders;
+  assert.equal((await preview()).allowed,false,"Must read fills that have not flushed to disk");
+  fs.writeFileSync(file,JSON.stringify({paper:orders}));
+  cache=[];
+  assert.equal((await preview()).allowed,false,"Must retain incomplete persisted order evidence");
+ }
+ fs.writeFileSync(file,sparse);
+ result=await preview();
+ assert.equal((await x.call("/archive",{id:"paper",confirm:true,expectedVersion:result.version})).code,200);
+ assert.equal(fs.readFileSync(file,"utf8"),sparse);
+});
+
+test("Retained trend and shadow work blocks archival even when the account was switched to Classic",async t=>{
+ const accountState={};
+ const x=await setup(t,{classicOnly:true,trend:{peek:()=>accountState}});
+ for(const work of [{position:{qty:1}},{pendingOrder:{status:"UNKNOWN"}},{shortTermBooks:{old:{pendingOrder:{}}}},{shadowBooks:{study:{books:{old:{position:{qty:1}}}}}},{riskLock:true}]){
+  Object.assign(accountState,work);
+  const {review}= (await x.call("/archive-preview",{id:"paper"})).data;
+  assert.equal(review.allowed,false);
+  for(const key of Object.keys(work))delete accountState[key];
+ }
+ assert.equal((await x.call("/archive-preview",{id:"paper"})).data.review.allowed,true);
+});
+
+test("Flat retired Paper strategy pauses only on confirmed archive and restores stopped",async t=>{
+ const x=await setup(t,{classicOnly:true});
+ const a=x.config().accounts[0];
+ a.strategyType="trend_only_v3";a.running=true;x.states.paper.running=true;
+ const {review}= (await x.call("/archive-preview",{id:"paper"})).data;
+ assert.equal(review.allowed,true);assert.equal(review.pauseRequired,true);
+ assert.equal(a.running,true);assert.equal(a.archivedAt,undefined);
+ const input={id:"paper",confirm:true,expectedVersion:review.version};
+ assert.equal((await x.call("/archive",input)).code,409);
+ assert.equal(a.running,true);
+ x.states.paper.pendingOrder={};
+ assert.equal((await x.call("/archive",{...input,pausePaper:true})).code,409);
+ assert.equal(a.running,true);
+ x.states.paper.pendingOrder=null;
+ const result=await x.call("/archive",{...input,pausePaper:true});
+ assert.equal(result.code,200);
+ const archived=x.config().accounts[0];
+ assert.equal(archived.running,false);assert.ok(archived.archivedAt);
+ assert.equal(archived.lifecycleAudit[0].pausedPaper,true);
+ assert.equal(archived.apiSecret,a.apiSecret);
+ assert.equal(archived.simulationBalance,a.simulationBalance);
+ const restored=await x.call("/restore",{id:"paper",confirm:true,expectedVersion:result.data.account.lifecycleVersion});
+ assert.equal(restored.code,200);assert.equal(x.config().accounts[0].running,false);
+});
+
+test("Active books and real accounts cannot be paused by Paper archival confirmation, and failed saves leave them unchanged",async t=>{
+ let book={running:true,position:null};
+ const x=await setup(t,{classicOnly:true,classicPaper:{get:id=>id==="paper"?book:null,corrupt:()=>false}});
+ const paper=async()=> (await x.call("/archive-preview",{id:"paper"})).data.review;
+ assert.equal((await paper()).allowed,false);
+ book=null;
+ const live=x.config().accounts[1];live.running=true;
+ const {review}= (await x.call("/archive-preview",{id:"live"})).data;
+ assert.equal(review.allowed,false);
+ assert.equal((await x.call("/archive",{id:"live",confirm:true,expectedVersion:review.version,pausePaper:true})).code,409);
+ const a=x.config().accounts[0];a.running=true;
+ const {version}=await paper();
+ x.rejectSave();
+ assert.equal((await x.call("/archive",{id:"paper",confirm:true,expectedVersion:version,pausePaper:true})).code,400);
+ assert.equal(x.config().accounts[0].running,true);
+ assert.equal(x.config().accounts[0].archivedAt,undefined);
+});
 
 test("Hotcoin creation stays stopped and read-only, and rotation verifies the replacement before saving",async t=>{
  const x=await setup(t),input={name:"Hotcoin ETH",platform:"hotcoin",symbol:"ETH",accountMode:"live",confirmLive:true,apiKey:"hot-key",apiSecret:"hot-secret"};

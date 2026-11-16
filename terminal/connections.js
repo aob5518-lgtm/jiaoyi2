@@ -88,22 +88,27 @@ async function handle(req, res, parsed, d) {
     }
     if(["archive-preview","archive","restore"].some(s=>route.endsWith("/"+s))){
       const action=route.split("/").at(-1);
-      requireFields(input,action==="archive-preview"?["id"]:["id","confirm","expectedVersion"]);
+      requireFields(input,action==="archive-preview"?["id"]:["id","confirm","expectedVersion",...(action==="archive"?["pausePaper"]:[])]);
       const account=d.getAccountById(input.id);if(!account)throw Error("账户不存在");
       st=d.state(account.id);if(!st||st.tickRunning||st.terminalMutating)throw Error("本轮正在更新，请稍后重试");
       lock=d.lock(account.id);if(!lock)throw Error("账户正在执行，请稍后重试");st.terminalMutating=mutating=true;
       if(action==="archive-preview")return send(200,{ok:true,review:await Lifecycle.review(account,d)});
       if(input.confirm!==true||input.expectedVersion!==Lifecycle.version(account))throw Error("账户信息已变化，请重新核对并确认");
+      let pausePaper=false;
       if(action==="archive"){
         if(account.archivedAt)throw Error("账户已移出列表");
         const review=await Lifecycle.review(account,d);
         if(!review.allowed)return send(409,{ok:false,error:review.blockers.map(b=>b.message).join("；"),review});
+        if(review.pauseRequired&&input.pausePaper!==true)
+          return send(409,{ok:false,error:"请确认暂停旧模拟策略并归档",review});
+        pausePaper=review.pauseRequired;
       }else if(!account.archivedAt)throw Error("账户已在列表中");
       const next=d.configuration(),index=next.accounts.findIndex(a=>a.id===account.id);
-      next.accounts[index]=Lifecycle.transition(next.accounts[index],action);
+      if(index<0||Lifecycle.version(next.accounts[index])!==input.expectedVersion)throw Error("账户信息已变化，请重新核对并确认");
+      next.accounts[index]=Lifecycle.transition(next.accounts[index],action,{pausePaper});
       if(action==="archive"&&next.currentAccountId===account.id)next.currentAccountId=next.accounts.find(a=>!a.archivedAt)?.id||account.id;
       d.save(next);
-      return send(200,{ok:true,account:project(next.accounts[index]),message:action==="archive"?"账户已移出列表，历史、密钥和账本完整保留，可恢复":"账户已恢复显示，策略保持原状态，未自动启动"});
+      return send(200,{ok:true,account:project(next.accounts[index]),message:action==="archive"?(pausePaper?"旧模拟策略已暂停，账户已归档，可恢复":"账户已移出列表，历史、密钥和账本完整保留，可恢复"):"账户已恢复显示，未自动启动"});
     }
     const checking = route.endsWith("/check");
     requireFields(input, checking ? ["id"] : ["id", "name", "address", ...secrets]);

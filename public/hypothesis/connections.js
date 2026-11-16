@@ -233,7 +233,7 @@
   if(state.dirty)return JustDialogs.show({title:"账户配置尚未保存",message:"请先保存修改，再处理删除或恢复。",info:true});
   state.busy=true;$("deleteConnection").disabled=true;
   try{
-   let version=a.lifecycleVersion;
+   let version=a.lifecycleVersion,pausePaper=false;
    if(!a.archivedAt){
     message("正在核对运行状态、持仓和订单；真实账户会读取交易所…");
     const {review}=await request("/api/v4/connections/archive-preview",{id:a.id});
@@ -244,13 +244,14 @@
      return;
     }
     version=review.version;
+    pausePaper=review.pauseRequired===true;
    }
    if(!await JustDialogs.show({
     title:(a.archivedAt?"恢复":"删除")+"「"+a.name+"」？",
-    message:a.archivedAt?"账户将重新显示，保持原运行状态。":"账户将移出日常列表，历史、密钥和账本保留。可在「已删除」恢复。",
-    action:a.archivedAt?"恢复账户":"删除账户",danger:!a.archivedAt
+    message:a.archivedAt?"账户将重新显示，策略不会自动启动。":(pausePaper?"将先暂停此旧模拟策略。":"")+"账户将移出日常列表，历史、密钥和账本保留。可在「已删除」恢复。",
+    action:a.archivedAt?"恢复账户":pausePaper?"暂停并删除":"删除账户",danger:!a.archivedAt
    }))return;
-   const result=await request("/api/v4/connections/"+(a.archivedAt?"restore":"archive"),{id:a.id,confirm:true,expectedVersion:version});
+   const result=await request("/api/v4/connections/"+(a.archivedAt?"restore":"archive"),{id:a.id,confirm:true,expectedVersion:version,...(pausePaper?{pausePaper:true}:{})});
    state.dirty=false;await load(a.id);message(result.message);
    document.dispatchEvent(new CustomEvent("just-accounts-updated"));
   }catch(e){message(e.message);await JustDialogs.show({title:"账户操作失败",message:e.message,info:true});}

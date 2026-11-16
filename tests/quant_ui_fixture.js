@@ -92,10 +92,18 @@ function start(port = 0) {
    return requestBody().then(input=>{
     const a=accounts.find(a=>a.id===input.id),action=url.pathname.split("/").at(-1);
     if(action==="check")return json(200,{ok:true,checkedAt:Date.now(),message:"原生读取成功",summary:{balance:25000,available:24300,positionCount:1,positions:[nativePosition(a)],...(a.platform==="hotcoin"?{valuationBasis:"native_equity",ordersMarket:"ETHUSDT",openOrderCount:2}:{})}});
-    if(action==="archive-preview")return json(200,{ok:true,review:{allowed:!a.running&&!a.hasPosition&&a.id!=="new-live",version:"fixture-version",blockers:a.running||a.hasPosition||a.id==="new-live"?[{message:"仍有持仓或运行中"}]:[]}});
+    const pauseRequired=a.strategyType==="trend_only_v3"&&a.paper&&a.running&&!a.hasPosition;
+    if(action==="archive-preview"){
+     const blocked=a.running&&!pauseRequired||a.hasPosition||a.id==="new-live";
+     return json(200,{ok:true,review:{allowed:!blocked,version:"fixture-version",pauseRequired,blockers:blocked?[{message:"仍有持仓或运行中"}]:[]}});
+    }
     if(["archive","restore"].includes(action)){
      if(input.confirm!==true||input.expectedVersion!=="fixture-version")return json(400,{ok:false,error:"确认已失效"});
-     accountChanges.push({action,id:a.id});
+     if(action==="archive"&&pauseRequired){
+      if(input.pausePaper!==true)return json(409,{ok:false,error:"需要确认暂停旧模拟策略"});
+      a.running=false;
+     }
+     accountChanges.push({action,id:a.id,...(input.pausePaper?{pausePaper:true}:{})});
     }
     if(action==="archive"){a.archivedAt=Date.now();if(selected===a.id)selected=accounts.find(a=>!a.archivedAt).id;}
     if(action==="restore")delete a.archivedAt;
@@ -157,6 +165,7 @@ function start(port = 0) {
  server.submissions=submissions;
  server.controls=controls;
  server.accountChanges=accountChanges;
+ server.fixtureAccount=id=>accounts.find(account=>account.id===id);
  server.turtleSaveAttempts=()=>turtleSaveAttempts;
  return server;
 }

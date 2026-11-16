@@ -26,9 +26,9 @@
   function resultList(rows, successLabel) {
     const list = node("ul", "");
     list.className = "batch-results";
-    for (const {account, reason} of rows) {
+    for (const {account, reason, status} of rows) {
       const item = node("li", "");
-      item.append(node("strong", account.name), node("small", reason || successLabel));
+      item.append(node("strong", account.name), node("small", reason || status || successLabel));
       list.append(item);
     }
     return list;
@@ -132,20 +132,27 @@
           ? picked.map(account => ({account,version:account.lifecycleVersion}))
           : await checkEach(picked, async account => {
             const {review} = await request("/api/v4/connections/archive-preview", {id:account.id});
-            return review.allowed ? {version:review.version} : {reason:review.blockers.map(blocker => blocker.message).join("；")};
+            return review.allowed
+              ? {version:review.version,pausePaper:review.pauseRequired===true,status:review.pauseRequired?"先暂停旧模拟策略，再删除":null}
+              : {reason:review.blockers.map(blocker => blocker.message).join("；")};
           }, count => {summary.textContent = "核对中 " + count + " / " + picked.length;});
         const approved = reviewed.filter(item => item.version && !item.reason);
+        const pauseCount = approved.filter(item => item.pausePaper).length;
         if (!await JustDialogs.show({
           title:approved.length ? "确认批量" + operation : "所选账户暂不能删除",
           message:approved.length
-            ? "可" + operation + " " + approved.length + " 个，跳过 " + (reviewed.length - approved.length) + " 个。历史和账本保留，可在「已删除」恢复；恢复后不会自动启动。"
+            ? "可" + operation + " " + approved.length + " 个，跳过 " + (reviewed.length - approved.length) + " 个。" +
+              (pauseCount ? "其中 " + pauseCount + " 个旧模拟策略将先暂停。" : "") +
+              "历史和账本保留，可在「已删除」恢复。恢复后不会自动启动。"
             : "请查看下方原因。",
           content:resultList(reviewed, "可" + operation), action:operation + " " + approved.length + " 个账户",
           danger:action === "archive", info:!approved.length
         }) || !approved.length) return;
-        const results = await checkEach(approved.map(item => ({...item.account, lifecycleVersion:item.version})), async account => {
-          await request("/api/v4/connections/" + action, {id:account.id,confirm:true,expectedVersion:account.lifecycleVersion});
-          return {};
+        const confirmed = new Map(approved.map(item=>[item.account.id,item]));
+        const results = await checkEach(approved.map(item=>item.account), async account => {
+          const {version,pausePaper} = confirmed.get(account.id);
+          await request("/api/v4/connections/" + action, {id:account.id,confirm:true,expectedVersion:version,...(pausePaper?{pausePaper:true}:{})});
+          return pausePaper?{status:"已暂停并删除"}:{};
         }, count => {summary.textContent = operation + "进度 " + count + " / " + approved.length;});
         const completed = results.filter(result => !result.reason);
         for (const {account} of completed) selected.delete(account.id);

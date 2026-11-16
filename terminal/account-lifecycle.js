@@ -3,13 +3,44 @@ const {createHash}=require("node:crypto"),fs=require("node:fs"),path=require("no
 const {ledgerReview}=require("./legacy-review");
 const {hasTrendWork}=require("./classic-only");
 const paper=a=>a.tradeMode==="simulation"&&a.simulationEnabled===true;
-const version=a=>createHash("sha256").update(JSON.stringify([a.id,a.name,a.platform,a.symbol,a.quoteAsset,a.strategyType,a.tradeMode,a.simulationEnabled,a.archivedAt||null])).digest("hex");
+const legacyStrategies=new Set(["classic","smart_regime_v1","trend_only_v1","trend_only_v2","trend_only_v3","compound_4h_v1"]);
+const version=a=>createHash("sha256").update(JSON.stringify([a.id,a.name,a.platform,a.symbol,a.quoteAsset,a.strategyType,a.tradeMode,a.simulationEnabled,!!a.running,a.archivedAt||null])).digest("hex");
+
+function checkLegacyOrders(a,d,st,block){
+ const cached=d.simulationOrders?.(a.id);
+ let orders=cached;
+ if(d.directory){
+  let raw;
+  try{
+   raw=JSON.parse(fs.readFileSync(path.join(d.directory,"simulation_orders.json"),"utf8"));
+   if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();
+  }catch{
+   block("legacy.ledger","模拟订单文件无法读取或格式损坏，暂不能归档");
+   return;
+  }
+  // This file stores rows only after the first order. An absent entry in a
+  // readable map is different from an invalid entry or a missing file.
+  if(Object.hasOwn(raw,a.id))orders=raw[a.id];
+  else if(!st?.profitHistory?.length)orders=[];
+  else{
+   block("legacy.ledger","有历史交易但缺少对应的模拟订单记录，需核对原始账本");
+   return;
+  }
+ }
+ if(!Array.isArray(orders)){
+  block("legacy.ledger","该账户的模拟订单条目格式无效，需核对原始账本");
+  return;
+ }
+ if(ledgerReview(orders).unsettled||cached!==undefined&&ledgerReview(cached).unsettled){
+  block("legacy.ledger","模拟订单有未结算成交、未知状态或持仓数量残差");
+ }
+}
+
 async function review(a,d){
  const blockers=[],st=d.state(a.id),block=(key,message)=>blockers.push({key,message});
  if(!st)block("state","账户运行状态无法读取");
- if(a.running)block("account.running","账户配置仍标记运行中");
- for(const k of ["running","tickRunning","placingOrder","pendingOrder","smartExitPending","riskLock","legacyLedgerBlocked","smartRiskOff"])
-  if(st?.[k])block(k,({running:"请先暂停策略",tickRunning:"本轮正在更新，请稍后重试",placingOrder:"正在提交订单",pendingOrder:"订单尚未确认",
+ for(const k of ["tickRunning","placingOrder","pendingOrder","smartExitPending","riskLock","legacyLedgerBlocked","smartRiskOff"])
+  if(st?.[k])block(k,({tickRunning:"本轮正在更新，请稍后重试",placingOrder:"正在提交订单",pendingOrder:"订单尚未确认",
    smartExitPending:"退出流程未完成",riskLock:"风控锁定尚未核对",legacyLedgerBlocked:"历史账本核对未通过",smartRiskOff:"旧风控状态仍锁定"})[k]);
  for(const k of ["positionQty","realPositionSize"]){
   const v=st?.[k];
@@ -32,32 +63,28 @@ async function review(a,d){
    if(independent?.phase&&independent.phase!=="flat")block("paper.phase","模拟两腿或结算流程尚未完成");
   }
  }catch{block("paper.ledger","独立模拟账本无法读取，保留账户待核对");}
- if(!independent&&!["classic","smart_regime_v1","trend_only_v1","trend_only_v2","trend_only_v3","compound_4h_v1","connection_only"].includes(a.strategyType))block("strategy","未知策略执行状态无法核对");
- const runtime=/^trend_only_v[123]$/.test(a.strategyType||"")?d.trend?.get(a):null;
+ if(!independent&&!legacyStrategies.has(a.strategyType)&&a.strategyType!=="connection_only")block("strategy","未知策略执行状态无法核对");
+ const runtime=d.trend?.peek ? d.trend.peek(a.id) : /^trend_only_v[123]$/.test(a.strategyType||"")?d.trend?.get(a):null;
  for(const k of ["position","pendingOrder","riskLock"])if(runtime?.[k])block("trend."+k,"趋势运行时仍有 "+k);
  if(runtime&&hasTrendWork({...runtime,position:null,pendingOrder:null}))block("shadow","伴随研究仍有持仓或订单");
  if(a.strategyType==="compound_4h_v1"&&(d.compound?.busy(a)||d.compound?.get(a)?.riskLock))block("compound","4H 轮次或风险核对未完成");
- if(paper(a)&&!classic&&!independent){
-  let orders=d.simulationOrders?.(a.id),complete=Array.isArray(orders);
-  if(d.directory){
-   try{const raw=JSON.parse(fs.readFileSync(path.join(d.directory,"simulation_orders.json"),"utf8"));
-    orders=raw[a.id];complete=Array.isArray(orders);
-    if(a.strategyType==="connection_only"&&!Object.hasOwn(raw,a.id)){orders=[];complete=true;}
-   }catch{complete=false;}
-  }
-  if(!complete)block("legacy.ledger","原始模拟订单证据缺失，不能证明已结算");
-  else {const x=ledgerReview(orders);if(x.unsettled)block("legacy.ledger","历史订单存在未结算、未知状态或数量残差");}
- }
+ if(paper(a)&&!classic&&!independent)checkLegacyOrders(a,d,st,block);
+ const markedRunning=!!(a.running||st?.running);
+ const pauseCandidate=markedRunning&&d.classicOnly===true&&paper(a)&&!classic&&!independent&&legacyStrategies.has(a.strategyType);
+ if(markedRunning&&!pauseCandidate)block("running","请先暂停策略，再归档账户");
  if(!paper(a)){
   if(a.platform==="hotcoin")block("exchange","Hotcoin 目前只能查询所选合约的委托，无法核验全账户委托为空");
   else try{await d.verifyLiveFlat(a);}catch{block("exchange","无法确认交易所全部原生持仓和委托为空，请先核对交易所");}
  }
- return {allowed:!blockers.length,blockers,version:version(a),preserveHistory:true,readOnly:true};
+ return {allowed:!blockers.length,blockers,pauseRequired:pauseCandidate&&!blockers.length,version:version(a),preserveHistory:true,readOnly:true};
 }
-function transition(a,action){
+function transition(a,action,{pausePaper=false}={}){
  const copy=structuredClone(a),at=Date.now();
- if(action==="archive")copy.archivedAt=at;else delete copy.archivedAt;
- copy.lifecycleAudit=[...(copy.lifecycleAudit||[]),{at,action,scope:"visibility_only",historyPreserved:true}];
+ if(action==="archive"){
+  copy.archivedAt=at;
+  if(pausePaper)copy.running=false;
+ }else delete copy.archivedAt;
+ copy.lifecycleAudit=[...(copy.lifecycleAudit||[]),{at,action,scope:"visibility_only",historyPreserved:true,...(pausePaper?{pausedPaper:true}:{})}];
  return copy;
 }
 module.exports={review,version,transition};
