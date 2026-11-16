@@ -1,6 +1,7 @@
 "use strict";
 const {createHash}=require("node:crypto"),fs=require("node:fs"),path=require("node:path");
 const {ledgerReview}=require("./legacy-review");
+const {hasTrendWork}=require("./classic-only");
 const paper=a=>a.tradeMode==="simulation"&&a.simulationEnabled===true;
 const version=a=>createHash("sha256").update(JSON.stringify([a.id,a.name,a.platform,a.symbol,a.quoteAsset,a.strategyType,a.tradeMode,a.simulationEnabled,a.archivedAt||null])).digest("hex");
 async function review(a,d){
@@ -34,7 +35,7 @@ async function review(a,d){
  if(!independent&&!["classic","smart_regime_v1","trend_only_v1","trend_only_v2","trend_only_v3","compound_4h_v1","connection_only"].includes(a.strategyType))block("strategy","未知策略执行状态无法核对");
  const runtime=/^trend_only_v[123]$/.test(a.strategyType||"")?d.trend?.get(a):null;
  for(const k of ["position","pendingOrder","riskLock"])if(runtime?.[k])block("trend."+k,"趋势运行时仍有 "+k);
- if(Object.values(runtime?.shortTermBooks||{}).some(b=>b.position||b.pendingOrder))block("shadow","伴随研究仍有持仓或订单");
+ if(runtime&&hasTrendWork({...runtime,position:null,pendingOrder:null}))block("shadow","伴随研究仍有持仓或订单");
  if(a.strategyType==="compound_4h_v1"&&(d.compound?.busy(a)||d.compound?.get(a)?.riskLock))block("compound","4H 轮次或风险核对未完成");
  if(paper(a)&&!classic&&!independent){
   let orders=d.simulationOrders?.(a.id),complete=Array.isArray(orders);

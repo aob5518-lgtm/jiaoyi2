@@ -10,7 +10,7 @@ async function handle(req,res,parsed,d){
   if(!parsed.pathname.startsWith(base))return send(404,{ok:false,error:"接口不存在"});
   const route=parsed.pathname.slice(base.length),q=parsed.query||Object.fromEntries(parsed.searchParams||[]);
   if(req.method==="GET"){
-   if(route==="accounts")return send(200,{ok:true,defaults:C.defaults,accounts:d.accounts().map(a=>({id:a.id,name:a.name,symbol:a.symbol,quoteAsset:a.quoteAsset,platform:a.platform,strategyType:a.strategyType,paper:a.tradeMode==="simulation"&&a.simulationEnabled===true,running:a.strategyType===C.ID?!!d.engine.get(a)?.running:!!d.state(a.id)?.running})),revision:C.REVISION});
+   if(route==="accounts")return send(200,{ok:true,defaults:C.defaults,accounts:d.accounts().filter(a=>!a.archivedAt).map(a=>({id:a.id,name:a.name,symbol:a.symbol,quoteAsset:a.quoteAsset,platform:a.platform,strategyType:a.strategyType,paper:a.tradeMode==="simulation"&&a.simulationEnabled===true,running:a.strategyType===C.ID?!!d.engine.get(a)?.running:!!d.state(a.id)?.running})),revision:C.REVISION});
    if(!["status","history"].includes(route))return send(404,{ok:false,error:"接口不存在"});
    const a=d.getAccountById(q.id);C.assertAccount(a);
    if(route==="history"){

@@ -96,6 +96,10 @@ test("Independent Paper lifecycle cannot hide pending legs, corrupt identity or 
  engine.get=()=>({position:null,pending:null,running:false});assert.equal((await L.review(a,d)).allowed,true);
  engine.get=()=>{throw Error("IDENTITY_MISMATCH");};assert.equal((await L.review(a,d)).allowed,false);
  assert.equal((await L.review({...a,strategyType:"unknown"},{state:()=>({}),simulationOrders:()=>[]})).allowed,false);
+ const trend={get:()=>({shadowBooks:{experiment:{books:{control:{pendingOrder:{}}}}}})};
+ const review=await L.review({...a,strategyType:"trend_only_v3"},{state:()=>({}),simulationOrders:()=>[],trend});
+ assert.equal(review.allowed,false);
+ assert.ok(review.blockers.some(blocker=>blocker.key==="shadow"));
 });
 test("Connection list exposes only configured flags and never complete credentials", async t => {
  const x = await setup(t), r = await x.call();

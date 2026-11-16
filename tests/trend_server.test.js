@@ -74,9 +74,13 @@ test("Live connection creation and Paper archive/restore use real authenticated 
  const id=created.data.id,file=path.join(f.directory,"chart_swing_1h_paper.json"),book=fs.readFileSync(file,"utf8");
  const p=(await f.call(route+"/archive-preview",{id})).data.review;assert.equal(p.allowed,true,JSON.stringify(p));
  const archived=await f.call(route+"/archive",{id,confirm:true,expectedVersion:p.version});assert.equal(archived.code,200);
+ assert.equal((await f.call("/api/account/select",{id})).code,409);
+ assert.equal((await f.call("/api/v4/turtle/accounts")).data.accounts.some(account=>account.id===id),false);
+ assert.equal((await f.call(route)).data.accounts.some(account=>account.id===id&&account.archivedAt),true);
  assert.equal((await f.call("/api/v4/swing/control",{id,action:"start",confirm:true})).code,400);
  assert.equal(fs.readFileSync(file,"utf8"),book);
  assert.equal((await f.call(route+"/restore",{id,confirm:true,expectedVersion:archived.data.account.lifecycleVersion})).code,200);
+ assert.equal((await f.call("/api/v4/turtle/accounts")).data.accounts.some(account=>account.id===id),true);
  assert.equal(fs.readFileSync(file,"utf8"),book);
  assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),before);
 });

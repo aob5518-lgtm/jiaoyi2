@@ -5420,6 +5420,7 @@ const server = http.createServer((req, res) => {
         const target = cfg.accounts.find(a => a.id === id);
 
         if (!target) return jsonRes(res, 404, { ok: false, error: "账户不存在" });
+        if (target.archivedAt) return jsonRes(res, 409, { ok: false, error: "请先在管理账户中恢复此账户" });
 
         cfg.currentAccountId = id;
         saveConfig(cfg);
