@@ -7,7 +7,7 @@
  const isPaperMode = mode => Object.hasOwn(paperStrategies,mode);
  const fromAccount = account => Object.keys(paperStrategies).find(mode=>paperStrategies[mode]===account.strategyType) || (account.eligible?"classic":"history");
  const state = {data:null,id:query.get("account")||"",mode:Object.hasOwn(strategies,query.get("strategy"))?query.get("strategy"):"",empty:false,lastAccounts:{},busy:false,offline:true,dirty:false,request:0,offset:0,trades:[],filter:"all",switching:false,drawer:"",queuedDrawer:"",turtle:null};
- const labels = {hyperliquid: "Hyperliquid", binance: "Binance", extended: "Extended"};
+ const labels = {hyperliquid: "Hyperliquid", binance: "Binance", extended: "Extended", hotcoin: "Hotcoin"};
  const keys = ["side", "leverage", "baseAmount", "addAmount", "maxAdds", "addTrigger", "takeProfit"];
  const format = (value, digits = 2) => value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? "—" : Number(value).toLocaleString("zh-CN", {maximumFractionDigits: digits});
  const time = value => {
@@ -24,19 +24,18 @@
   $("deskConfigError").textContent=value;
  }
  function closeRail() {document.body.classList.remove("rail-open");$("railBackdrop").hidden = true;$("toggleAccounts").setAttribute("aria-expanded", String(!matchMedia("(max-width:760px)").matches && !document.body.classList.contains("rail-collapsed")));}
- function closeDrawer() {
+ async function closeDrawer() {
   if (!state.drawer || state.busy || state.switching) return !state.drawer;
-  const guard = new CustomEvent("just-workspace-leaving", {detail: {from: state.drawer, to:"trading"}, cancelable: true});
-  if (!document.dispatchEvent(guard)) return false;
+  if (!await JustDialogs.guard("just-workspace-leaving",{from:state.drawer,to:"trading"})) return false;
   $("page-"+state.drawer).close();
   state.drawer="";
   return true;
  }
- function openDrawer(page, {newAccount=false}={}) {
+ async function openDrawer(page, {newAccount=false}={}) {
   if (!["parameters","accounts","history"].includes(page)) return;
   if(state.busy||state.switching||state.turtle?.busy)return;
   if(state.drawer===page)return;
-  if(!closeDrawer())return;
+  if(!await closeDrawer()||state.drawer)return;
   if(page==="parameters"&&isPaperMode(state.mode)){
    if(state.turtle?.snapshot)turtleDesk.edit();
    else if(!state.empty)state.queuedDrawer="parameters";
@@ -80,11 +79,11 @@
   $("holdingEntryHint").textContent=p?account.quoteAsset+" · 成交后的加权持仓均价":"开仓成交后显示，不使用计划价替代";
   $("holdingLeverage").textContent=p?.leverage>0?format(p.leverage,2)+"×":p?"待核验":"无持仓";
   $("holdingLeverageHint").textContent=p?.leverage>0?(account.paper?"本轮锁定配置":"交易所原生读取"):"下一轮设置不代表当前持仓杠杆";
-  $("holdingSize").textContent=p?format(p.qty,8)+" "+account.symbol:"0 "+account.symbol;
-  $("holdingNotional").textContent=p&&price>0?"当前名义金额 "+amount(p.qty*price):"持仓金额随行情更新";
-  if(snapshot.native&&snapshot.positions?.length>1){
+  $("holdingSize").textContent=p?format(p.qty,8)+" "+(p.qtyUnit||account.symbol):snapshot.native?"—":"0 "+account.symbol;
+  $("holdingNotional").textContent=p?.qtyUnit?"交易所合约张数":p&&price>0?"当前名义金额 "+amount(p.qty*price):"持仓金额随行情更新";
+  if(snapshot.native&&(snapshot.positions?.length>1||!p&&snapshot.positions?.length)){
    $("holdingEntryHint").textContent="共有 "+snapshot.positions.length+" 笔原生持仓，逐笔明细见下方";
-   if(!p){$("holdingEntry").textContent="查看逐笔持仓";$("holdingSize").textContent="多笔持仓";}
+   if(!p){$("holdingEntry").textContent="查看逐笔持仓";$("holdingSize").textContent=snapshot.positions.length+" 笔持仓";}
   }
   if(snapshot.native&&!snapshot.updatedAt){
    $("holdingEntry").textContent="待同步";$("holdingEntryHint").textContent="原生账户数据尚未通过读取";
@@ -109,7 +108,7 @@
   if(snapshot.native){
    strip.replaceChildren(...(snapshot.positions||[]).map(p=>{
     const item=node("span",(p.market||p.symbol)+" · "+(p.side==="long"?"多":"空"));
-    item.append(node("b","均价 "+format(p.entry,6)+" · "+(p.leverage>0?format(p.leverage)+"×":"杠杆待核验")+" · 数量 "+format(p.qty,8)));
+    item.append(node("b","均价 "+format(p.entry,6)+" · "+(p.leverage>0?format(p.leverage)+"×":"杠杆待核验")+" · 数量 "+format(p.qty,8)+" "+(p.qtyUnit||p.symbol)));
     return item;
    }));
   }
@@ -204,22 +203,17 @@
    ||list.find(a=>a.ready&&!a.error)
    ||list[0];
  }
- function allowSelection(id){
-  const allowed=document.dispatchEvent(new CustomEvent("just-account-selecting",{detail:id,cancelable:true}));
-  if(!allowed)document.dispatchEvent(new CustomEvent("just-account-switch-finished",{detail:{success:false,cancelled:true}}));
-  return allowed;
- }
- function selectAccount(id){
+ async function selectAccount(id){
   const account=state.data?.accounts.find(a=>a.id===id);
   if(!account||state.id===id)return;
-  if(!allowSelection(id)){render();return;}
+  if(!await JustDialogs.guard("just-account-selecting",id)){render();return;}
   state.mode=fromAccount(account);
   resetSelection(id);
  }
- function selectStrategy(mode){
+ async function selectStrategy(mode){
   if(!state.data||mode===state.mode||!Object.hasOwn(strategies,mode))return;
   const id=preferred(mode)?.id||"";
-  if(!allowSelection(id))return;
+  if(!await JustDialogs.guard("just-account-selecting",id))return;
   state.mode=mode;
   state.filter="all";
   $("deskSearch").value="";
@@ -411,7 +405,7 @@
   money("deskFloating", s.floating, unit, true);
   money("deskRealized", s.realized, unit, true);
   money("deskAvailable", s.available, unit);
-  $("deskEquity").previousElementSibling.textContent=s.valuationBasis==="native_balance"?"交易所账户余额":"账户权益";
+  $("deskEquity").previousElementSibling.textContent=s.valuationBasis==="native_balance"?"交易所账户余额":s.valuationBasis==="native_equity"?"交易所账户权益":"账户权益";
   $("deskFloating").previousElementSibling.textContent=s.floatingBasis==="native_unrealized"?"交易所未实现盈亏":"浮动净盈亏";
   $("deskFloating").nextElementSibling.textContent=s.floatingBasis==="native_unrealized"?"原生口径，未扣预计退出成本":"预计扣除平仓成本";
   $("deskMargin").textContent = "占用保证金 " + format(s.margin);
@@ -570,17 +564,24 @@
   const action = button.dataset.action, a = state.data?.selected;
   if (!a || button.disabled) return;
   if(action==="start")return startClassic();
-  if(action==="close"&&!confirm("平掉 "+a.name+" 的模拟仓位并暂停？"))return;
+  if(action==="close"){
+   if(!await JustDialogs.show({title:"平掉 "+a.name+" 的模拟仓位？",message:"平仓后暂停策略。",action:"确认模拟平仓",danger:true}))return;
+   if(state.data?.selected.id!==a.id)return;
+  }
   mutate("control", {action, ...(action === "close" ? {confirm: true} : {})}, action === "pause" ? "已暂停新增交易。" : "模拟仓位已平，策略已暂停。");
  };
  form.oninput = () => {state.dirty=true;render();};
- $("deskResetDraft").onclick = () => {if (!state.dirty || state.busy || !confirm("撤销未保存的参数修改，恢复当前已保存值？")) return;state.dirty = false;render();};
+ $("deskResetDraft").onclick = async () => {
+  if(!state.dirty||state.busy||!await JustDialogs.discard("恢复上次保存的策略参数。"))return;
+  state.dirty=false;
+  render();
+ };
  form.onsubmit = async event => {
   event.preventDefault();
   if(!form.reportValidity())return;
   const andStart=event.submitter?.id==="deskSaveTop";
   if(!await mutate("settings",{settings:settingsValues()},"经典参数已保存。"))return;
-  closeDrawer();
+  await closeDrawer();
   if(andStart)startClassic();
  };
  $("deskRefresh").onclick = async () => {message("");await load();turtleDesk?.refresh();};
@@ -588,8 +589,10 @@
  $("deskPrev").onclick = () => {state.offset = Math.max(0,state.offset - historyPageSize);loadTrades();};
  $("deskNextPage").onclick = () => {state.offset += historyPageSize;loadTrades();};
  document.addEventListener("just-account-selecting", event => {
-  if (state.busy || state.switching || state.turtle?.busy || turtleDesk&&!turtleDesk.canLeave() || state.dirty && !confirm("当前参数尚未保存，确认放弃修改并切换账户？")) return event.preventDefault();
-  state.switching = true;state.request++;render();
+  if(state.busy||state.switching||state.turtle?.busy)return event.preventDefault();
+  if(turtleDesk)event.check(turtleDesk.canLeave);
+  if(state.dirty)event.check(()=>JustDialogs.discard("切换后，本次策略参数修改将丢失。"));
+  event.onAllowed(()=>{state.switching=true;state.request++;render();});
  });
  document.addEventListener("just-account-switch-finished", event => {
   state.switching = false;

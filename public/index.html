@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="/hypothesis/workbench.css?v=core2">
 <link rel="stylesheet" href="/quant/desk.css?v=ops1">
 <link rel="stylesheet" href="/quant/production.css?v=strategy2">
+<link rel="stylesheet" href="/quant/dialogs.css?v=1">
 </head>
 <body>
 <div class="trade-shell">
@@ -115,21 +116,21 @@
 </dialog>
 <dialog id="page-accounts" class="desk-dialog desk-account-dialog" aria-labelledby="deskConnectionTitle">
   <div class="desk-dialog-head"><div><h2 id="deskConnectionTitle">账户管理</h2><p>管理当前账户的交易所连接。</p></div><button type="button" class="icon-button" data-dismiss="accounts">关闭</button></div>
-  <div class="connection-tools"><button id="newConnection" type="button" class="icon-button">新增模拟账户</button><button id="newLiveConnection" type="button" class="icon-button">新增真实账户</button><label>查找账户<input id="connectionSearch" type="search" placeholder="名称、交易所、币种"></label><label>选择账户<select id="connectionSwitcher" aria-label="账户管理使用的账户"><option>读取账户…</option></select></label></div>
+  <div class="connection-tools"><button id="newConnection" type="button" class="icon-button">新增模拟账户</button><button id="newLiveConnection" type="button" class="icon-button">新增真实账户</button><button id="openAccountBatch" type="button" class="icon-button">批量管理账户</button><label>查找账户<input id="connectionSearch" type="search" placeholder="名称、交易所、币种"></label><label>选择账户<select id="connectionSwitcher" aria-label="账户管理使用的账户"><option>读取账户…</option></select></label></div>
   <p id="connectionStatus" class="connection-status" role="status">正在读取账户配置…</p>
   <div class="connections-grid">
   <article class="panel connection-editor"><h2 id="connectionFormTitle">账户配置</h2><p id="connectionMode" class="muted"></p>
   <form id="connectionForm" autocomplete="off">
     <label>账户名称<input name="name" maxlength="60" required></label>
     <label>账户类型<select name="accountMode"><option value="paper">模拟账户 · Paper</option><option value="live">真实账户连接 · Live</option></select><small id="connectionModeHelp">新账户保持停止，不会自动启动策略。</small></label>
-    <label>交易所<select name="platform"><option value="hyperliquid">Hyperliquid</option><option value="binance">Binance USD-M</option><option value="extended">Extended</option></select></label>
+    <label>交易所<select name="platform"><option value="hyperliquid">Hyperliquid</option><option value="binance">Binance USD-M</option><option value="extended">Extended</option><option value="hotcoin">Hotcoin USDT 永续</option></select></label>
     <label>币种<select name="symbol"><option>ETH</option><option>BTC</option><option>SOL</option><option>BNB</option></select></label>
     <label id="connectionEquityLabel">初始模拟资金<input name="initialEquity" type="number" min="100" max="10000000" value="10000"></label>
     <details class="connection-credentials"><summary>交易所连接（选填）</summary>
     <label data-exchanges="hyperliquid">账户地址<input name="address" placeholder="0x…" autocomplete="off"></label>
     <label data-exchanges="hyperliquid">Private Key<input name="privateKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
-    <label data-exchanges="binance extended">API Key<input name="apiKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
-    <label data-exchanges="binance">API Secret<input name="apiSecret" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
+    <label data-exchanges="binance extended hotcoin">API Key<input name="apiKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
+    <label data-exchanges="binance hotcoin">API Secret<input name="apiSecret" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
     <label data-exchanges="extended">Stark Private Key<input name="starkPrivateKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
     <label data-exchanges="extended">Public Key<input name="publicKey" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
     <label data-exchanges="extended">Vault<input name="vault" type="password" autocomplete="new-password" placeholder="留空则不修改"></label>
@@ -141,15 +142,29 @@
   <button class="text-button" id="connectionToSettings" disabled>配置该账户策略 →</button>
   </article></div>
 </dialog>
+<dialog id="accountBatch" class="account-batch-dialog" aria-labelledby="accountBatchTitle">
+ <h2 id="accountBatchTitle">批量管理账户</h2>
+ <div class="batch-tools">
+  <label><span class="sr-only">搜索批量账户</span><input id="batchSearch" type="search" placeholder="搜索账户、交易所、币种"></label>
+  <select id="batchScope" aria-label="账户范围"><option value="active">使用中的列表</option><option value="archived">已删除</option></select>
+  <select id="batchMode" aria-label="交易模式"><option value="all">全部类型</option><option value="paper">模拟</option><option value="live">真实连接</option></select>
+ </div>
+ <label class="batch-all"><input id="batchSelectAll" type="checkbox">选择当前筛选结果</label>
+ <div id="batchAccounts" class="batch-list" aria-label="可选账户"></div>
+ <p id="batchSummary" class="batch-summary" role="status">已选 0 项</p>
+ <div class="batch-actions"><button id="batchClose" type="button">关闭</button><button id="batchApply" class="exit-button" type="button" disabled>核对并删除</button></div>
+</dialog>
 </main>
 </div>
 </div>
 <script src="/quant/settings-preview.js?v=core2"></script>
 <script src="/quant/chart-swing-sample.js?v=1"></script>
 <script src="/quant/chart-swing-review.js?v=1"></script>
-<script src="/turtle/desk.js?v=ops1"></script>
-<script src="/quant/desk.js?v=ops1"></script>
-<script src="/hypothesis/connections.js?v=ops1"></script>
+<script src="/quant/dialogs.js?v=1"></script>
+<script src="/quant/account-batch.js?v=1"></script>
+<script src="/turtle/desk.js?v=batch1"></script>
+<script src="/quant/desk.js?v=batch1"></script>
+<script src="/hypothesis/connections.js?v=batch1"></script>
 <script src="/quant/production.js?v=onepage1"></script>
 </body>
 </html>

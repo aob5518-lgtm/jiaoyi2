@@ -48,7 +48,10 @@ async function review(a,d){
   if(!complete)block("legacy.ledger","原始模拟订单证据缺失，不能证明已结算");
   else {const x=ledgerReview(orders);if(x.unsettled)block("legacy.ledger","历史订单存在未结算、未知状态或数量残差");}
  }
- if(!paper(a)){try{await d.verifyLiveFlat(a);}catch{block("exchange","无法确认交易所全部原生持仓和委托为空，请先核对交易所");}}
+ if(!paper(a)){
+  if(a.platform==="hotcoin")block("exchange","Hotcoin 目前只能查询所选合约的委托，无法核验全账户委托为空");
+  else try{await d.verifyLiveFlat(a);}catch{block("exchange","无法确认交易所全部原生持仓和委托为空，请先核对交易所");}
+ }
  return {allowed:!blockers.length,blockers,version:version(a),preserveHistory:true,readOnly:true};
 }
 function transition(a,action){

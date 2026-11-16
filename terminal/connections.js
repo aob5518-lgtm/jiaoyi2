@@ -1,7 +1,7 @@
 "use strict";
 const crypto = require("crypto");
 const secrets = ["privateKey", "apiKey", "apiSecret", "starkPrivateKey", "publicKey", "vault"];
-const platforms = new Set(["hyperliquid", "binance", "extended"]);
+const platforms = new Set(["hyperliquid", "binance", "extended", "hotcoin"]);
 const filled = value => typeof value === "string" && value.trim().length > 0;
 const Lifecycle=require("./account-lifecycle");
 
@@ -29,6 +29,10 @@ function credentialPatch(input) {
     if (input[key].trim()) result[key] = input[key].trim();
   }
   return result;
+}
+function checkHotcoinCredentials(patch, account = {}) {
+  if (Object.keys(patch).some(key => !["apiKey", "apiSecret"].includes(key))) throw Error("Hotcoin 只接受 API Key 和 API Secret");
+  if (!(patch.apiKey || account.apiKey) || !(patch.apiSecret || account.apiSecret)) throw Error("请填写 Hotcoin API Key 和 API Secret");
 }
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -60,17 +64,22 @@ async function handle(req, res, parsed, d) {
       if(!["paper","live"].includes(mode)||mode==="live"&&input.confirmLive!==true)throw Error("请明确确认创建真实账户连接；不会自动开启策略");
       if(mode==="live"&&input.initialEquity!==undefined)throw Error("真实账户权益由交易所读取，不能填写模拟资金");
       if (!platforms.has(input.platform)) throw Error("交易所不支持");
+      const credentials = credentialPatch(input);
+      if (input.platform === "hotcoin") {
+        if (mode !== "live") throw Error("Hotcoin 当前仅支持真实账户只读连接");
+        checkHotcoinCredentials(credentials);
+      }
       const name = String(input.name || "").trim(), symbol = String(input.symbol || "ETH").toUpperCase();
       const balance = Number(input.initialEquity ?? 10000);
       if (!name || name.length > 60 || !["ETH", "BTC", "SOL", "BNB"].includes(symbol) || !Number.isFinite(balance) || balance < 100 || balance > 10000000) throw Error("账户名称、标的或模拟权益无效");
       const account = {
         id: crypto.randomUUID(), name, platform: input.platform, symbol,
-        quoteAsset: input.platform === "binance" ? "USDT" : input.platform === "extended" ? "USD" : "USDC",
+        quoteAsset: ["binance", "hotcoin"].includes(input.platform) ? "USDT" : input.platform === "extended" ? "USD" : "USDC",
         strategyType: "connection_only", strategyMode: "未绑定策略", running: false,
         tradeMode: mode==="live"?"live":"simulation", simulationEnabled: mode==="paper", ...(mode==="paper"?{simulationBalance:balance}:{}),
         simulationSlippageBps: 5, interval: 15000, side: "long", leverage: 1,
         maxAdds: 0, baseAmount: 0, addAmount: 0, takeProfit: .01, addTrigger: .01,
-        ...credentialPatch(input)
+        ...credentials
       };
       const config = d.configuration();
       config.accounts.push(account);
@@ -120,7 +129,12 @@ async function handle(req, res, parsed, d) {
     if (!lock) throw Error("账户正在执行，请稍后重试");
     st.terminalMutating = mutating = true;
     const patch = credentialPatch(input);
-    if (!(account.tradeMode === "simulation" && account.simulationEnabled === true) && Object.keys(patch).length) {
+    if (account.platform === "hotcoin" && Object.keys(patch).length) {
+      if (account.strategyType !== "connection_only") throw Error("Hotcoin 仅支持只读连接");
+      checkHotcoinCredentials(patch, account);
+      try {await d.checkConnection({...account,...patch}, {fresh:true});}
+      catch {throw Error("新 Hotcoin 凭据未通过原生只读核验，已保留原连接");}
+    } else if (!(account.tradeMode === "simulation" && account.simulationEnabled === true) && Object.keys(patch).length) {
       try {await d.verifyLiveFlat(account);} catch {throw Error("Live 账户原生空仓与挂单核验未通过，连接修改已阻止");}
     }
     if (input.name !== undefined) {

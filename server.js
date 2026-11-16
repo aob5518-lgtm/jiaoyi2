@@ -3431,7 +3431,8 @@ function verifyDeskLegacyFlat(account, st) {
 }
 const connectionSnapshots=new Map(),connectionReads=new Map(),connectionGenerations=new Map();
 function invalidateConnectionRead(id){connectionGenerations.set(id,(connectionGenerations.get(id)||0)+1);connectionSnapshots.delete(id);}
-async function readNativeConnection(account){
+async function readNativeConnection(account,{fresh=false}={}){
+ if(fresh)return checkAccountConnection(account);
  const prior=connectionSnapshots.get(account.id);
  if(prior&&Date.now()-prior.at<10000){if(prior.error)throw Error(prior.error);return prior.summary;}
  const generation=connectionGenerations.get(account.id)||0,pending=connectionReads.get(account.id);
@@ -3459,8 +3460,8 @@ function deskReadOnlyStatus(account, st) {
   if(!paper){
    const read=connectionSnapshots.get(account.id),fresh=read?.summary&&Date.now()-read.at<=30000,summary=fresh?read.summary:null;
    const positions=summary?.positions||[],selected=positions.filter(p=>p.symbol===account.symbol&&(!p.quoteAsset||p.quoteAsset===account.quoteAsset)),p=selected.length===1?selected[0]:null;
-   const pnl=positions.length&&positions.some(p=>p.unrealizedPnl===null)?null:summary?positions.reduce((s,p)=>s+p.unrealizedPnl,0):null;
-   return {equity:summary?.balance??null,valuationBasis:"native_balance",floating:pnl,floatingBasis:"native_unrealized",realized:null,
+   const pnl=summary&&Object.hasOwn(summary,"unrealizedPnl")?summary.unrealizedPnl:positions.some(p=>p.unrealizedPnl===null)?null:summary?positions.reduce((s,p)=>s+p.unrealizedPnl,0):null;
+   return {equity:summary?.balance??null,valuationBasis:summary?.valuationBasis||"native_balance",floating:pnl,floatingBasis:"native_unrealized",realized:null,
     available:summary?.available??null,margin:null,position:p,positions,native:true,mark:p?.mark??null,updatedAt:summary?.checkedAt??null,
     market:summary?"原生账户已同步":"原生账户待核验",notice:read?.error||(!summary?"尚无有效原生账户数据":positions.length?"真实账户持仓仅展示；研究策略没有实盘执行权限":"交易所查询返回空仓；未自动启动策略"),
     lastAction:"只读同步账户，未提交交易订单"};
@@ -3481,7 +3482,7 @@ function deskReadOnlyStatus(account, st) {
 
 async function tickAccount(acc) {
   const st = stateMap[acc.id];
-  if (!st) return;
+  if (!st || acc.platform==="hotcoin") return;
   if(st.terminalMutating)return;
   if (st.tickRunning) return;
   const activeStrategyType = getStrategyType(acc);
@@ -4681,6 +4682,7 @@ function buildDashboardPayload(acc, st) {
 }
 
 async function checkAccountConnection(account) {
+  if (account.platform === "hotcoin") return require("./terminal/hotcoin").readAccount(account, fetch);
   let result;
   if (account.platform === "hyperliquid") {
     if (!/^0x[a-fA-F0-9]{40}$/.test(account.address || "")) throw Error("Hyperliquid address required");

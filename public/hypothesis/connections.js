@@ -29,24 +29,30 @@
   return data;
  }
  function changePlatform() {
+  const mode=field("accountMode")?.value||"paper",existing=state.accounts.find(a=>a.id===state.editing);
+  const hotcoin=field("platform").querySelector('option[value="hotcoin"]');
+  if(hotcoin){
+   hotcoin.disabled=mode!=="live";
+   if(hotcoin.disabled&&field("platform").value==="hotcoin")field("platform").value="hyperliquid";
+  }
   for (const label of form.querySelectorAll("[data-exchanges]")) {
    label.hidden = !label.dataset.exchanges.split(" ").includes(field("platform").value);
    for(const input of label.querySelectorAll("input"))input.disabled=label.hidden;
   }
-  const mode=field("accountMode")?.value||"paper",existing=state.accounts.find(a=>a.id===state.editing);
+  const credentials=form.querySelector(".connection-credentials");
   if(!existing){
    $("connectionMode").textContent=mode==="live"?"真实账户连接 · 停止状态 · 未启用策略":"模拟账户 · 停止状态";
    form.querySelector('[type="submit"]').textContent=mode==="live"?"创建真实账户连接":"创建并配置经典模拟";
-   form.querySelector(".connection-credentials").open=mode==="live";
+   if(credentials)credentials.open=mode==="live";
   }
-  form.querySelector(".connection-credentials summary").textContent=mode==="live"?"交易所 API 配置":"交易所连接（选填）";
+  const summary=credentials?.querySelector("summary");
+  if(summary)summary.textContent=mode==="live"?"交易所 API 配置":"交易所连接（选填）";
   $("connectionEquityLabel").hidden=!!existing||mode==="live";
   field("initialEquity").disabled=!!existing||mode==="live";
-  if($("connectionModeHelp"))$("connectionModeHelp").textContent=mode==="live"?"保存真实交易所连接，不会自动启用实盘策略；账户资金从交易所读取。":"模拟账本与真实账户资金分开，策略启动前仍需保存参数。";
+  if($("connectionModeHelp"))$("connectionModeHelp").textContent=field("platform").value==="hotcoin"?"使用具有合约读取权限的 API Key 和 Secret。可查看权益、持仓和所选合约委托。":mode==="live"?"保存真实交易所连接，不会自动启用实盘策略；账户资金从交易所读取。":"模拟账本与真实账户资金分开，策略启动前仍需保存参数。";
  }
  function selectEditor(id, internal = false) {
   if (state.busy && !internal) return false;
-  if (state.dirty && !confirm("有未保存的连接配置，确认放弃本次修改？")) return false;
   state.editing = id;
   state.dirty = false;
   const account = state.accounts.find(item => item.id === id);
@@ -92,6 +98,13 @@
   if (!internal && typeof matchMedia === "function" && matchMedia("(max-width:760px)").matches) form.parentElement.scrollIntoView({block: "start"});
   return true;
  }
+ async function editAccount(id,{live=false}={}) {
+  if(state.busy||state.dirty&&!await JustDialogs.discard("账户配置尚未保存。"))return false;
+  if(!id&&$("connectionSearch"))$("connectionSearch").value="";
+  if(!selectEditor(id))return false;
+  if(live){field("accountMode").value="live";changePlatform();}
+  return true;
+ }
  function renderList() {
   const box = $("connectionList");
   const query = $("connectionSearch")?.value.toLowerCase()||"";
@@ -106,7 +119,7 @@
    const button = node("button", "");
    button.className = "connection-item" + (account.id === state.editing ? " selected" : "");
    button.append(node("strong", account.name), node("small", account.platform + " · " + account.symbol + " / " + account.quoteAsset), node("small", account.simulationEnabled && account.tradeMode === "simulation" ? "Paper · 模拟账户" : "Live · 保留原权限"));
-   button.onclick = () => selectEditor(account.id);
+   button.onclick = () => editAccount(account.id);
    box.append(button);
   }
  }
@@ -130,8 +143,7 @@
  }
  async function chooseCurrent(id) {
   if (state.busy) return;
-  const guard = new CustomEvent("just-account-selecting", {detail: id, cancelable: true});
-  if (!document.dispatchEvent(guard)) {$("connectionSwitcher").value = state.current;document.dispatchEvent(new CustomEvent("just-account-switch-finished", {detail: {success: false, cancelled: true}}));return;}
+  if (!await JustDialogs.guard("just-account-selecting",id)) {$("connectionSwitcher").value = state.editing||state.current;return;}
   state.busy = true;
   let success = false;
   try {
@@ -152,13 +164,14 @@
   return success;
  }
  if ($("connectionSearch")) $("connectionSearch").oninput = renderList;
- $("newConnection").onclick = () => {if($("connectionSearch"))$("connectionSearch").value="";selectEditor("");};
- if($("newLiveConnection"))$("newLiveConnection").onclick=()=>{
-  if($("connectionSearch"))$("connectionSearch").value="";
-  if(!selectEditor(""))return;
-  field("accountMode").value="live";changePlatform();
+ $("newConnection").onclick = () => editAccount("");
+ if($("newLiveConnection"))$("newLiveConnection").onclick=()=>editAccount("",{live:true});
+ $("connectionSwitcher").onchange = async event => {
+  const a=state.accounts.find(account=>account.id===event.target.value);
+  if(a?.archivedAt){
+   if(!await editAccount(a.id))event.target.value=state.editing||state.current;
+  }else if(a)await chooseCurrent(a.id);
  };
- $("connectionSwitcher").onchange = event => {const a=state.accounts.find(a=>a.id===event.target.value);a?.archivedAt?selectEditor(a.id):chooseCurrent(event.target.value);};
  $("selectConnection").onclick = () => chooseCurrent(state.editing);
  if ($("connectionToSettings")) $("connectionToSettings").onclick = async () => {
   if (!state.editing || state.busy) return;
@@ -173,7 +186,7 @@
   const button = form.querySelector('[type="submit"]');
   const creating=!state.editing;
   const live=creating&&field("accountMode")?.value==="live";
-  if(live&&!confirm("创建真实账户连接？这将保存交易所连接，不会启动策略或提交订单；当前研究策略仍仅支持模拟。"))return;
+  if(live&&!await JustDialogs.show({title:"创建真实账户连接？",message:"保存后可读取交易所账户。策略保持停止。",action:"创建连接"}))return;
   let createdId;
   state.busy = true;button.disabled = true;
   try {
@@ -201,31 +214,46 @@
   try {
    const data = await request("/api/v4/connections/check", {id: state.editing});
    message(data.message + " · " + new Date(data.checkedAt).toLocaleString("zh-CN"));
-   let box=$("connectionNativeSummary");
-   if(!box){box=node("div","");box.id="connectionNativeSummary";box.className="connection-summary";$("connectionStatus").after(box);}
-   const summary=data.summary;box.replaceChildren(node("p","交易所余额 "+(summary.balance??"未返回")+" · 持仓 "+(summary.positionCount??"未知")+" 笔"));
-   for(const p of summary.positions||[])box.append(node("p",(p.market||p.symbol)+" "+(p.side==="long"?"多":"空")+" · 均价 "+(p.entry??"未返回")+" · 杠杆 "+(p.leverage>0?p.leverage+"×":"未返回")+" · 数量 "+p.qty));
+   const box=node("div","");
+   box.id="connectionNativeSummary";
+   box.className="batch-results";
+   const summary=data.summary;
+   const amount=value=>value==null?"未返回":Number(value).toLocaleString("zh-CN",{maximumFractionDigits:8});
+   box.append(node("p",(summary.valuationBasis==="native_equity"?"交易所权益 ":"交易所余额 ")+amount(summary.balance)+" · 可用 "+amount(summary.available)+" · 持仓 "+(summary.positionCount??"未知")+" 笔"));
+   if(summary.ordersMarket)box.append(node("p",summary.ordersMarket+" 普通未完成委托 "+(summary.openOrderCount??"未能核验")));
+   for(const p of summary.positions||[])box.append(node("p",(p.market||p.symbol)+" "+(p.side==="long"?"多":"空")+" · 均价 "+amount(p.entry)+" · 杠杆 "+(p.leverage>0?p.leverage+"×":"未返回")+" · 数量 "+amount(p.qty)+" "+(p.qtyUnit||p.symbol)));
    document.dispatchEvent(new CustomEvent("just-connection-checked",{detail:{id:state.editing,summary:data.summary}}));
-  } catch (error) {message(error.message);}
+   await JustDialogs.show({title:"交易所连接核验通过",content:box,info:true});
+  } catch (error) {message(error.message);await JustDialogs.show({title:"交易所连接核验失败",message:error.message,info:true});}
   finally {state.busy = false;buttons();}
  };
  if($("deleteConnection"))$("deleteConnection").onclick=async()=>{
   if(state.busy||!state.editing)return;
   const a=state.accounts.find(a=>a.id===state.editing);if(!a)return;
+  if(state.dirty)return JustDialogs.show({title:"账户配置尚未保存",message:"请先保存修改，再处理删除或恢复。",info:true});
   state.busy=true;$("deleteConnection").disabled=true;
   try{
    let version=a.lifecycleVersion;
    if(!a.archivedAt){
     message("正在核对运行状态、持仓和订单；真实账户会读取交易所…");
     const {review}=await request("/api/v4/connections/archive-preview",{id:a.id});
-    if(!review.allowed){message("暂不能删除：\n"+review.blockers.map(b=>"• "+b.message).join("\n"));return;}
+    if(!review.allowed){
+     const reason=review.blockers.map(b=>"• "+b.message).join("\n");
+     message("暂不能删除：\n"+reason);
+     await JustDialogs.show({title:"此账户暂不能删除",message:reason,info:true});
+     return;
+    }
     version=review.version;
    }
-   if(!confirm(a.archivedAt?"恢复「"+a.name+"」到列表？不会自动启动策略。":"删除「"+a.name+"」？账户将移出日常列表，历史、密钥和账本保留，可恢复。不会平仓或撤单。"))return;
+   if(!await JustDialogs.show({
+    title:(a.archivedAt?"恢复":"删除")+"「"+a.name+"」？",
+    message:a.archivedAt?"账户将重新显示，保持原运行状态。":"账户将移出日常列表，历史、密钥和账本保留。可在「已删除」恢复。",
+    action:a.archivedAt?"恢复账户":"删除账户",danger:!a.archivedAt
+   }))return;
    const result=await request("/api/v4/connections/"+(a.archivedAt?"restore":"archive"),{id:a.id,confirm:true,expectedVersion:version});
    state.dirty=false;await load(a.id);message(result.message);
    document.dispatchEvent(new CustomEvent("just-accounts-updated"));
-  }catch(e){message(e.message);}
+  }catch(e){message(e.message);await JustDialogs.show({title:"账户操作失败",message:e.message,info:true});}
   finally{state.busy=false;buttons();}
  };
  document.addEventListener("workspacepage", event => {
@@ -235,13 +263,25 @@
  });
  document.addEventListener("just-reload-accounts",event=>load(event.detail).catch(error=>message(error.message)));
  document.addEventListener("just-account-selecting", event => {
-  if (state.busy || state.dirty && !confirm("有未保存的账户配置，确认放弃修改并切换账户？")) event.preventDefault();
+  if (state.busy) return event.preventDefault();
+  if(state.dirty)event.check(()=>JustDialogs.discard("切换后，本次账户配置修改将丢失。"));
  });
  document.addEventListener("just-workspace-leaving", event => {
   if (event.detail.from !== "accounts") return;
-  if (state.busy || state.dirty && !confirm("有未保存的账户配置，确认放弃本次修改并离开？")) return event.preventDefault();
-  if (state.dirty) {state.dirty = false;selectEditor(state.editing, true);}
+  if (state.busy) return event.preventDefault();
+  if (state.dirty) {
+   event.check(()=>JustDialogs.discard("关闭后，本次账户配置修改将丢失。"));
+   event.onAllowed(()=>selectEditor(state.editing,true));
+  }
  });
+ window.JustAccountBatch?.mount({request,canOpen:async()=>{
+  if(state.busy||state.dirty&&!await JustDialogs.discard("打开批量管理前，需放弃未保存的账户配置。"))return false;
+  if(state.dirty)selectEditor(state.editing,true);
+  return true;
+ },onChanged:async()=>{
+  document.dispatchEvent(new CustomEvent("just-accounts-updated"));
+  await load();
+ }});
  window.addEventListener("beforeunload", event => {if (state.dirty) {event.preventDefault();event.returnValue = "";}});
  load().catch(error => message(error.message));
 })();

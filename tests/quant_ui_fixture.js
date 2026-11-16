@@ -6,10 +6,11 @@ const carryConfig=require("../strategy/funding_carry/config");
 const pullbackConfig=require("../strategy/pullback_15m/config");
 const swingConfig=require("../strategy/chart_swing_1h/config");
 const root = path.resolve(__dirname, "../public");
-const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css","quant/chart-swing-review.js","quant/chart-swing-sample.js"]);
+const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css","quant/chart-swing-review.js","quant/chart-swing-sample.js","quant/dialogs.js","quant/dialogs.css","quant/account-batch.js"]);
 function start(port = 0) {
  let count = 64, scenario = "";
- const saved = new Map(), submissions = [], controls=[], turtleAccounts=new Map();
+ const saved = new Map(), submissions = [], controls=[], turtleAccounts=new Map(), accountChanges=[];
+ const nativePosition = a => ({symbol:"ETH",side:"long",entry:2460.5,leverage:5,unrealizedPnl:4,...(a.platform==="hotcoin"?{qty:15,qtyUnit:"张",market:"ETHUSDT"}:{qty:.1})});
  let turtleSaveAttempts=0;
  const turtleTrades=Array.from({length:32},(_,i)=>({time:Date.UTC(2026,10,15)-i*3600000,side:"short",entryPrice:2500,exitPrice:2510,netPnl:-10.2,tradingFee:.4,reason:"hard_sl"}));
  let accounts = [];
@@ -24,7 +25,7 @@ function start(port = 0) {
  const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   const json = (code, data) => {res.writeHead(code, {"Content-Type": "application/json"});res.end(JSON.stringify(data));};
-  if (url.pathname === "/") {scenario = url.searchParams.get("scenario") || "";server.scenario = scenario;saved.clear();submissions.length=0;controls.length=0;turtleAccounts.clear();turtleSaveAttempts=0;if ([64,100,150].includes(Number(url.searchParams.get("count")))) count=Number(url.searchParams.get("count"));accounts=makeAccounts();selected=accounts[0].id;}
+  if (url.pathname === "/") {scenario = url.searchParams.get("scenario") || "";server.scenario = scenario;saved.clear();submissions.length=0;controls.length=0;accountChanges.length=0;turtleAccounts.clear();turtleSaveAttempts=0;if ([64,100,150].includes(Number(url.searchParams.get("count")))) count=Number(url.searchParams.get("count"));accounts=makeAccounts();selected=accounts[0].id;}
   const requestBody=async()=>{
    let body="";
    for await(const part of req)body+=part;
@@ -81,7 +82,8 @@ function start(port = 0) {
   if (req.method==="POST"&&url.pathname==="/api/v4/connections/create"){
    return requestBody().then(input=>{
     const live=input.accountMode==="live";
-    const a={...input,id:live?"new-live":"new-classic",tradeMode:live?"live":"simulation",simulationEnabled:!live,quoteAsset:"USDT",strategyType:"connection_only",strategy:"未绑定",paper:!live,eligible:!live,ready:false,running:false,lifecycleVersion:"fixture-version"};
+    const {apiKey,apiSecret,...safe}=input;
+    const a={...safe,hasApiKey:!!apiKey,hasApiSecret:!!apiSecret,id:live?"new-live":"new-classic",tradeMode:live?"live":"simulation",simulationEnabled:!live,quoteAsset:"USDT",strategyType:"connection_only",strategy:"未绑定",paper:!live,eligible:!live,ready:false,running:false,lifecycleVersion:"fixture-version"};
     accounts.push(a);
     return json(200,{ok:true,account:{...a,connectionOnly:true},message:live?"真实账户连接已创建，保持停止":"模拟账户已创建"});
    }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
@@ -89,8 +91,12 @@ function start(port = 0) {
   if(req.method==="POST"&&/^\/api\/v4\/connections\/(archive-preview|archive|restore|update|check)$/.test(url.pathname)){
    return requestBody().then(input=>{
     const a=accounts.find(a=>a.id===input.id),action=url.pathname.split("/").at(-1);
-    if(action==="check")return json(200,{ok:true,checkedAt:Date.now(),message:"原生读取成功",summary:{balance:25000,positionCount:1,positions:[{symbol:"ETH",side:"long",entry:2460.5,leverage:5,qty:.1}]}});
+    if(action==="check")return json(200,{ok:true,checkedAt:Date.now(),message:"原生读取成功",summary:{balance:25000,available:24300,positionCount:1,positions:[nativePosition(a)],...(a.platform==="hotcoin"?{valuationBasis:"native_equity",ordersMarket:"ETHUSDT",openOrderCount:2}:{})}});
     if(action==="archive-preview")return json(200,{ok:true,review:{allowed:!a.running&&!a.hasPosition&&a.id!=="new-live",version:"fixture-version",blockers:a.running||a.hasPosition||a.id==="new-live"?[{message:"仍有持仓或运行中"}]:[]}});
+    if(["archive","restore"].includes(action)){
+     if(input.confirm!==true||input.expectedVersion!=="fixture-version")return json(400,{ok:false,error:"确认已失效"});
+     accountChanges.push({action,id:a.id});
+    }
     if(action==="archive"){a.archivedAt=Date.now();if(selected===a.id)selected=accounts.find(a=>!a.archivedAt).id;}
     if(action==="restore")delete a.archivedAt;
     if(action==="update")a.name=input.name;
@@ -120,7 +126,7 @@ function start(port = 0) {
    }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
   }
   if (req.method !== "GET") return json(405, {ok: false, error: "合成验收，不执行交易"});
-  if (url.pathname === "/api/v4/connections") return json(200, {ok: true, currentAccountId: selected, accounts: accounts.map(a => ({...a,connectionOnly:a.strategyType==="connection_only",lifecycleVersion:"fixture-version", tradeMode: a.paper ? "simulation" : "live", simulationEnabled: a.paper, hasApiKey: a.id === "sample-0", hasApiSecret: a.id === "sample-0"}))});
+  if (url.pathname === "/api/v4/connections") return json(200, {ok: true, currentAccountId: selected, accounts: accounts.map(a => ({...a,connectionOnly:a.strategyType==="connection_only",lifecycleVersion:"fixture-version", tradeMode: a.paper ? "simulation" : "live", simulationEnabled: a.paper, hasApiKey:a.hasApiKey||a.id==="sample-0", hasApiSecret:a.hasApiSecret||a.id==="sample-0"}))});
   if(url.pathname==="/api/v4/desk/preflight"){
    const a=accounts.find(x=>x.id===url.searchParams.get("id"));
    const allowed=!!(a?.eligible&&a.ready&&scenario!=="blocked");
@@ -135,8 +141,8 @@ function start(port = 0) {
    const snapshot = a.hasPosition ? {equity:10140.35,floating:-12.45,realized:152.8,available:9889.35,margin:251,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:"等待补仓或止盈条件",lastAction:"模拟补仓 #1",settings:cfg,position:{side:"long",entry:2562.31,leverage:2,qty:.2008,adds:1,nextAdd:2470.15,takeProfit:2588.19}} :
     {equity:10000,realized:0,floating:0,available:10000,margin:0,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:a.ready?"等待启动":"保存经典参数后，可启动模拟交易",settings:a.ready?cfg:undefined,position:null};
    if (a.hasPosition) snapshot.plan = {first:{price:2530,amount:cfg.baseAmount,status:"已成交"},add:{price:2470.15,amount:200,quantity:200/2470.15,lastPrice:2495,done:1,limit:3,status:"等待触发"},exit:{price:2588.19,status:"监测止盈"},fills:[{at:Date.now()-100000,kind:"open",price:2530,qty:.1,notional:253},{at:Date.now()-30000,kind:"add",price:2495,qty:.1008,notional:251.496}]};
-   if(!a.paper){const p={symbol:"ETH",side:"long",qty:.1,entry:2460.5,leverage:5,unrealizedPnl:4};
-    Object.assign(snapshot,{native:true,valuationBasis:"native_balance",floatingBasis:"native_unrealized",equity:25000,realized:null,floating:4,
+   if(!a.paper){const p=nativePosition(a);
+    Object.assign(snapshot,{native:true,valuationBasis:a.platform==="hotcoin"?"native_equity":"native_balance",floatingBasis:"native_unrealized",equity:25000,realized:null,floating:4,
      position:p,positions:[p],updatedAt:Date.now(),market:"原生账户已同步",notice:"真实账户连接，未自动启动策略"});}
    return json(200,{ok:true,selected:a,accounts:accounts.map(account=>account.strategyType==="turtle_4h_v1"?{...account,running:false}:account),snapshot,defaultSettings:cfg});
   }
@@ -150,6 +156,7 @@ function start(port = 0) {
  server.listen(port,"127.0.0.1");
  server.submissions=submissions;
  server.controls=controls;
+ server.accountChanges=accountChanges;
  server.turtleSaveAttempts=()=>turtleSaveAttempts;
  return server;
 }

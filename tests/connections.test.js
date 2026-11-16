@@ -7,7 +7,7 @@ async function setup(t) {
   {id: "live", name: "Live", platform: "hyperliquid", symbol: "ETH", tradeMode: "live", simulationEnabled: false, privateKey: "live-private"}
  ]};
  const states = {paper: {running: false}, live: {running: false}};
- let checks = 0, native = 0, failNative = false,failSave=false;
+ let checks = 0, native = 0, failNative = false,failSave=false,failCheck=false;
  const d = {
   accounts: () => config.accounts, configuration: () => structuredClone(config), getCurrentAccount: () => config.accounts[0],
   getAccountById: id => config.accounts.find(account => account.id === id), state: id => states[id],
@@ -15,7 +15,7 @@ async function setup(t) {
   simulationOrders:()=>[],
   lock: () => ({}), unlock() {}, json: (res, code, body) => {res.writeHead(code, {"Content-Type": "application/json"});res.end(JSON.stringify(body));},
   verifyLiveFlat: async () => {native++;if (failNative) throw Error("unknown native risk");},
-  checkConnection: async () => {checks++;return {balance: 1, positionCount: 0};}
+  checkConnection: async () => {checks++;if(failCheck)throw Error("invalid credentials");return {balance: 1, positionCount: 0};}
  };
  const server = http.createServer((req, res) => Connections.handle(req, res, new URL(req.url, "http://localhost"), d));
  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -24,8 +24,66 @@ async function setup(t) {
   const response = await fetch("http://127.0.0.1:" + server.address().port + "/api/v4/connections" + route, input === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(input)});
   return {code: response.status, data: await response.json()};
  };
- return {call, states, config: () => config, counters: () => ({checks, native}), rejectNative: () => {failNative = true;},rejectSave:()=>{failSave=true;}};
+ return {call, states, config: () => config, counters: () => ({checks, native}), rejectNative: () => {failNative = true;},rejectSave:()=>{failSave=true;},rejectCheck:()=>{failCheck=true;}};
 }
+
+test("Hotcoin creation stays stopped and read-only, and rotation verifies the replacement before saving",async t=>{
+ const x=await setup(t),input={name:"Hotcoin ETH",platform:"hotcoin",symbol:"ETH",accountMode:"live",confirmLive:true,apiKey:"hot-key",apiSecret:"hot-secret"};
+ assert.equal((await x.call("/create",{...input,accountMode:"paper"})).code,400);
+ assert.equal((await x.call("/create",{...input,apiSecret:" "})).code,400);
+ assert.equal((await x.call("/create",{...input,privateKey:"not-applicable"})).code,400);
+ const created=await x.call("/create",input);
+ assert.equal(created.code,200);
+ const {id,quoteAsset,connectionOnly,running}=created.data.account;
+ const account=()=>x.config().accounts.find(value=>value.id===id);
+ assert.equal(quoteAsset,"USDT");assert.equal(connectionOnly,true);assert.equal(running,false);
+ assert.throws(()=>require("../terminal/policy").assertEntry(account()),/UNSUPPORTED_STRATEGY/);
+ assert.doesNotMatch(JSON.stringify((await x.call()).data),/hot-secret|hot-key/);
+ const {review}= (await x.call("/archive-preview",{id})).data;
+ assert.equal(review.allowed,false);assert.match(review.blockers[0].message,/全账户委托/);
+ assert.equal((await x.call("/archive",{id,confirm:true,expectedVersion:review.version})).code,409);
+ assert.equal((await x.call("/update",{id,apiSecret:"replacement"})).code,200);
+ assert.equal(account().apiSecret,"replacement");assert.deepEqual(x.counters(),{checks:1,native:0});
+ x.rejectCheck();
+ assert.equal((await x.call("/update",{id,apiSecret:"invalid"})).code,400);
+ assert.equal(account().apiSecret,"replacement");
+});
+
+test("Hotcoin reads use signed GET requests and keep contracts distinct from base quantity",async()=>{
+ const {createHmac}=require("node:crypto"), Hotcoin=require("../terminal/hotcoin");
+ const stamp=Date.parse("2026-11-16T04:00:12.123Z");
+ const acc={symbol:"ETH",quoteAsset:"USDT",apiKey:"read&+key",apiSecret:"read-only-secret"};
+ let num=0;
+ const request=async(raw,options)=>{
+  num++;
+  const url=new URL(raw), path=url.pathname;
+  assert.equal(url.origin,"https://api-ct.hotcoin.fit");
+  assert.equal(options.method,"GET");assert.equal(options.redirect,"error");
+  const response=value=>({ok:true,json:async()=>value});
+  if(path.endsWith("/public/time"))return response({timestamp:stamp});
+  const [query]=url.search.slice(1).split("&Signature=");
+  assert.equal(url.searchParams.get("Timestamp"),"2026-11-16T04:00:12.123Z");
+  assert.equal(url.searchParams.get("AccessKeyId"),acc.apiKey);
+  assert.equal(url.searchParams.get("Signature"),createHmac("sha256",acc.apiSecret).update("GET\n"+url.host+"\n"+path+"\n"+query).digest("base64"));
+  if(path.endsWith("/assets/ethusdt"))return response({code:200,data:{currencyCode:"usdt",env:0,accountRights:"25000",availableMargin:"24150",unRealizedSurplus:"-35.2"}});
+  if(path.endsWith("/position/list-all")){
+   assert.equal(url.searchParams.get("env"),"0");
+   return response([{contractCode:"ethusdt",quote:"usdt",amount:"15",size:"0.15",side:"long",price:"2460.5",lever:"5"},{amount:0}]);
+  }
+  assert.match(path,/products\/ethusdt\/list$/);
+  return response([{status:0},{status:1},{status:2},{status:-1}]);
+ };
+ const data=await Hotcoin.readAccount(acc,request);
+ assert.equal(num,4);
+ assert.deepEqual({balance:data.balance,free:data.available,pnl:data.unrealizedPnl,orders:data.openOrderCount,scope:data.ordersMarket,positions:data.positionCount},
+  {balance:25000,free:24150,pnl:-35.2,orders:2,scope:"ETHUSDT",positions:1});
+ assert.deepEqual(data.positions[0],{symbol:"ETH",market:"ETHUSDT",quoteAsset:"USDT",side:"long",qty:15,qtyUnit:"张",entry:2460.5,leverage:5,leverageSource:"native_exchange",mark:null,margin:null,unrealizedPnl:null});
+ assert.doesNotMatch(JSON.stringify(data),/read-only-secret|Signature|AccessKeyId/);
+ const withoutOrders=await Hotcoin.readAccount(acc,(url,options)=>url.includes("/products/")?{ok:false}:request(url,options));
+ assert.equal(withoutOrders.openOrderCount,null);
+ await assert.rejects(Hotcoin.readAccount(acc,async url=>{throw Error(url);}),{message:"Hotcoin 原生查询失败，请检查 API 读取权限和网络"});
+ assert.throws(()=>Hotcoin.positionsFrom([{contractCode:"ethusdt",quote:"usdt",side:"long"}]),/张数无法核对/);
+});
 
 test("Live connections require explicit confirmation, never accept fake equity and remain unbound and stopped",async t=>{
  const x=await setup(t),input={name:"Real Binance",platform:"binance",symbol:"BTC",accountMode:"live",apiKey:"new-key",apiSecret:"new-secret"};

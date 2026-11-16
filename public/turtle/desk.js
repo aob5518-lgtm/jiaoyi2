@@ -202,7 +202,7 @@
  function rememberAccount(){
   const url=new URL(location.href);url.searchParams.set("account",state.id);history.replaceState(null,"",url);
  }
- async function select(a){if(state.busy)return;if(state.dirty&&!confirm("放弃尚未保存的参数并切换账户？"))return;if(a.strategyType!=="turtle_4h_v1"){location.href="/?account="+encodeURIComponent(a.id);return;}
+ async function select(a){if(state.busy)return;if(state.dirty&&!await JustDialogs.discard("切换后，本次策略参数修改将丢失。"))return;if(a.strategyType!=="turtle_4h_v1"){location.href="/?account="+encodeURIComponent(a.id);return;}
   state.ticket++;state.id=a.id;state.data=null;state.dirty=false;state.hash=null;closeRail();rememberAccount();render();await load();
  }
  function render(){
@@ -296,7 +296,7 @@
  }
  async function run(fn,errorId){if(state.busy||disposed)return;state.ticket++;state.busy=true;render();try{await fn();}catch(e){if(e.snapshot?.id===state.id)state.data=e.snapshot;if(errorId)$(errorId).textContent=e.message;else msg(e.message);}finally{state.busy=false;if(!disposed)render();}}
  function edit(){if(!state.data)return;state.hash=state.data.configHash;state.editBase=state.data.config;setFields(state.data.config);$("config-error").textContent="";$("config-progress").textContent="";$("config-title").textContent=state.data.name;$("config-note").textContent=state.data.activeConfig?"当前仓位或委托使用锁定参数。本次保存从下一轮生效。":"保存参数后，下次开仓使用新设置。";$("parameters").showModal();loadLeverage();}
- function cancelEdit(){if(state.busy||state.dirty&&!confirm("放弃本次尚未保存的参数修改？"))return;state.dirty=false;state.editBase=null;$("parameters").close();render();}
+ async function cancelEdit(){if(state.busy||state.dirty&&!await JustDialogs.discard("关闭后，本次策略参数修改将丢失。"))return;state.dirty=false;state.editBase=null;$("parameters").close();render();}
  $("edit").onclick=$("quick-edit").onclick=edit;$("cancel-edit").onclick=cancelEdit;$("parameters").addEventListener("cancel",e=>{e.preventDefault();cancelEdit();});
  form.oninput=()=>{$("config-error").textContent="";render();};
  async function saveConfig(input){
@@ -376,7 +376,7 @@
    await load();
   });
  }
- $("close").onclick=()=>{const s=state.data;if(!s?.position||!confirm("平掉 "+s.name+" 的模拟仓位并暂停新开仓？"))return;run(async()=>{const r=await api("control",{id:s.id,action:"close",confirm:true,positionId:s.position.id});msg(r.message);await load();});};
+ $("close").onclick=async()=>{const s=state.data;if(!s?.position||!await JustDialogs.show({title:"平掉 "+s.name+" 的模拟仓位？",message:"平仓后暂停新增交易。",action:"确认模拟平仓",danger:true}))return;if(state.data?.id!==s.id)return;run(async()=>{const r=await api("control",{id:s.id,action:"close",confirm:true,positionId:s.position.id});msg(r.message);await load();});};
  if(!embedded){
  $("refresh").onclick=()=>{if(!state.busy)load();};$("search").oninput=rail;
  for(const button of root.querySelectorAll("[data-filter]"))button.onclick=()=>{
@@ -411,7 +411,7 @@
  const timer=setInterval(()=>{if(!state.busy&&document.visibilityState==="visible")load();},10000);
  return {
   edit,openCreate,start:startDirect,pause:()=>$("pause").click(),
-  canLeave:()=>!state.busy&&(!state.dirty||confirm("放弃尚未保存的策略参数？")),
+  canLeave:async()=>!state.busy&&(!state.dirty||await JustDialogs.discard("切换后，本次策略参数修改将丢失。")),
   refresh:()=>{if(!state.busy)load();},
   dispose(){disposed=true;state.ticket++;clearInterval(timer);for(const dialog of root.querySelectorAll("dialog[open]"))dialog.close();}
  };
