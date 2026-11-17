@@ -6,7 +6,7 @@ const carryConfig=require("../strategy/funding_carry/config");
 const pullbackConfig=require("../strategy/pullback_15m/config");
 const swingConfig=require("../strategy/chart_swing_1h/config");
 const root = path.resolve(__dirname, "../public");
-const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css","quant/chart-swing-review.js","quant/chart-swing-sample.js","quant/dialogs.js","quant/dialogs.css","quant/account-batch.js"]);
+const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css","quant/chart-swing-review.js","quant/chart-swing-sample.js","quant/dialogs.js","quant/dialogs.css","quant/account-batch.js","quant/trade-labels.js","quant/trade-labels.css"]);
 function start(port = 0) {
  let count = 64, scenario = "";
  const saved = new Map(), submissions = [], controls=[], turtleAccounts=new Map(), accountChanges=[];
@@ -38,7 +38,7 @@ function start(port = 0) {
    return {id:a.id,name:a.name,symbol:a.symbol,mode:"Paper",config,configHash:profile.hash(config),history,decision:{code:profile.waitCode||"WAIT_BREAKOUT",reason:"等待收盘"},market:{state:"fresh",quoteTime:Date.now()},fresh:true,balance:10000+realized,equity:10000+realized,floating:0,realized,price:2500,running:a.running,nextEntry:{upper:2520,lower:2400,direction:config.direction,closesAt:Date.now()+3600000},
     ...(profile===carryConfig?{carry:{phase:"flat",spot:2500,perp:2504,basisBps:16,rate:.0003,nextFundingAt:Date.now()+3600000,expected:8,cost:10,edge:-2},decision:{code:"COST_BLOCK",reason:"预计交易成本超过收益"}}:{}),
     ...(profile===pullbackConfig?{decision:{code:"WAIT_PULLBACK",reason:"等待回踩"},analysis:{trend:"long",breakoutLevel:2480}}:{}),
-    ...(server.positionSnapshots&&profile!==carryConfig?{position:{side:"long",qty:.2,entry:2475,stop:2400,initialStop:2400,atr:10,
+    ...(server.positionSnapshots&&profile!==carryConfig?{position:{side:server.positionSnapshots==="short"?"short":"long",qty:.2,entry:2475,stop:server.positionSnapshots==="short"?2550:2400,initialStop:2400,atr:10,
      budget:20,actualRisk:20,config:{...config,leverage:3},openedAt:Date.now()-3600000},activeConfig:{...config,leverage:3},nextCycleOnly:true}:{} )};
   };
   if(/^\/api\/v4\/(turtle|reversal|carry|pullback|swing)\//.test(url.pathname)){
@@ -152,6 +152,8 @@ function start(port = 0) {
    if(!a.paper){const p=nativePosition(a);
     Object.assign(snapshot,{native:true,valuationBasis:a.platform==="hotcoin"?"native_equity":"native_balance",floatingBasis:"native_unrealized",equity:25000,realized:null,floating:4,
      position:p,positions:[p],updatedAt:Date.now(),market:"原生账户已同步",notice:"真实账户连接，未自动启动策略"});}
+   if(!a.paper&&server.nativeSnapshotMode==="dual")Object.assign(snapshot,{position:null,positions:[snapshot.position,{...snapshot.position,side:"short"}]});
+   if(!a.paper&&server.nativeSnapshotMode==="unavailable")Object.assign(snapshot,{position:null,positions:[],updatedAt:null,equity:null,mark:null,market:"原生账户待核验"});
    return json(200,{ok:true,selected:a,accounts:accounts.map(account=>account.strategyType==="turtle_4h_v1"?{...account,running:false}:account),snapshot,defaultSettings:cfg});
   }
   if (url.pathname === "/api/v4/desk/history") return json(200,{ok:true,total:1,items:[{time:Date.now(),side:"long",entryPrice:2480,exitPrice:2510,netPnl:10.2,tradingFee:.4,reason:"策略止盈"}]});

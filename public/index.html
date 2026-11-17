@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/quant/desk.css?v=ops1">
 <link rel="stylesheet" href="/quant/production.css?v=strategy2">
 <link rel="stylesheet" href="/quant/dialogs.css?v=2">
+<link rel="stylesheet" href="/quant/trade-labels.css?v=1">
 </head>
 <body>
 <div class="trade-shell">
@@ -49,9 +50,9 @@
  </div>
  <p id="deskStarterHint" role="status">正在同步账户。</p>
 </section>
-<section id="deskTurtlePane" aria-label="模拟策略工作台" data-template="/turtle.html" data-stylesheet="/turtle/desk.css?v=ops1" hidden></section>
-<section id="page-trading" aria-label="交易总览">
-<div class="workspace-status"><div class="account-badges"><span id="deskMode" class="tag">—</span><span id="deskRun" class="tag">—</span><span id="deskMarket" class="tag">等待行情</span></div><small id="deskUpdated">等待同步</small></div>
+<section id="deskTurtlePane" aria-label="模拟策略工作台" data-template="/turtle.html?v=position1" hidden></section>
+<section id="page-trading" aria-label="交易总览" hidden>
+<div class="workspace-status"><div class="trade-badges"><span id="deskPositionBadge" class="position-badge" aria-live="polite">持仓待同步</span><span id="deskMode" class="trade-badge">—</span><span id="deskRun" class="trade-badge">—</span><span id="deskMarket" class="trade-badge">等待行情</span></div><small id="deskUpdated">等待同步</small></div>
 <div class="status-grid desk-metrics">
   <article class="metric"><span>账户权益</span><strong id="deskEquity">—</strong><small>包含浮动净盈亏</small></article>
   <article class="metric"><span>浮动净盈亏</span><strong id="deskFloating">—</strong><small>预计扣除平仓成本</small></article>
@@ -59,8 +60,8 @@
   <article class="metric"><span>可用资金</span><strong id="deskAvailable">—</strong><small id="deskMargin">占用保证金 —</small></article>
 </div>
 <article class="panel price-panel">
-  <div class="panel-heading"><h2>当前交易</h2><div class="heading-actions"><span id="deskPositionBadge" class="tag">—</span><button class="text-button" data-go="parameters">修改策略参数 →</button></div></div>
-  <div class="market-price"><span>最新价格</span><strong id="deskPrice">—</strong><small id="deskPriceUnit">—</small></div>
+  <div class="panel-heading"><h2>当前交易</h2><button class="text-button" data-go="parameters">修改策略参数 →</button></div>
+  <div class="market-price"><span id="deskPriceLabel">最新价格</span><strong id="deskPrice">—</strong><small id="deskPriceUnit">—</small></div>
   <div id="deskHoldingFacts" class="holding-facts" aria-label="当前持仓数据">
    <section><span>当前持仓均价</span><strong id="holdingEntry">—</strong><small id="holdingEntryHint">当前空仓</small></section>
    <section><span>本轮开仓杠杆</span><strong id="holdingLeverage">—</strong><small id="holdingLeverageHint">有持仓时显示实际轮次配置</small></section>
@@ -68,8 +69,8 @@
   </div>
   <div class="price-cards">
     <section><span class="card-kicker">首仓价格</span><strong id="deskOpenPrice">—</strong><small id="deskOpenStatus">等待参数</small><dl><dt>首仓金额</dt><dd id="deskOpenAmount">—</dd><dt>当前持仓均价</dt><dd id="deskAverage">—</dd></dl></section>
-    <section class="add-card"><span class="card-kicker">下次补仓价格</span><strong id="deskAddPrice">—</strong><small id="deskAddStatus">等待首仓</small><dl><dt>本次补多少</dt><dd id="deskAddAmount">—</dd><dt>预计补仓数量</dt><dd id="deskAddQty">—</dd></dl></section>
-    <section><span class="card-kicker">整仓止盈价格</span><strong id="deskTargetPrice">—</strong><small id="deskExitStatus">暂无持仓</small><dl><dt>距止盈价</dt><dd id="deskTargetDistance">—</dd><dt>保证金毛收益目标</dt><dd id="deskTargetReturn">—</dd></dl></section>
+    <section class="add-card"><span class="card-kicker">下次补仓价格</span><strong id="deskAddPrice" class="trade-value">—</strong><small id="deskAddStatus">等待首仓</small><dl><dt>本次补多少</dt><dd id="deskAddAmount">—</dd><dt>预计补仓数量</dt><dd id="deskAddQty">—</dd></dl></section>
+    <section><span class="card-kicker">整仓止盈价格</span><strong id="deskTargetPrice" class="trade-value">—</strong><small id="deskExitStatus">暂无持仓</small><dl><dt>距止盈价</dt><dd id="deskTargetDistance">—</dd><dt>保证金毛收益目标</dt><dd id="deskTargetReturn">—</dd></dl></section>
   </div>
   <div id="deskPosition" class="position-strip"></div>
   <p id="deskNext" class="next-action">等待账户状态。</p>
@@ -162,8 +163,9 @@
 <script src="/quant/chart-swing-review.js?v=1"></script>
 <script src="/quant/dialogs.js?v=1"></script>
 <script src="/quant/account-batch.js?v=3"></script>
-<script src="/turtle/desk.js?v=batch1"></script>
-<script src="/quant/desk.js?v=batch1"></script>
+<script src="/quant/trade-labels.js?v=1"></script>
+<script src="/turtle/desk.js?v=position1"></script>
+<script src="/quant/desk.js?v=position1"></script>
 <script src="/hypothesis/connections.js?v=archive2"></script>
 <script src="/quant/production.js?v=onepage1"></script>
 </body>

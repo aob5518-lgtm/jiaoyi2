@@ -1,6 +1,7 @@
 (function () {
  "use strict";
  const $ = id => document.getElementById(id);
+ const trade = window.JustTradeLabels;
  const query = new URLSearchParams(location.search);
  const strategies = {classic:"经典补仓",turtle:"海龟趋势 4H",reversal:"找底摸顶 4H",carry:"资金费率对冲",pullback:"短线顺势回踩",swing:"图示波段 1H",history:"真实与历史账户"};
  const paperStrategies = {turtle:"turtle_4h_v1",reversal:"reversal_4h_v1",carry:"funding_carry_v1",pullback:"pullback_15m_v1",swing:"chart_swing_1h_v1"};
@@ -70,6 +71,7 @@
   const price = snapshot.mark ?? p?.price;
   const amount = value => value == null ? "—" : format(value) + " " + account.quoteAsset;
   $("deskPrice").textContent = format(price, 6);
+  $("deskPriceLabel").textContent = state.offline || !(snapshot.mark > 0) && price > 0 ? "上次价格" : "最新价格";
   $("deskPriceUnit").textContent = account.quoteAsset;
   $("deskOpenPrice").textContent = format(plan?.first.price ?? plan?.first.reference, 6);
   $("deskOpenStatus").textContent = plan ? p ? plan.first.price == null ? "旧记录未采集首仓价" : "实际首仓成交价" : plan.first.reference ? "当前报价估算，启动后市价模拟成交" : plan.first.status : "保存参数后生成开仓计划";
@@ -83,31 +85,45 @@
   $("holdingNotional").textContent=p?.qtyUnit?"交易所合约张数":p&&price>0?"当前名义金额 "+amount(p.qty*price):"持仓金额随行情更新";
   if(snapshot.native&&(snapshot.positions?.length>1||!p&&snapshot.positions?.length)){
    $("holdingEntryHint").textContent="共有 "+snapshot.positions.length+" 笔原生持仓，逐笔明细见下方";
-   if(!p){$("holdingEntry").textContent="查看逐笔持仓";$("holdingSize").textContent=snapshot.positions.length+" 笔持仓";}
+   if(!p){
+    $("holdingEntry").textContent="查看逐笔持仓";
+    $("holdingLeverage").textContent="逐笔查看";
+    $("holdingLeverageHint").textContent="按交易所各笔持仓分别展示";
+    $("holdingSize").textContent=snapshot.positions.length+" 笔持仓";
+    $("holdingNotional").textContent="数量见下方明细";
+   }
   }
   if(snapshot.native&&!snapshot.updatedAt){
    $("holdingEntry").textContent="待同步";$("holdingEntryHint").textContent="原生账户数据尚未通过读取";
    $("holdingLeverage").textContent="待核验";$("holdingSize").textContent="待同步";
   }
   $("deskAddPrice").textContent = format(plan?.add.price, 6);
+  $("deskAddPrice").dataset.tone = !state.offline && plan?.add.price > 0 ? "warning" : "";
   $("deskAddStatus").textContent = plan?.add.status || "等待经典参数";
   $("deskAddAmount").textContent = amount(plan?.add.amount);
   $("deskAddQty").textContent = plan?.add.quantity == null ? "—" : format(plan.add.quantity, 8) + " " + account.symbol + "（估算）";
   $("deskTargetPrice").textContent = format(plan?.exit.price, 6);
+  $("deskTargetPrice").dataset.tone = !state.offline && plan?.exit.price > 0 ? "target" : "";
   $("deskExitStatus").textContent = plan?.exit.status || "暂无计划";
-  $("deskTargetDistance").textContent = plan?.exit.price > 0 && price > 0 ? format((plan.exit.price / price - 1) * 100) + "%" : "—";
+  const exitMove = !state.offline && snapshot.mark > 0 && plan?.exit.price > 0 ? (plan.exit.price / snapshot.mark - 1) * 100 : null;
+  $("deskTargetDistance").textContent = exitMove === null || !["long","short"].includes(p?.side) ? "—"
+    : (p.side === "long" ? exitMove <= 0 : exitMove >= 0) ? "报价已达目标"
+    : "还需" + (p.side === "long" ? "上涨 " : "下跌 ") + format(Math.abs(exitMove), 3) + "%";
   $("deskTargetReturn").textContent = c ? format(c.takeProfit * 100) + "% 保证金" : "—";
   const strip = $("deskPosition");
   strip.replaceChildren();
   for (const [label, value] of Object.entries({
-   "方向": p?.side === "long" ? "做多" : p?.side === "short" ? "做空" : c?.side === "long" ? "计划做多" : c?.side === "short" ? "计划做空" : "—",
+   "方向": p ? trade.side(p.side).action : c?.side === "long" ? "计划做多" : c?.side === "short" ? "计划做空" : "—",
    "持仓数量": p ? format(p.qty, 8) + " " + account.symbol : "0",
    "补仓次数": plan ? plan.add.done + " / " + plan.add.limit : "—",
    "本轮最近成交": format(plan?.add.lastPrice ?? plan?.first.price, 6)
   })) {const item = node("span", label);item.append(node("b", value));strip.append(item);}
   if(snapshot.native){
    strip.replaceChildren(...(snapshot.positions||[]).map(p=>{
-    const item=node("span",(p.market||p.symbol)+" · "+(p.side==="long"?"多":"空"));
+    const item=node("div","","native-position-row"), direction=node("small");
+    const label=trade.side(p.side);
+    trade.badge(direction,label.text,label.tone);
+    item.append(node("span",p.market||p.symbol),direction);
     item.append(node("b","均价 "+format(p.entry,6)+" · "+(p.leverage>0?format(p.leverage)+"×":"杠杆待核验")+" · 数量 "+format(p.qty,8)+" "+(p.qtyUnit||p.symbol)));
     return item;
    }));
@@ -144,8 +160,16 @@
    const turtle=isPaperMode(fromAccount(account));
    head.append(node("strong", account.name), node("small", turtle?account.running?"运行中":"已暂停":account.error ? "异常" : !account.eligible ? "只读" : account.running ? "运行" : account.ready ? "暂停" : "可配置"));
    const net = account.floating == null ? null : Number(account.floating) + Number(account.realized || 0);
-   const foot = node("span", (account.paper ? "模拟" : "Live · 只读") + " · " + (net == null ? account.hasPosition ? "有仓位" : "空仓" : "总净盈亏 " + format(net)), "rail-pnl");
-   if (net != null) foot.classList.add(net > 0 ? "positive" : net < 0 ? "negative" : "neutral");
+   const foot = node("span","","rail-pnl account-position");
+   const snapshot=(turtle?state.turtle?.snapshot:state.data?.snapshot);
+   const selectedSnapshot=turtle ? snapshot?.id===account.id : state.data?.selected.id===account.id;
+   const uncertain=!account.paper&&!selectedSnapshot;
+   const position=selectedSnapshot&&snapshot&&fromAccount(account)!=="carry"?trade.position(snapshot,turtle?state.turtle.online:!state.offline)
+     : account.hasPosition?{text:"有持仓",tone:"ok"}:uncertain?{text:"持仓待同步",tone:"warning"}:{text:"当前空仓",tone:"flat"};
+   const marker=node("small");
+   trade.badge(marker,position.text,position.tone);
+   const balance=net==null?account.paper?"模拟":"实盘只读":(net>0?"+":"")+format(net)+" "+account.quoteAsset;
+   foot.append(marker,node("small",balance,net>0?"positive":net<0?"negative":""));
    button.append(head, node("span", (labels[account.platform] || account.platform) + " · " + account.symbol + " / " + account.quoteAsset, "rail-pair"), foot);
    button.title = account.name;
    button.onclick = () => {
@@ -239,7 +263,7 @@
  async function showTurtle(id){
   if(turtleTarget===id)return;
   turtleDesk?.dispose();
-  turtleDesk=null;turtleTarget=id;
+  turtleDesk=null;turtleTarget=id;state.turtle=null;
   const ticket=++turtleRequest;
   $("page-trading").hidden=true;$("deskTurtlePane").hidden=false;
   const pane=$("deskTurtlePane"),root=pane.shadowRoot||pane.attachShadow({mode:"open"});
@@ -251,14 +275,13 @@
    if(ticket!==turtleRequest)return;
    const regions=["message","empty","desk","parameters","create","confirm"].map(id=>source.getElementById(id));
    if(regions.some(region=>!region)||!window.JustTurtleDesk)throw Error("策略工作台资源不完整");
-   const style=document.createElement("link");
-   style.rel="stylesheet";style.href=pane.dataset.stylesheet;
+   const styles=[...source.querySelectorAll('link[rel="stylesheet"][data-workbench-style]')].map(source=>document.importNode(source,true));
    const nodes=regions.map(region=>document.importNode(region,true));
    nodes[1].querySelector("a[href='/#accounts']")?.remove();
    nodes[2].querySelector(".history-panel")?.remove();
    const wrap=node("div","","embedded-workbench");
    wrap.append(...nodes);
-   root.replaceChildren(style,wrap);
+   root.replaceChildren(...styles,wrap);
    turtleDesk=window.JustTurtleDesk.mount(root,{
     accountId:id,embedded:true,mode:state.mode,
     onState(value){
@@ -382,6 +405,7 @@
   $("deskHealth").textContent = state.offline ? "数据未同步" : "服务在线";
   $("deskHealth").className = "connection" + (state.offline ? "" : " ready");
   if (!data) {
+   $("page-trading").hidden=true;
    for(const element of document.querySelectorAll("[data-strategy],#deskAccountPicker,#deskPrimaryAction,#deskPauseAction,#deskEditShortcut,#deskHistoryShortcut,#deskNewAccount"))element.disabled=true;
    for (const name of keys) field(name).disabled = true;
    $("deskSave").disabled = $("deskSaveTop").disabled = true;
@@ -395,11 +419,19 @@
    renderList();renderStarter(a,s);
    return;
   }
+  $("page-trading").hidden=false;
   $("deskAccount").textContent = a.name;
   $("deskInstrument").textContent = (labels[a.platform] || a.platform) + " · " + a.symbol + " / " + unit;
   $("deskMode").textContent = a.paper ? "Paper · 模拟" : "Live · 原账户";
-  $("deskRun").textContent = !a.eligible?(a.paper?"只读":a.running?"原策略监控中":"真实账户连接"):a.error || s.blocked ? "当前异常" : a.running ? "运行中" : a.ready ? "已暂停" : "待配置";
+  const locked = s.blocked || a.eligible && data.ledgerBlocked;
+  const runText = locked ? "风控待核对" : a.error ? "当前异常" :
+    !a.eligible ? (a.paper ? "只读" : a.running ? "原策略监控中" : "真实账户连接") : a.running ? "运行中" : a.ready ? "已暂停" : "待配置";
   $("deskMarket").textContent = state.offline ? "连接中断" : a.error ? "行情或执行异常" : s.market;
+  const held=trade.position(s,!state.offline);
+  trade.badge($("deskPositionBadge"),held.text,held.tone);
+  trade.badge($("deskRun"),runText,locked||a.error?"risk":state.offline?"neutral":a.running?"ok":a.eligible?"warning":"neutral");
+  const market=$("deskMarket");
+  trade.badge(market,market.textContent,state.offline||a.error?"risk":s.native?s.updatedAt?"ok":"warning":s.mark>0?"ok":"warning");
   $("deskStrategy").textContent = a.strategy;
   money("deskEquity", s.equity, unit);
   money("deskFloating", s.floating, unit, true);
@@ -409,11 +441,10 @@
   $("deskFloating").previousElementSibling.textContent=s.floatingBasis==="native_unrealized"?"交易所未实现盈亏":"浮动净盈亏";
   $("deskFloating").nextElementSibling.textContent=s.floatingBasis==="native_unrealized"?"原生口径，未扣预计退出成本":"预计扣除平仓成本";
   $("deskMargin").textContent = "占用保证金 " + format(s.margin);
-  $("deskPositionBadge").textContent = p ? p.side === "long" ? "多仓" : "空头" : a.paper ? "空仓" : "原账户";
   renderPlan(a, s);
   $("deskNext").textContent = a.error || s.notice || "等待下一次有效行情";
   $("deskLast").textContent = "最近动作 · " + (s.lastAction || "暂无");
-  $("deskUpdated").textContent = "行情时间 · " + time(s.updatedAt);
+  $("deskUpdated").textContent = (s.native?"账户同步":"行情时间") + " · " + time(s.updatedAt);
   $("deskSetupPrompt").hidden = true;
   for (const button of document.querySelectorAll("[data-action]")) {
    const action = button.dataset.action;
@@ -522,10 +553,15 @@
     row.append(node("td",time(item.time)),node("td","现货 "+spot+" / 永续 "+perp),
      ...amounts.map((value,i)=>node("td",format(value,4),i===4?(value>0?"positive":value<0?"negative":""):"")),
      node("td",tradeReasons[item.reason]||item.reason||"—"));
-   }else row.append(node("td", time(item.time)), node("td", item.side === "long" ? "做多" : item.side === "short" ? "做空" : item.side),
+   }else {
+    const directionCell=node("td"),marker=node("span"),label=trade.side(item.side);
+    trade.badge(marker,label.action,label.tone);
+    directionCell.append(marker);
+    row.append(node("td", time(item.time)), directionCell,
       node("td", format(item.entryPrice, 6) + " → " + format(item.exitPrice, 6)),
       node("td", format(item.netPnl, 4), item.netPnl > 0 ? "positive" : item.netPnl < 0 ? "negative" : ""),
       node("td", format(item.tradingFee, 4)), node("td", tradeReasons[item.reason]||item.reason||"—"));
+   }
     [...row.children].forEach((cell, i) => cell.dataset.label = columns[i]);
     box.append(row);
    }

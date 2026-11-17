@@ -2,6 +2,7 @@
  "use strict";
  function mount(root, {accountId, embedded=false, mode="turtle", onCreated, onState}={}){
  const $=id=>root.getElementById(id),node=(tag,text,cls)=>{const e=document.createElement(tag);e.textContent=text??"";if(cls)e.className=cls;return e;};
+ const trade=window.JustTradeLabels;
  const reversal=mode==="reversal",carry=mode==="carry",pullback=mode==="pullback",swing=mode==="swing",form=$("config-form");
  const labels={riskPerTrade:"单笔计划风险",leverage:"模拟杠杆",direction:"方向",entryBars:"入场通道",exitBars:"退出通道",atrPeriod:"ATR 周期",stopAtr:"初始止损倍数",
   bandBars:"布林带周期",bandWidth:"布林带宽度",maxAdx:"ADX 上限",minNetR:"最低净收益风险比",maxHoldBars:"最长持仓根数",
@@ -107,9 +108,12 @@
  }
  const state={id:accountId??new URLSearchParams(location.search).get("account")??"",accounts:[],defaults:null,data:null,busy:false,dirty:false,editBase:null,hash:null,confirmHash:null,confirmAllowed:false,online:false,loaded:false,ticket:0,filter:"all"};
  const hero=node("div","","holding-hero");
- for(const [id,title] of [["cycle-entry","当前持仓均价"],["cycle-leverage","本轮开仓杠杆"],["cycle-size","持仓数量"]]){
+ for(const [id,title] of [["cycle-entry","当前持仓均价"],["cycle-leverage","本轮开仓杠杆"],["cycle-size","持仓数量"],["cycle-stop","当前保护止损"]]){
   const item=node("section"),value=node("strong","无持仓");value.id=id;item.append(node("span",title),value);hero.append(item);
  }
+ const stopFact=hero.lastElementChild,stopPrice=stopFact.querySelector("strong");
+ stopFact.hidden=true;
+ stopPrice.className="trade-value";stopPrice.dataset.tone="warning";
  $("price").parentElement.after(hero);
  if(carry){hero.children[0].querySelector("span").textContent="永续腿入场均价";hero.children[1].querySelector("span").textContent="永续腿本轮杠杆";}
  let disposed=false,leverageLookup=null;
@@ -127,7 +131,7 @@
  async function api(route,body){const r=await fetch("/api/v4/"+mode+"/"+route,{credentials:"same-origin",cache:"no-store",...(body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{})});if(r.status===401)throw Error("登录已过期，请重新登录");const v=await r.json();if(!r.ok||!v.ok){const error=Error(v.error||"请求失败");error.snapshot=v.snapshot;throw error;}return v;}
  function msg(s){$("message").textContent=s;$("message").hidden=!s;}
  function amount(value){return value==null?"—":fmt(value)+" USDT";}
- function money(id,value){$(id).textContent=amount(value);$(id).className=value>0?"positive":value<0?"negative":"";}
+ function money(id,value){$(id).textContent=(value>0?"+":"")+amount(value);$(id).className=value>0?"positive":value<0?"negative":"";}
  const percentField=key=>key==="riskPerTrade"||key==="allocationPct";
  function values(){return Object.fromEntries(keys.map(k=>[k,k==="direction"?form.elements[k].value:Number(form.elements[k].value)/(percentField(k)?100:1)]));}
  function setFields(c){for(const k of keys)form.elements[k].value=percentField(k)?Number((c[k]*100).toPrecision(15)):c[k];preview();}
@@ -216,10 +220,9 @@
   if(!embedded)rail();
   if(!s)return;
   if(!embedded){$("title").textContent=s.name;$("instrument").textContent="Binance 永续 · "+s.symbol+" / USDT";}
-  $("run").textContent=s.running?"RUNNING · 运行中":"PAUSED · 已暂停";$("run").className="tag"+(s.running?" healthy":"");
+  trade.badge($("run"),s.running?"RUNNING · 运行中":"PAUSED · 已暂停",state.online&&s.running?"ok":"neutral");
   const marketText={fresh:"原生行情新鲜",unchecked:"等待原生行情",stale:"原生报价过期",unavailable:"原生行情不可用"};
-  $("market").textContent=state.online?marketText[s.market?.state]||"等待原生行情":"页面连接中断";
-  $("market").className="tag"+(state.online&&s.fresh?" healthy":" warning");
+  trade.badge($("market"),state.online?marketText[s.market?.state]||"等待原生行情":"页面连接中断",!state.online?"risk":s.fresh?"ok":"warning");
   $("updated").textContent=s.market?.quoteTime?`${s.fresh?"报价":"上次报价"} ${time(s.market.quoteTime)} · 北京时间`:"尚无原生报价";
   $("equity").textContent=amount(s.equity);money("floating",s.floating);money("realized",s.realized);$("risk").textContent=amount(s.balance*(carry?s.config.allocationPct:s.config.riskPerTrade));
   $("price").textContent=fmt(s.price,6);$("decision").textContent=s.decision.reason;$("decision-code").textContent=codes[s.decision.code]||s.decision.code;
@@ -233,12 +236,33 @@
    $("upper").textContent=a?.trend==="long"?"偏多":a?.trend==="short"?"偏空":a?"方向未成立":"—";
    $("lower").textContent=fmt(a?.breakoutLevel,6);
   }
-  const p=s.position;$("position-state").textContent=p?(p.side==="long"?"LONG · 多仓":"SHORT · 空头持仓"):"FLAT · 当前空仓";$("side").textContent=p?(p.side==="long"?"LONG":"SHORT"):"FLAT";
+  const p=s.position;
+  let holding=trade.position(s,state.online);
+  if(carry){
+   const carryHolding={
+    spot_only:{text:"仅持有现货腿",tone:"warning"},
+    hedged:{text:"双腿对冲持仓",tone:"dual"},
+    reconciling:{text:"已退出 · 资金费待核对",tone:"warning"},
+    flat:{text:"当前空仓",tone:"flat"}
+   }[s.carry?.phase];
+   if(carryHolding)holding=state.online?carryHolding:{text:"上次 · "+carryHolding.text,tone:"warning"};
+  }
+  trade.badge($("position-state"),holding.text,holding.tone);
+  trade.badge($("side"),holding.text,holding.tone);
+  const pending=$("pending-state"),risk=$("risk-state");
+  pending.hidden=!s.pending;
+  if(s.pending)trade.badge(pending,(state.online?"":"上次 · ")+(carry?"资金费待核对":s.pending.kind==="open"?"开仓待成交":"退出待成交"),"warning");
+  risk.hidden=!s.riskLock;
+  if(s.riskLock)trade.badge(risk,"风控锁定","risk");
+  stopFact.hidden=carry||!(p?.stop>0);
+  hero.classList.toggle("has-protection",!stopFact.hidden);
+ stopPrice.textContent=fmt(p?.stop,6)+" USDT";
+ stopFact.querySelector("span").textContent=state.online?"当前保护止损":"上次保护止损";
   $("cycle-entry").textContent=p?fmt(carry?p.perp?.price:p.entry,6):"当前空仓";
   $("cycle-leverage").textContent=p?.config?.leverage>0?fmt(p.config.leverage,2)+"×":p?"待核验":"无持仓";
   $("cycle-size").textContent=p?fmt(p.qty,8)+" "+s.symbol:"0 "+s.symbol;
   if(carry&&p&&!p.perp){$("cycle-entry").textContent="尚未成交";$("cycle-leverage").textContent="永续腿未成交";}
-  details("position",p?[["方向",p.side==="long"?"做多":"做空"],["数量",fmt(p.qty,6)+" "+s.symbol],["实际开仓价",fmt(p.entry,6)],["本轮杠杆",p.config?.leverage>0?p.config.leverage+"×":"未采集"],["当前保护止损",fmt(p.stop,6)],["初始止损",fmt(p.initialStop,6)],["本轮计划风险",fmt(p.budget)+" USDT"],["实际价格与成本风险",fmt(p.actualRisk)+" USDT"],["开仓时间",time(p.openedAt)]]:[["仓位","当前空仓"],["补仓","本策略不补仓"]]);
+  details("position",p?[["方向",trade.side(p.side).action],["数量",fmt(p.qty,6)+" "+s.symbol],["实际开仓价",fmt(p.entry,6)],["本轮杠杆",p.config?.leverage>0?p.config.leverage+"×":"未采集"],["初始止损",fmt(p.initialStop,6)],["本轮计划风险",fmt(p.budget)+" USDT"],["实际价格与成本风险",fmt(p.actualRisk)+" USDT"],["开仓时间",time(p.openedAt)]]:[["仓位",holding.text],["补仓","本策略不补仓"]]);
   $("pending").textContent=s.pending?"当前委托："+(s.pending.kind==="open"?"开仓":"退出")+" · "+s.pending.status+"；等待新盘口确认":"当前无待成交委托";
   if((reversal||pullback)&&p){
    const extra=node("section");
@@ -261,12 +285,11 @@
    $("next").textContent=time(m?.nextFundingAt);
    details("carry-forecast",[["当前基差",m?.basisBps==null?"—":fmt(m.basisBps)+" 个基点"],
     ["预计资金费",amount(m?.expected)],["预计往返成本",amount(m?.cost)],["预计扣成本余量",amount(m?.edge)]]);
-   const phase={hedged:"双腿对冲",spot_only:"只有现货腿",reconciling:"已退出 · 资金费待核对",flat:"空仓"}[s.carry?.phase]||"空仓";
-   $("side").textContent=$("position-state").textContent=phase;
+   const phase=holding.text;
    details("position",p?[["状态",phase],["每腿币量",fmt(p.qty,8)+" "+s.symbol],["现货开仓价",fmt(p.spot.price,6)],
     ["永续开仓价",fmt(p.perp?.price,6)],["永续杠杆",(p.config?.leverage??1)+"x"],
     ["永续初始保证金",amount(p.perp?(p.perpMargin??p.perp.price*p.qty):null)],
-    ["已确认资金费",amount(p.funding)],["开始时间",time(p.openedAt)]]:[["仓位","当前空仓"]]);
+    ["已确认资金费",amount(p.funding)],["开始时间",time(p.openedAt)]]:[["仓位",phase]]);
    $("pending").textContent=s.pending?.status||"";
    details("config-summary",[["生效范围",s.activeConfig?"下一轮":"下次开仓"],...keys.map(key=>[labels[key],setting(key,c[key])])]);
   }
@@ -279,7 +302,7 @@
   $("exit-actions").hidden=!p;
   $("control-note").textContent=state.busy?"正在处理，请稍候…":state.dirty?"先保存参数，再检查启动。":s.riskLock?"风险锁定，不能启动。":s.pending?"委托尚未结束，请等待确认。":s.running?"监控运行中，等待新的有效信号。":"检查原生行情、交易规格与风险状态后启动。";
   if(!embedded){
-   const trades=$("trades");trades.replaceChildren();for(const t of s.history){const tr=node("tr");const entries=[time(t.time),t.side==="long"?"多 LONG":"空 SHORT",fmt(t.entryPrice,6)+" → "+fmt(t.exitPrice,6),fmt(t.netPnl)+" USDT",reasons[t.reason]||t.reason];entries.forEach((v,i)=>{const td=node("td",v,i===3?(t.netPnl>0?"positive":t.netPnl<0?"negative":""):"");td.dataset.label=["时间","方向","开仓 → 平仓","净收益","退出原因"][i];tr.append(td);});trades.append(tr);}
+   const trades=$("trades");trades.replaceChildren();for(const t of s.history){const tr=node("tr");const entries=[time(t.time),trade.side(t.side).action,fmt(t.entryPrice,6)+" → "+fmt(t.exitPrice,6),fmt(t.netPnl)+" USDT",reasons[t.reason]||t.reason];entries.forEach((v,i)=>{const td=node("td",v,i===3?(t.netPnl>0?"positive":t.netPnl<0?"negative":""):"");if(i===1){const badge=node("span");trade.badge(badge,v,trade.side(t.side).tone);td.replaceChildren(badge);}td.dataset.label=["时间","方向","开仓 → 平仓","净收益","退出原因"][i];tr.append(td);});trades.append(tr);}
    if(!s.history.length){const tr=node("tr"),td=node("td","暂无已结算模拟交易","empty-cell");td.colSpan=5;tr.append(td);trades.append(tr);}
   }
   if($("parameters").open){

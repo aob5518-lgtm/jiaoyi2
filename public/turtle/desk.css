@@ -1,7 +1,11 @@
 :root,:host{color-scheme:dark;--bg:#09101b;--panel:#101b2a;--line:#233247;--text:#e8eef6;--muted:#91a3b9;--accent:#57c9df;--profit:#48c6a0;--loss:#f17e91}
 .swing-review{margin:16px 0;min-width:0}.swing-review>summary{font-weight:600;cursor:pointer;padding:6px 0}.swing-review svg{display:block;width:100%;height:auto;max-height:340px;margin-top:14px}
 .holding-hero{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}.holding-hero section{min-width:0;padding:12px;border:1px solid var(--line);background:#14222e;border-radius:9px}.holding-hero span{display:block;font-size:12px;color:var(--muted)}.holding-hero strong{display:block;font-size:22px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-@media(max-width:600px){.holding-hero{grid-template-columns:1fr 1fr}.holding-hero section:last-child{grid-column:1/-1}.holding-hero strong{font-size:20px}}
+.holding-hero.has-protection{grid-template-columns:repeat(4,minmax(0,1fr))}
+.holding-hero.has-protection section:last-child{background:#2b241c;border-color:#735835}
+.holding-hero section[hidden]{display:none}
+@media(max-width:1100px){.holding-hero.has-protection{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.holding-hero{grid-template-columns:1fr 1fr}.holding-hero:not(.has-protection) section:nth-child(3){grid-column:1/-1}.holding-hero strong{font-size:20px}}
 .swing-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:16px 0}.swing-stats section{min-width:0}.swing-stats span{display:block;color:var(--muted);font-size:12px}.swing-stats strong{font-size:20px;font-variant-numeric:tabular-nums}
 .swing-review .row select{min-width:0;flex:1;width:120px}.swing-ranges p{margin:6px 0;font-size:13px;overflow-wrap:anywhere}.swing-axis{justify-content:space-between;font-size:12px;color:var(--muted)}.swing-review-trades{max-height:220px;overflow-y:auto;font-size:13px}.swing-review details p{overflow-wrap:anywhere}.swing-review .warning{color:#e5b56f}
 @media(max-width:600px){.swing-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.swing-review .row select{flex-basis:100%;order:-1}.swing-axis{font-size:12px;flex-wrap:wrap}}
@@ -39,6 +43,6 @@ body.collapsed{grid-template-columns:minmax(0,1fr)}body.collapsed #rail{display:
  .controls button{min-height:44px}
  .research-note{margin:0 0 8px}
  .metrics>article{padding:10px 12px;gap:2px}
- .metrics small:not(#position-state){display:none}
+ .metrics small{display:none}
  #parameters input,#parameters select,#create input,#create select{font-size:16px}
 }

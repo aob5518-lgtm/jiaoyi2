@@ -18,7 +18,7 @@ function start(){
    if(req.method==="GET"&&u.pathname.endsWith("/status")){const a=d.getAccountById(u.searchParams.get("id"));try{await engine.refresh(a);}catch(e){d.state(a.id).activeError=e.message;}}
    return API.handle(req,res,u,{...d,engine});}
   const relative=u.pathname==="/turtle.html"?"turtle.html":u.pathname.slice(1);
-  if(!["turtle.html","turtle/desk.js","turtle/desk.css","quant/dialogs.js","quant/dialogs.css"].includes(relative)){res.writeHead(404);return res.end();}
+  if(!["turtle.html","turtle/desk.js","turtle/desk.css","quant/dialogs.js","quant/dialogs.css","quant/trade-labels.js","quant/trade-labels.css"].includes(relative)){res.writeHead(404);return res.end();}
   res.writeHead(200,{"Content-Type":relative.endsWith(".js")?"application/javascript":relative.endsWith(".css")?"text/css":"text/html"});res.end(fs.readFileSync(path.join(__dirname,"../public",relative)));
  });
  server.mutations=mutations;server.config=()=>config;server.listeningDone=new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));server.cleanup=()=>fs.rmSync(directory,{recursive:true,force:true});return server;

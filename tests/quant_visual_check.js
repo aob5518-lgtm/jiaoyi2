@@ -41,6 +41,7 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
     await call("Page.navigate",{url:"http://127.0.0.1:"+port+"/?count="+count+"#trading"});
     await until("document.querySelectorAll('#deskAccounts .account-select').length==="+count+" && document.querySelector('#deskEquity').textContent.includes('10,140.35')");
     await until("document.querySelector('#deskOpenPrice').textContent==='2,530' && document.querySelector('#deskAddPrice').textContent==='2,470.15' && document.querySelector('#deskAddAmount').textContent.includes('200')");
+    if(!await evaluate("document.querySelector('#deskPositionBadge').dataset.tone==='long' && document.querySelector('#deskPositionBadge').textContent==='多头持仓' && document.querySelector('#deskPositionBadge').getBoundingClientRect().bottom<innerHeight && document.querySelector('#deskTargetDistance').textContent.includes('还需上涨') && document.querySelector('#deskAddPrice').dataset.tone==='warning' && document.querySelector('#deskTargetPrice').dataset.tone==='target'"))throw Error("First-screen position and price targets must be distinguishable");
     if(!await evaluate("document.querySelector('#holdingEntry').textContent==='2,562.31' && document.querySelector('#holdingLeverage').textContent==='2×'"))throw Error("Current position price/leverage must be prominent");
     const n=await fit();if(count===64)await screenshot(width+"x"+height+"-trading");
     if(!await evaluate("document.querySelector('#deskPrimaryAction').getBoundingClientRect().bottom<=innerHeight"))throw Error("Primary actions must fit the first screen");
@@ -76,6 +77,7 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#deskSettings [name=baseAmount]').value==='777'");
    await click("#deskSaveTop");
    await until("!document.querySelector('#page-parameters').open && document.querySelector('#deskPrimaryAction').textContent==='启动模拟' && document.querySelector('#deskPrimaryAction').disabled && !document.querySelector('#deskPauseAction').disabled");
+   if(!await evaluate("document.querySelector('#deskPositionBadge').textContent==='当前空仓' && document.querySelector('#deskPositionBadge').dataset.tone==='flat'"))throw Error("Planned short direction must not appear as a filled short");
    const submitted=server.submissions.at(-1);
    if(submitted.id!=="sample-1"||submitted.settings.addTrigger!==.015||submitted.settings.takeProfit!==.0325||submitted.settings.baseAmount!==777||submitted.settings.side!=="short")throw Error("Saving changed the wrong account or parameters");
    await screenshot(width+"x"+height+"-start");
@@ -158,7 +160,7 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until(`${root}?.querySelector('#empty h2')?.textContent.includes('资金费率对冲') && !document.querySelector('#deskPrimaryAction').disabled`);
    await click("#deskPrimaryAction");
    await evaluate(`${root}.querySelector('#create-form').requestSubmit()`);
-   await until("document.querySelector('#deskAccountPicker').value==='new-carry' && !document.querySelector('#deskEditShortcut').disabled");
+   await until(`document.querySelector('#deskAccountPicker').value==='new-carry' && !document.querySelector('#deskEditShortcut').disabled && ${root}?.querySelector('#desk')?.hidden===false`);
    if(server.controls.length!==3)throw Error("Creating a carry account started it");
    await click("#deskEditShortcut");
    await until(`${root}.querySelector('#parameters').open && ${root}.querySelector('[name=leverage]').max==='150' && !${root}.querySelector('[name=riskPerTrade]')`);
@@ -208,9 +210,10 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await screenshot(width+"x"+height+"-swing");
    await click("#deskHistoryShortcut");await until("document.querySelector('#page-history').open");await dismiss("history");
    results.push({width,height,scenario:"swing-review-create-save-start-history",reviewFit,...await fit()});
-   server.positionSnapshots=true;
+   server.positionSnapshots="short";
    await click("#deskRefresh");
    await until(`${root}.querySelector('#cycle-entry').textContent==='2,475' && ${root}.querySelector('#cycle-leverage').textContent==='3×'`);
+   if(!await evaluate(`${root}.querySelector('#position-state').textContent==='空头持仓' && ${root}.querySelector('#position-state').dataset.tone==='short' && ${root}.querySelector('#cycle-stop').textContent==='2,550 USDT'`))throw Error("Embedded short must show the short label and actual stop");
    if(!await evaluate(`${root}.querySelector('#config-summary').textContent.includes('1x')`))throw Error("Active leverage must differ from next-cycle config");
    await screenshot(width+"x"+height+"-position-facts");
    server.positionSnapshots=false;
@@ -223,6 +226,13 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await dismiss("accounts");
    await until("document.querySelector('#deskAccount').textContent==='真实账户测试' && document.querySelector('#holdingLeverage').textContent==='5×' && document.querySelector('#holdingEntry').textContent==='2,460.5'");
    if(!await evaluate("document.querySelector('#holdingSize').textContent==='15 张' && !document.querySelector('#holdingNotional').textContent.includes('名义金额')"))throw Error("Hotcoin contract quantity was interpreted as ETH");
+   server.nativeSnapshotMode="dual";
+   await click("#deskRefresh");await until("document.querySelector('#deskPositionBadge').textContent==='多空同时持仓' && document.querySelectorAll('.native-position-row .trade-badge').length===2 && document.querySelector('#holdingLeverage').textContent==='逐笔查看'");
+   await fit();await screenshot(width+"x"+height+"-dual-position");
+   server.nativeSnapshotMode="unavailable";
+   await click("#deskRefresh");await until("document.querySelector('#deskPositionBadge').textContent==='持仓待同步' && document.querySelector('#deskPositionBadge').dataset.tone==='warning'");
+   server.nativeSnapshotMode="";
+   await click("#deskRefresh");await until("document.querySelector('#deskPositionBadge').textContent==='多头持仓'");
    if(server.controls.length!==6)throw Error("Creating a Live connection started a strategy");
    await openAccounts();
    await evaluate("document.querySelector('.connection-test').open=true");
