@@ -86,9 +86,9 @@ function create(orderRequest = fetch) {
   async function order(account, id) {
     const api = client(account, orderRequest);
     if (identifier(id) !== id) throw Error("Hotcoin 委托编号无效");
-    const row = await api.privateCall("/products/" + api.contract + "/" + id);
+    const row = await api.privateCall("/products/" + api.contract + "/orderDetail", {params:{orderId:id}});
     const contracts = number(row?.dealAmount), status = number(row?.status), price = number(row?.avgPrice);
-    if (identifier(row?.id ?? row?.orderId) !== id || String(row?.contractCode).toLowerCase() !== api.contract ||
+    if (identifier(row?.id ?? row?.orderId) !== id || String(row?.contractCode ?? row?.contract?.code).toLowerCase() !== api.contract ||
         ![-1, 0, 1, 2].includes(status) || !Number.isSafeInteger(contracts) || contracts < 0 ||
         contracts > 0 && !(price > 0) || status === 2 && contracts === 0) {
       throw Error("Hotcoin 委托回报无法核对");

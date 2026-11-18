@@ -119,3 +119,20 @@ test("Documented business rejections are recoverable while ambiguous venue error
   await assert.rejects(api.place(a,pending),error=>error.code===expected);
  }
 });
+test("Hotcoin uses its working orderDetail endpoint and nested contract identity with full precision order IDs",async()=>{
+ const {create}=require("../terminal/hotcoin-execution");
+ const orderId="90071992547409931";
+ let market="ethusdt";
+ const adapter=create(async(raw,options)=>{
+  const url=new URL(raw);
+  assert.equal(options.method,"GET");
+  assert.equal(url.pathname,"/api/v1/perpetual/products/ethusdt/orderDetail");
+  assert.equal(url.searchParams.get("orderId"),orderId);
+  return {ok:true,text:async()=>JSON.stringify({code:200,data:{orderId,contract:{code:market,env:0,unitAmount:.01},
+   status:2,amount:"5",dealAmount:"5",avgPrice:"1798.75",detailSide:"open_long",fee:"-0.053962"}})};
+ });
+ const fill=await adapter.order({...A,quoteAsset:"USDT"},orderId);
+ assert.deepEqual(fill,{contracts:5,status:2,price:1798.75,side:"open_long",fee:.053962});
+ market="btcusdt";
+ await assert.rejects(adapter.order({...A,quoteAsset:"USDT"},orderId),/委托回报无法核对/);
+});

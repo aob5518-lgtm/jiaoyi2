@@ -263,3 +263,27 @@ test("Each venue shows its actual position using native market names, including 
   assert.equal(view.position.leverage,20,platform);
  }
 });
+test("A persisted acknowledged Hotcoin entry restores both add and target prices from its confirmed native fill",async t=>{
+ const x=fixture(t);
+ x.market.mode=0;x.market.leverage.long=150;
+ x.market.bid=1801.65;x.market.ask=1801.66;
+ x.live.configure(x.account,{leverage:150,maxAdds:6,addTrigger:.013,takeProfit:.5});
+ await x.live.start(x.account);
+ await x.live.tick(x.account);
+ assert.equal(x.live.get(x.account.id).position,null);
+ x.market.positions=[{id:"2144966",symbol:"ETH",market:"ETHUSDT",quoteAsset:"USDT",side:"long",qty:5,
+  entry:1798.75,leverage:150,margin:.6}];
+ x.replies.set("101",{side:"open_long",status:2,contracts:5,price:1798.75,fee:.053962});
+ const restored=x.make();
+ await restored.tick(x.account);
+ const view=restored.view(x.account);
+ assert.equal(view.plan.first.price,1798.75);
+ assert.equal(view.plan.first.reference,null);
+ assert.ok(Math.abs(view.plan.add.price-1775.36625)<1e-8);
+ assert.ok(Math.abs(view.plan.exit.price-1804.7658862876254)<1e-8);
+ assert.equal(view.plan.exit.status,"监测止盈");
+ assert.equal(view.pendingOrder,null);
+ assert.equal(view.position.qty,5);
+ assert.equal(restored.get(x.account.id).position.qty,.05);
+ assert.equal(x.intents.length,1);
+});
