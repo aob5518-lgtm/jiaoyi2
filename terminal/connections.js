@@ -67,7 +67,7 @@ async function handle(req, res, parsed, d) {
       if (!platforms.has(input.platform)) throw Error("交易所不支持");
       const credentials = credentialPatch(input);
       if (input.platform === "hotcoin") {
-        if (mode !== "live") throw Error("Hotcoin 当前仅支持真实账户只读连接");
+        if (mode !== "live") throw Error("Hotcoin 当前支持真实永续账户连接");
         checkHotcoinCredentials(credentials);
       }
       const name = String(input.name || "").trim(), symbol = String(input.symbol || "ETH").toUpperCase();
@@ -139,7 +139,7 @@ async function handle(req, res, parsed, d) {
       throw Error("该连接已绑定实盘账本。更换凭据请建立对应的新连接，并保留原账本");
     }
     if (account.platform === "hotcoin" && Object.keys(patch).length) {
-      if (account.strategyType !== "connection_only") throw Error("Hotcoin 仅支持只读连接");
+      if (account.strategyType !== "connection_only"&&!Live.eligible(account)) throw Error("请通过实盘账户连接更新凭据");
       checkHotcoinCredentials(patch, account);
       try {await d.checkConnection({...account,...patch}, {fresh:true});}
       catch {throw Error("新 Hotcoin 凭据未通过原生只读核验，已保留原连接");}

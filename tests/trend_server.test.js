@@ -227,15 +227,28 @@ test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及�
  assert.equal(history.total,1);assert.equal(history.items[0].reason,"策略止盈");
  assert.equal(JSON.parse(fs.readFileSync(path.join(f.directory,"simulation_orders.json"),"utf8")).legacy.length,0);
 });
-test("经典后台拒绝 Live、模式不明确或有旧订单证据的账户接入",async t=>{
- for(const condition of ["live","ambiguous","ledger"]){
+test("经典模拟后台拒绝模式不明确或有旧订单证据的账户接入",async t=>{
+ for(const condition of ["ambiguous","ledger"]){
   const f=setup(t);fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");
-  if(condition==="live")vm.runInContext('Object.assign(config.accounts[0],{tradeMode:"live",simulationEnabled:false})',f.ctx);
   if(condition==="ambiguous")vm.runInContext('config.accounts[0].simulationEnabled=false',f.ctx);
   if(condition==="ledger")fs.writeFileSync(path.join(f.directory,"simulation_orders.json"),'{"legacy":[{"status":"UNKNOWN"}]}');
   const result=await f.call("/api/v4/desk/settings",{id:"legacy",settings:{}});assert.equal(result.code,400,condition);
   assert.equal(fs.existsSync(path.join(f.directory,"classic_paper_runtime.json")),false);
  }
+});
+test("真实账户保存独立实盘参数，保留历史配置并要求明确启动",async t=>{
+ const f=setup(t);
+ vm.runInContext('Object.assign(config.accounts[0],{tradeMode:"live",simulationEnabled:false})',f.ctx);
+ const original=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ const saved=await f.call("/api/v4/desk/settings",{id:"legacy",strategy:"turtle_4h_v1",settings:{}});
+ assert.equal(saved.code,200);
+ assert.equal(fs.existsSync(path.join(f.directory,"classic_paper_runtime.json")),false);
+ const state=JSON.parse(fs.readFileSync(path.join(f.directory,"classic_live_runtime.json")));
+ assert.equal(state.books.legacy.strategy,"turtle_4h_v1");
+ assert.equal(state.books.legacy.running,false);
+ assert.equal(state.books.legacy.position,null);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),original);
+ assert.equal((await f.call("/api/v4/desk/control",{id:"legacy",action:"start"})).code,400);
 });
 test("经典模拟固定金额补仓、次数上限及双向成交成本",()=>{
  const C=require("../terminal/classic-paper"), start=Date.now();

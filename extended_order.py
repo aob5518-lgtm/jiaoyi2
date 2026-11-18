@@ -39,8 +39,8 @@ async def main():
         market = str(data["market"])
 
         # 保持你原来脚本的价格 / 数量精度逻辑
-        price = to_decimal(round(float(data["price"]), 1), 1)
-        size = to_decimal(round(float(data["size"]), 3), 3)
+        price = to_decimal(data["price"])
+        size = to_decimal(data["size"])
 
         side_text = str(data["side"]).lower()
         side = OrderSide.BUY if side_text == "buy" else OrderSide.SELL
@@ -77,7 +77,7 @@ async def main():
 
         print(json.dumps({
             "ok": True,
-            "id": getattr(placed_order, "id", None),
+            "id": str(getattr(placed_order, "id", "") or ""),
             "externalId": getattr(placed_order, "external_id", None),
             "market": market,
             "price": str(price),

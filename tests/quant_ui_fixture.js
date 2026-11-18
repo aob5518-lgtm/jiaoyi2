@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, "../public");
 const files = new Set(["index.html", "hypothesis/workbench.css", "hypothesis/connections.js", "quant/desk.css", "quant/desk.js", "quant/settings-preview.js","quant/production.css","quant/production.js","turtle.html","turtle/desk.js","turtle/desk.css","quant/chart-swing-review.js","quant/chart-swing-sample.js","quant/dialogs.js","quant/dialogs.css","quant/account-batch.js","quant/trade-labels.js","quant/trade-labels.css"]);
 function start(port = 0) {
  let count = 64, scenario = "";
- const saved = new Map(), submissions = [], controls=[], turtleAccounts=new Map(), accountChanges=[];
+ const saved = new Map(), savedLiveStrategy=new Map(),submissions = [], controls=[], turtleAccounts=new Map(), accountChanges=[];
  const nativePosition = a => ({symbol:"ETH",side:"long",entry:2460.5,leverage:5,unrealizedPnl:4,...(a.platform==="hotcoin"?{qty:15,qtyUnit:"张",market:"ETHUSDT"}:{qty:.1})});
  let turtleSaveAttempts=0;
  const turtleTrades=Array.from({length:32},(_,i)=>({time:Date.UTC(2026,10,15)-i*3600000,side:"short",entryPrice:2500,exitPrice:2510,netPnl:-10.2,tradingFee:.4,reason:"hard_sl"}));
@@ -27,7 +27,7 @@ function start(port = 0) {
  const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   const json = (code, data) => {res.writeHead(code, {"Content-Type": "application/json"});res.end(JSON.stringify(data));};
-  if (url.pathname === "/") {scenario = url.searchParams.get("scenario") || "";server.scenario = scenario;saved.clear();submissions.length=0;controls.length=0;accountChanges.length=0;turtleAccounts.clear();turtleSaveAttempts=0;if ([64,100,150].includes(Number(url.searchParams.get("count")))) count=Number(url.searchParams.get("count"));accounts=makeAccounts();selected=accounts[0].id;}
+  if (url.pathname === "/") {scenario = url.searchParams.get("scenario") || "";server.scenario = scenario;saved.clear();savedLiveStrategy.clear();submissions.length=0;controls.length=0;accountChanges.length=0;turtleAccounts.clear();turtleSaveAttempts=0;if ([64,100,150].includes(Number(url.searchParams.get("count")))) count=Number(url.searchParams.get("count"));accounts=makeAccounts();selected=accounts[0].id;}
   const requestBody=async()=>{
    let body="";
    for await(const part of req)body+=part;
@@ -124,7 +124,9 @@ function start(port = 0) {
     if(scenario==="save-failed")return json(400,{ok:false,error:"合成保存失败：原参数未改变"});
     const account=accounts.find(a=>a.id===input.id);
     if(!account?.eligible||account.running||account.hasPosition)return json(400,{ok:false,error:"合成账户不能修改参数"});
-    saved.set(account.id,input.settings);account.ready=true;json(200,{ok:true});
+    saved.set(account.id,input.settings);
+    if(account.liveStrategy)savedLiveStrategy.set(account.id,input.strategy||"classic");
+    account.ready=true;json(200,{ok:true});
    });return;
   }
   if(req.method==="POST"&&url.pathname==="/api/v4/desk/control"){
@@ -152,7 +154,8 @@ function start(port = 0) {
    const snapshot = a.hasPosition ? {equity:10140.35,floating:-12.45,realized:152.8,available:9889.35,margin:251,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:"等待补仓或止盈条件",lastAction:"模拟补仓 #1",settings:cfg,position:{side:"long",entry:2562.31,leverage:2,qty:.2008,adds:1,nextAdd:2470.15,takeProfit:2588.19}} :
     {equity:10000,realized:0,floating:0,available:10000,margin:0,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:a.ready?"等待启动":"保存经典参数后，可启动模拟交易",settings:a.ready?cfg:undefined,position:null};
    if (a.hasPosition) snapshot.plan = {first:{price:2530,amount:cfg.baseAmount,status:"已成交"},add:{price:2470.15,amount:200,quantity:200/2470.15,lastPrice:2495,done:1,limit:3,status:"等待触发"},exit:{price:2588.19,status:"监测止盈"},fills:[{at:Date.now()-100000,kind:"open",price:2530,qty:.1,notional:253},{at:Date.now()-30000,kind:"add",price:2495,qty:.1008,notional:251.496}]};
-   if(a.liveStrategy)Object.assign(snapshot,{native:true,nativeLeverage:{long:2,short:3},positions:[],valuationBasis:"native_equity",floatingBasis:"native_unrealized"});
+   if(a.liveStrategy)Object.assign(snapshot,{native:true,nativeLeverage:{long:2,short:3},positions:[],valuationBasis:"native_equity",floatingBasis:"native_unrealized",
+    strategy:savedLiveStrategy.get(a.id)||"classic",strategyLabel:"实盘测试策略",strategies:require("../terminal/live-strategies").catalog(),settingsHash:"live-fixture-hash"});
    else if(!a.paper){const p=nativePosition(a);
     Object.assign(snapshot,{native:true,valuationBasis:a.platform==="hotcoin"?"native_equity":"native_balance",floatingBasis:"native_unrealized",equity:25000,realized:null,floating:4,
      position:p,positions:[p],updatedAt:Date.now(),market:"原生账户已同步",notice:"真实账户连接，未自动启动策略"});}

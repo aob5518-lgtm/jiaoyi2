@@ -3416,7 +3416,25 @@ const classicPaper = require("./terminal/classic-paper").create(__dirname);
 const LiveClassic = require("./terminal/classic-live");
 const classicLive = LiveClassic.create({
   directory: __dirname,
-  exchange: require("./terminal/hotcoin-execution").create(fetch),
+  exchange: require("./terminal/live-exchange").create({
+    request:fetch,hlClient:createHlExchangeClient,
+    keyAddress:privateKey=>privateKeyToAccount(privateKey.startsWith("0x")?privateKey:"0x"+privateKey).address,
+    extendedOrder:runExtendedPython
+  }),
+  permit:(account,risk,side)=>{
+    const st=stateMap[account.id];
+    if(st?.riskLock||st?.legacyLedgerBlocked||st?.pendingOrder||st?.placingOrder||st?.smartExitPending)
+      return {allowed:false,reason:"账户风险或旧委托待核对"};
+    if(!(risk>0))return {allowed:true};
+    return require("./strategy/trend_v3/portfolio").snapshot({...account,paper:false},
+      config.accounts.filter(LiveClassic.eligible).map(a=>{
+        const b=classicLive.get(a.id),view=classicLive.view(a),p=b?.position,o=b?.pending;
+        return {account:{...a,paper:false},equity:view?.equity,state:{
+          position:p?{side:p.side,initialEffectiveRiskU:p.actualRisk,positionSize:p.qty,filledQty:p.qty}:null,
+          pendingOrder:o?.kind==="open"?{kind:"open",side:o.side,plan:{riskAmount:o.plan?.budget}}:null
+        }};
+      }),side,risk);
+  },
   conflict: account => config.accounts.some(other => {
     if (other.id === account.id || other.platform !== account.platform || other.symbol !== account.symbol) return false;
     const book = classicLive.get(other.id);
@@ -3496,7 +3514,7 @@ async function tickAccount(acc) {
   if(st.terminalMutating)return;
   if (st.tickRunning) return;
   const activeStrategyType = getStrategyType(acc);
-  const needsLock = acc.platform === "hotcoin" || activeStrategyType !== "classic" || !!classicPaper.get(acc.id);
+  const needsLock = !!classicLive.get(acc.id) || activeStrategyType !== "classic" || !!classicPaper.get(acc.id);
   const tradeLock = needsLock ? acquireAccountTradeLock(acc.id) : null;
   if (needsLock && !tradeLock) return;
   st.tickRunning = true;
@@ -3505,7 +3523,7 @@ async function tickAccount(acc) {
   try {
     // 每轮只清除“当前异常”；lastError 保留最近一次错误供排查。
     st.activeError = "";
-    if (acc.platform === "hotcoin") {await classicLive.tick(acc);return;}
+    if (classicLive.get(acc.id)) {await classicLive.tick(acc);return;}
     if(activeStrategyType===Turtle.ID){await turtlePaper.tick(acc,st);return;}
     if(activeStrategyType===Reversal.ID){await reversalPaper.tick(acc,st);return;}
     if(activeStrategyType===Carry.ID){await carryPaper.tick(acc,st);return;}

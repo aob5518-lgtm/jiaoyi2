@@ -26,7 +26,7 @@ function fixture(t) {
     order:async (_account,id) => replies.get(id)
   };
   const make = () => Live.create({directory,exchange,now:()=>time});
-  return {account,market,exchange,intents,replies,live:make(),make,advance:(ms=61_000)=>{time+=ms;}};
+  return {account,market,exchange,intents,replies,directory,live:make(),make,clock:()=>time,advance:(ms=61_000)=>{time+=ms;}};
 }
 
 test("Hotcoin classic tracks a real-order acknowledgement, partial add and native close separately",async t=>{
@@ -88,7 +88,7 @@ test("An acknowledgement timeout is persisted before sending and never resubmits
   };
   await assert.rejects(live.tick(account),/委托未确认/);
   const recovered=make();
-  await assert.rejects(recovered.tick(account),/未知 Hotcoin 委托/);
+  await assert.rejects(recovered.tick(account),/未知交易所委托/);
   assert.equal(recovered.get(account.id).running,false);
   assert.equal((await recovered.preflight(account)).allowed,false);
   assert.equal(submissions,1);
@@ -150,4 +150,90 @@ test("Native order requests sign the correct methods and preserve IDs and signed
   assert.equal(calls[1].url.searchParams.get("positionId"),id);
   assert.equal((await exchange.order(account,id)).fee,.011);
   assert.equal(calls[2].options.method,"GET");
+});
+
+test("Every supported real venue can configure each directional strategy without altering account mode or Paper ledgers",t=>{
+  const x=fixture(t),Strategies=require("../terminal/live-strategies");
+  for(const [platform,quoteAsset] of [["hyperliquid","USDC"],["binance","USDT"],["extended","USD"],["hotcoin","USDT"]]){
+    const account={...x.account,id:platform,platform,quoteAsset,strategyType:"smart_regime_v1"};
+    const original=JSON.stringify(account);
+    assert.equal(Live.eligible(account),true);
+    for(const p of Strategies.catalog()){
+      x.live.configure(account,p.defaults,p.id);
+      const book=x.live.get(account.id);
+      assert.equal(book.strategy,p.id);
+      assert.equal(book.running,false);
+      assert.equal(book.position,null);
+      assert.equal(x.live.view(account).strategy,p.id);
+      assert.equal(JSON.stringify(account),original);
+    }
+  }
+  assert.equal(x.intents.length,0);
+  assert.equal(fs.existsSync(path.join(x.directory,"classic_paper_runtime.json")),false);
+});
+
+test("Directional live orders wait for a new closed signal, persist actual fills, and protect a paused position during candle outages",async t=>{
+  const x=fixture(t),F=require("./turtle_fixture"),C=require("../strategy/turtle_4h/config");
+  x.advance(F.NOW-x.clock());
+  x.market.bid=103.99;x.market.ask=104.01;x.market.limits={long:10000,short:10000};
+  x.exchange.candles=async()=>F.market(x.clock()).candles;
+  x.live.configure(x.account,{...C.defaults,leverage:2,direction:"long"},"turtle_4h_v1");
+  await x.live.start(x.account);
+  await x.live.tick(x.account);
+  assert.equal(x.intents.length,0);
+  x.advance(C.BAR);
+  await x.live.tick(x.account);
+  const intent=x.intents[0],book=x.live.get(x.account.id);
+  assert.equal(intent.kind,"open");
+  assert.equal(book.position,null);
+  assert.equal(intent.plan.config.leverage,2);
+  assert.equal(book.pending.exchangeId,"101");
+  x.replies.set("101",{side:"open_long",status:2,contracts:intent.contracts,price:104.01,fee:.01});
+  x.market.positions=[{market:"ETHUSDT",id:"334",side:"long",qty:intent.contracts,entry:104.01,leverage:2}];
+  await x.make().tick(x.account);
+  const restored=x.make();
+  assert.ok(restored.get(x.account.id).position.stop<104.01);
+  assert.ok(restored.get(x.account.id).position.actualRisk<=500*.005+1e-8);
+  restored.pause(x.account);
+  x.market.bid=restored.get(x.account.id).position.stop-1;
+  x.market.ask=x.market.bid+.01;
+  x.exchange.candles=async()=>{throw Error("native candle outage");};
+  await restored.tick(x.account);
+  assert.equal(x.intents.at(-1).kind,"close");
+  assert.equal(x.intents.at(-1).reason,"hard_sl");
+  assert.equal(x.intents.length,2);
+});
+
+test("Each directional profile generates an intent without fabricating any live fill",t=>{
+ const x=fixture(t),Strategies=require("../terminal/live-strategies");
+ x.market.balance=10000;x.market.available=10000;x.market.bid=99.99;x.market.ask=100.01;
+ x.market.limits={long:1e6,short:1e6};x.market.bidSize=x.market.askSize=1e6;
+ for(const strategy of ["turtle_4h_v1","reversal_4h_v1","pullback_15m_v1","chart_swing_1h_v1"]){
+  const profile=Strategies.profile(strategy),settings=profile.config.defaults;
+  const before={strategy,settings,running:true,position:null,lastSignalAt:0};
+  const research={rows:[],analysis:{code:"READY",side:"long",atr:2,closedAt:x.clock(),setupAt:x.clock()-1000,
+   ...(strategy==="turtle_4h_v1"?{}:{entry:{stop:97,target:110,mode:"confirmed"}})}};
+  const decision=Strategies.decide(x.account,before,{...x.market,at:x.clock()},research,x.clock(),false);
+  assert.equal(decision.intent?.kind,"open",strategy);
+  assert.equal(decision.position,null);
+  assert.equal(before.position,null);
+ }
+ assert.equal(x.intents.length,0);
+});
+
+test("Confirmed start changes native leverage and rechecks it before authorizing real entries",async t=>{
+ const x=fixture(t);
+ let changes=0;
+ x.exchange.setLeverage=async(_account,value,directions)=>{
+  changes++;
+  for(const side of directions)x.market.leverage[side]=value;
+ };
+ x.live.configure(x.account,{leverage:5});
+ assert.equal((await x.live.preflight(x.account)).allowed,true);
+ assert.equal(changes,0);
+ await x.live.start(x.account);
+ assert.equal(changes,1);
+ assert.equal(x.market.leverage.long,5);
+ assert.equal(x.live.get(x.account.id).running,true);
+ assert.equal(x.intents.length,0);
 });

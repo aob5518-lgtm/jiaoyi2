@@ -29,7 +29,7 @@ function accountRow(account, st, classic, live) {
   return {
     id: account.id, name: account.name, symbol: account.symbol, quoteAsset: account.quoteAsset,
     platform: account.platform, strategyType: account.strategyType, archivedAt:account.archivedAt||null, paper: account.tradeMode === "simulation" && account.simulationEnabled === true,
-    strategy: live ? "经典补仓 · 实盘" : Object.hasOwn(paperLabels,account.strategyType)?paperLabels[account.strategyType]:C.eligible(account)?"经典补仓":account.tradeMode==="live"?"真实账户连接":"归档账户",
+    strategy: live ? live.strategyLabel+" · 实盘" : Object.hasOwn(paperLabels,account.strategyType)?paperLabels[account.strategyType]:C.eligible(account)?"经典补仓":account.tradeMode==="live"?"真实账户连接":"归档账户",
     ready: live ? !!live.settings : !!classic, eligible: !account.archivedAt&&(!!live||C.eligible(account)),
     running: view?.running ?? !!st?.running, liveStrategy:!!live,
     hasPosition: view ? !!(view.position||live?.managedPosition) : Number(st?.positionQty || st?.realPositionSize || 0) > 0,
@@ -66,7 +66,7 @@ async function handle(req, res, parsed, d) {
         if(!live)return send(200,{ok:true,spec:await d.leverageRules(account)});
         await live.inspect(account);
         const maxLeverage=live.view(account).maxLeverage;
-        return send(200,{ok:true,spec:maxLeverage?{market:"Hotcoin USDT 永续",step:1,tiers:[{floor:0,cap:null,maxLeverage}]}:null});
+        return send(200,{ok:true,spec:maxLeverage?{market:account.platform+" 永续",step:account.platform==="extended"?.1:1,tiers:[{floor:0,cap:null,maxLeverage}]}:null});
       }
       const classic = d.classicPaper.view(account);
       if (route === "/api/v4/desk/history") {
@@ -95,7 +95,7 @@ async function handle(req, res, parsed, d) {
     if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return send(403, {ok: false, error: "请在本站操作"});
     const input = await readBody(req);
     const settings = route.endsWith("/settings");
-    if (Object.keys(input).some(key => !(settings ? ["id", "settings"] : ["id", "action", "confirm","settingsHash"]).includes(key))) throw Error("请求字段不支持");
+    if (Object.keys(input).some(key => !(settings ? ["id", "settings","strategy","expectedHash"] : ["id", "action", "confirm","settingsHash"]).includes(key))) throw Error("请求字段不支持");
     const account = d.getAccountById(input.id);
     if(account?.archivedAt&&!["pause","close"].includes(input.action))throw Error("账户已移出列表，请先恢复账户");
     const live = d.classicLive && Live.eligible(account) ? d.classicLive : null;
@@ -107,7 +107,9 @@ async function handle(req, res, parsed, d) {
     st.terminalMutating = mutating = true;
     if (live) {
       if (settings) {
-        live.configure(account,input.settings);
+        if(st.riskLock||st.pendingOrder||st.smartExitPending)throw Error("原账户风险或委托待核对，暂不能切换策略");
+        if(live.get(account.id)&&input.expectedHash!==Live.settingsHash(live.get(account.id)))throw Error("参数已被其他页面修改，请刷新后再保存");
+        live.configure(account,input.settings,input.strategy||"classic");
       } else if (input.action === "pause") {
         live.pause(account);
       } else {

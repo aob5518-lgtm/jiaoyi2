@@ -94,7 +94,13 @@
   <p id="deskConfigError" class="desk-inline-error" role="alert" hidden></p>
   <div class="parameter-layout">
   <form id="deskSettings" class="parameter-form">
-    <fieldset class="panel parameter-group"><legend><span>01</span> 首仓设置</legend><p class="group-intro">启动后，按选定方向和金额开第一笔模拟仓位。</p><div class="field-grid">
+    <fieldset id="liveStrategyGroup" class="panel parameter-group" hidden>
+      <legend>实盘策略</legend>
+      <label>选择策略<select id="liveStrategySelect"></select></label>
+      <p id="liveStrategyInfo" class="muted"></p>
+      <div id="liveParameterFields" class="field-grid" hidden></div>
+    </fieldset>
+    <fieldset class="panel parameter-group"><legend><span>01</span> 首仓设置</legend><p class="group-intro">启动后，按选定方向和金额开第一笔仓位。</p><div class="field-grid">
       <label>交易方向<select name="side"><option value="long">做多 · 看涨</option><option value="short">做空 · 看跌</option></select><small>做多等价格上涨，做空等价格下跌。</small></label>
       <label>杠杆倍数<div class="input-unit"><input name="leverage" type="number" min="1" step="1" required><span>倍</span></div><small id="deskLeverageHint">打开参数时读取交易所档位。</small></label>
       <label class="field-wide">首仓金额<div class="input-unit"><input name="baseAmount" type="number" min="1" max="100000000" step="any" required><span data-quote>U</span></div><small id="baseAmountHelp">第一笔仓位的名义金额，不是保证金。</small></label>
@@ -106,7 +112,7 @@
     </div></fieldset>
     <fieldset class="panel parameter-group"><legend><span>03</span> 止盈设置</legend><div class="field-grid">
       <label class="field-wide">整仓止盈目标<div class="input-unit"><input name="takeProfit" type="number" min=".01" max="99" step="any" required><span>%</span></div><small id="takeProfitHelp">以保证金毛收益率计算，不是币价涨跌幅。手续费与滑点会减少净收益。</small></label>
-    </div><p class="risk-note">经典规则没有自动止损。暂停新增后，已有模拟仓位仍检查止盈；需要退出时请在总览手动平仓。</p></fieldset>
+    </div><p class="risk-note">经典规则没有自动止损。暂停新增后，已有仓位仍检查止盈；需要退出时请在总览手动平仓。</p></fieldset>
     <div class="save-bar"><div><strong id="deskSaveState">参数尚未修改</strong></div><button id="deskResetDraft" type="button" class="icon-button" disabled>撤销修改</button><button id="deskSave" type="submit" disabled>保存参数</button><button id="deskSaveTop" class="primary" type="submit" disabled>保存并启动模拟</button></div>
   </form>
   <aside class="parameter-preview" aria-label="参数效果预览">
@@ -165,8 +171,8 @@
 <script src="/quant/account-batch.js?v=3"></script>
 <script src="/quant/trade-labels.js?v=1"></script>
 <script src="/turtle/desk.js?v=position1"></script>
-<script src="/quant/desk.js?v=classic-live1"></script>
-<script src="/hypothesis/connections.js?v=classic-live1"></script>
+<script src="/quant/desk.js?v=all-live2"></script>
+<script src="/hypothesis/connections.js?v=all-live2"></script>
 <script src="/quant/production.js?v=onepage1"></script>
 </body>
 </html>

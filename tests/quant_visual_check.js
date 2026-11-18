@@ -331,6 +331,20 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
    await until("document.querySelector('#deskPrimaryAction').textContent==='启动实盘'");
    await screenshot(width+"x"+height+"-classic-live");
    results.push({width,height,scenario:"classic-live-configure-confirm-start-pause",...await fit()});
+   for(const mode of ["turtle","reversal","pullback","swing"]){
+    await click('[data-strategy="'+mode+'"]');
+    await until("document.querySelector('#page-parameters').open && !document.querySelector('#liveParameterFields').hidden");
+    await fitDialogs();
+    const choice=await evaluate("document.querySelector('#liveStrategySelect').value");
+    if(!choice||choice==="classic")throw Error("Live strategy tab did not select its own parameter schema");
+    if(!await evaluate("!!document.querySelector('#liveParameterFields [name=live_leverage]') && !!document.querySelector('#liveParameterFields [name=live_riskPerTrade]')"))throw Error("Live parameters are missing");
+    await click("#deskSave");
+    await until("!document.querySelector('#page-parameters').open && document.querySelector('#deskMessage').textContent.includes('实盘策略参数已保存')");
+    if(server.submissions.at(-1).strategy!==choice)throw Error("Saved the wrong Live strategy");
+    if(Object.hasOwn(server.submissions.at(-1).settings,"baseAmount"))throw Error("Live strategy received Classic-only fields");
+    if(server.controls.length!==2)throw Error("Switching or saving a Live strategy started trading");
+    results.push({width,height,scenario:"live-"+mode+"-own-parameters",...await fit()});
+   }
   }
   fs.writeFileSync(path.join(directory,"results.json"),JSON.stringify(results,null,2));return results;
  }finally{if(ws)ws.close();child.kill();await new Promise(r=>server.close(r));}

@@ -69,7 +69,7 @@ function create(orderRequest = fetch) {
     if (!Array.isArray(rows)) throw Error("Hotcoin 未返回原生仓位列表");
     const positions = nativePositions(rows, contract);
     return {...assets(asset), positions, working:requireOrders(orders).map(row => identifier(row.id ?? row.orderId)),
-      spec, mode, leverage:{long,short}, limits, feeRate, bid, ask, bidSize, askSize, at:Date.now()};
+      spec, mode, marginType:number(config.type),leverage:{long,short}, limits, feeRate, bid, ask, bidSize, askSize, at:Date.now()};
   }
 
   async function place(account, intent) {

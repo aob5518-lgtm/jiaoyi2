@@ -8,6 +8,9 @@
  const isPaperMode = mode => Object.hasOwn(paperStrategies,mode);
  const fromAccount = account => Object.keys(paperStrategies).find(mode=>paperStrategies[mode]===account.strategyType) || (account.eligible?"classic":"history");
  const state = {data:null,id:query.get("account")||"",mode:Object.hasOwn(strategies,query.get("strategy"))?query.get("strategy"):"",empty:false,lastAccounts:{},busy:false,offline:true,dirty:false,request:0,offset:0,trades:[],filter:"all",switching:false,drawer:"",queuedDrawer:"",turtle:null};
+ let liveChoice="",liveChoiceAccount="",liveFieldsVersion="";
+ const profileForMode={classic:"classic",turtle:"turtle_4h_v1",reversal:"reversal_4h_v1",
+  pullback:"pullback_15m_v1",swing:"chart_swing_1h_v1",carry:"funding_carry_v1"};
  const labels = {hyperliquid: "Hyperliquid", binance: "Binance", extended: "Extended", hotcoin: "Hotcoin"};
  const keys = ["side", "leverage", "baseAmount", "addAmount", "maxAdds", "addTrigger", "takeProfit"];
  const format = (value, digits = 2) => value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? "—" : Number(value).toLocaleString("zh-CN", {maximumFractionDigits: digits});
@@ -235,6 +238,14 @@
   resetSelection(id);
  }
  async function selectStrategy(mode){
+  if(state.data?.selected.liveStrategy&&mode!=="history"){
+   const target=profileForMode[mode],catalog=state.data.snapshot.strategies||[];
+   if(!catalog.some(p=>p.id===target)){message("该交易所账户当前缺少此策略所需的实盘执行通道。");return;}
+   if(state.busy||state.switching)return;
+   if(state.dirty&&!await JustDialogs.discard("切换策略会重置当前未保存参数。"))return;
+   liveChoice=target;liveFieldsVersion="";state.dirty=target!==state.data.snapshot.strategy;
+   render();await openDrawer("parameters");return;
+  }
   if(!state.data||mode===state.mode||!Object.hasOwn(strategies,mode))return;
   const id=preferred(mode)?.id||"";
   if(!await JustDialogs.guard("just-account-selecting",id))return;
@@ -327,7 +338,8 @@
   picker.labels[0].textContent=historical?"真实与历史账户":turtle?"模拟账户":"交易账户";
   for(const button of document.querySelectorAll("[data-strategy]")){
    button.disabled=blocked;
-   button.setAttribute("aria-pressed",String(button.dataset.strategy===state.mode));
+   button.setAttribute("aria-pressed",String(account.liveStrategy?
+    profileForMode[button.dataset.strategy]===(liveChoice||snapshot.strategy||"classic"):button.dataset.strategy===state.mode));
    if(button.dataset.strategy==="history"){button.hidden=!accountsFor("history").length;button.textContent="真实与历史账户";}
   }
   const primary=$("deskPrimaryAction"),pause=$("deskPauseAction"),edit=$("deskEditShortcut"),create=$("deskNewAccount");
@@ -364,7 +376,7 @@
    primary.disabled=blocked||(account.ready?startControl.disabled:snapshot.blocked||state.data.ledgerBlocked);
    pause.disabled=blocked||pauseControl.disabled;
    pause.onclick=()=>pauseControl.click();
-   hint=snapshot.pendingOrder?snapshot.notice:snapshot.blocked?"当前账户暂时锁定。":state.dirty?"请先保存参数。":account.running?"运行中 · 经典补仓正在监控":account.ready?"已暂停 · 可从此处恢复监控":"填写经典参数后即可启动。";
+   hint=snapshot.pendingOrder?snapshot.notice:snapshot.blocked?"当前账户暂时锁定。":state.dirty?"请先保存参数。":account.running?"运行中 · "+account.strategy+"正在监控":account.ready?"已暂停 · 可从此处恢复监控":account.liveStrategy?"选择实盘策略并保存参数后，即可启动。":"填写经典参数后即可启动。";
   }
   $("deskStarterHint").textContent=state.offline?"工作台尚未同步。":hint;
   $("deskStarterHint").hidden=!$("deskStarterHint").textContent;
@@ -374,9 +386,22 @@
  for(const button of document.querySelectorAll("[data-strategy]"))button.onclick=()=>selectStrategy(button.dataset.strategy);
  $("deskAccountPicker").onchange=event=>selectAccount(event.target.value);
  function settingsValues() {
+  if(state.data?.selected.liveStrategy&&liveChoice!=="classic"){
+   const p=state.data.snapshot.strategies.find(p=>p.id===liveChoice);
+   return Object.fromEntries(p.fields.map(f=>{
+    const el=$("liveParameterFields").querySelector('[name="live_'+f.key+'"]');
+    return [f.key,f.options?el.value:Number(el.value)/(f.percent?100:1)];
+   }));
+  }
   return Object.fromEntries(keys.map(name => [name, name === "side" ? field(name).value : field(name).value.trim() === "" ? NaN : Number(field(name).value) / (["addTrigger", "takeProfit"].includes(name) ? 100 : 1)]));
  }
  function updateBudget() {
+  if(state.data?.selected.liveStrategy&&liveChoice!=="classic"){
+   $("parameterDirty").hidden=!state.dirty;
+   $("deskSaveState").textContent=state.busy?"正在保存或同步…":state.dirty?"有未保存的参数":"当前已保存参数";
+   $("deskResetDraft").disabled=!state.dirty||state.busy||state.switching;
+   return;
+  }
   const c = settingsValues(), unit = state.data?.selected.quoteAsset || "U";
   renderLeverage(c);
   const preview = window.JustSettingsPreview?.build(c, state.offline ? null : state.data?.snapshot.mark) || {valid: false, rows: []};
@@ -412,6 +437,16 @@
    return;
   }
   const a = data.selected, s = data.snapshot, p = s.position, unit = a.quoteAsset;
+  if(liveChoiceAccount!==a.id){
+   liveChoiceAccount=a.id;liveChoice=s.strategy||"classic";liveFieldsVersion="";
+  }
+  $("liveStrategyGroup").hidden=!a.liveStrategy;
+  if(!a.liveStrategy){
+   $("liveStrategySelect").disabled=true;
+   for(const group of form.querySelectorAll("fieldset:not(#liveStrategyGroup)"))group.hidden=false;
+   document.querySelector("#page-parameters .parameter-preview").hidden=false;
+   $("deskParameterTitle").textContent="经典策略参数";
+  }
   if(state.empty||isPaperMode(state.mode)){
    $("deskAccount").textContent=state.empty?strategies[state.mode]:a.name;
    $("deskInstrument").textContent=state.empty?"请选择或新建账户":(labels[a.platform]||a.platform)+" · "+a.symbol+" / "+unit;
@@ -443,6 +478,22 @@
   $("deskFloating").nextElementSibling.textContent=s.floatingBasis==="native_unrealized"?"原生口径，未扣预计退出成本":"预计扣除平仓成本";
   $("deskMargin").textContent = "占用保证金 " + format(s.margin);
   renderPlan(a, s);
+  if(a.liveStrategy&&s.strategy&&s.strategy!=="classic"){
+   document.querySelector(".price-cards").hidden=false;
+   $("deskOpenPrice").textContent=format(p?.entry,6);
+   $("deskOpenStatus").textContent=p?"交易所实际成交均价":"等待新的已收盘信号";
+   $("deskOpenAmount").textContent=p?format(p.notional)+" "+unit:"按账户权益与计划风险计算";
+   $("deskAddPrice").closest("section").querySelector(".card-kicker").textContent="本轮止损保护价";
+   $("deskAddPrice").textContent=format(s.protection?.stop,6);
+   $("deskAddStatus").textContent=s.protection?.stop?"原生盘口触发后提交退出":"建仓成交后锁定止损";
+   $("deskAddAmount").textContent="本策略不补仓";
+   $("deskAddQty").textContent="—";
+   $("deskTargetPrice").textContent=format(s.protection?.target,6);
+   $("deskExitStatus").textContent=s.protection?.target?"按结构目标退出":"按通道或移动保护退出";
+   $("deskTargetReturn").textContent=s.settings?.riskPerTrade?format(s.settings.riskPerTrade*100)+"% 每笔计划风险":"—";
+  }else{
+   $("deskAddPrice").closest("section").querySelector(".card-kicker").textContent="下次补仓价格";
+  }
   $("deskNext").textContent = a.error || s.notice || "等待下一次有效行情";
   $("deskLast").textContent = "最近动作 · " + (s.lastAction || "暂无");
   $("deskUpdated").textContent = (s.native?"账户同步":"行情时间") + " · " + time(s.updatedAt);
@@ -460,7 +511,7 @@
   const editable = !state.offline && !state.busy && !state.switching && a.eligible && !a.running && !p && !s.managedPosition && !s.pendingOrder && !s.blocked && !data.ledgerBlocked;
   $("deskConfigHint").textContent = state.offline ? "连接中断，暂不能保存。已填写的参数仍保留，请恢复连接后重试。" : data.ledgerBlocked || s.blocked ? "当前账户暂时锁定，不能修改参数。" : !a.eligible ? "当前账户只读，不能在这里修改策略。请选择左侧标有「可配置」的模拟账户，或新增一个模拟账户。" :
    s.pendingOrder ? "委托待核对，确认后可修改参数。" : p || s.managedPosition ? (a.paper?"当前有模拟持仓，结清后可修改参数。":"当前有实盘持仓，结清后可修改参数。") : a.running ? "暂停新增后可编辑参数。" :
-   a.liveStrategy ? (s.nativeLeverage ? "Hotcoin 当前杠杆 · 多 "+s.nativeLeverage.long+"× / 空 "+s.nativeLeverage.short+"×。策略杠杆需与所选方向一致。" : "保存后，启动前会核对 Hotcoin 的实际杠杆和合约规格。") :
+   a.liveStrategy ? (s.nativeLeverage ? labels[a.platform]+" 当前杠杆 · 多 "+s.nativeLeverage.long+"× / 空 "+s.nativeLeverage.short+"×。确认启动时按已保存参数设置杠杆。" : "保存后，启动前会核对交易所的实际杠杆和合约规格。") :
    "填写 1 表示 1%。保存后可检查并确认启动。";
   $("deskConfigHint").classList.toggle("locked", !editable);
   if (!state.dirty) {
@@ -469,12 +520,56 @@
   }
   updateBudget();
   for (const name of keys) field(name).disabled = !editable;
+  if(a.liveStrategy)renderLiveParameters(a,s,editable);
   $("deskSave").disabled = !editable;
   $("deskSaveTop").disabled = !editable;
   $("deskSaveTop").textContent = a.liveStrategy ? "保存并核对实盘" : "保存并启动模拟";
   renderList();
   renderStarter(a,s);
  }
+ function renderLiveParameters(account,snapshot,editable){
+  const catalog=snapshot.strategies||[],select=$("liveStrategySelect");
+  if(select.dataset.account!==account.id||select.options.length!==catalog.length){
+   select.replaceChildren(...catalog.map(p=>{const el=node("option",p.label);el.value=p.id;return el;}));
+   select.dataset.account=account.id;
+  }
+  select.value=liveChoice;select.disabled=!editable;
+  const custom=liveChoice!=="classic",profile=catalog.find(p=>p.id===liveChoice);
+  $("deskParameterTitle").textContent=(profile?.label||"经典补仓")+" · 实盘参数";
+  $("liveStrategyInfo").textContent=account.name+" · "+labels[account.platform]+" · "+account.symbol+"/"+account.quoteAsset;
+  for(const group of form.querySelectorAll("fieldset:not(#liveStrategyGroup)"))group.hidden=custom;
+  if(custom)for(const name of keys)field(name).disabled=true;
+  document.querySelector("#page-parameters .parameter-preview").hidden=custom;
+  $("liveParameterFields").hidden=!custom;
+  const version=[account.id,liveChoice,snapshot.settingsHash].join(":");
+  if(!custom){
+   for(const input of $("liveParameterFields").querySelectorAll("input,select"))input.disabled=true;
+   if(liveFieldsVersion!==version){
+    const values=snapshot.strategy==="classic"&&snapshot.settings?snapshot.settings:state.data.defaultSettings;
+    for(const name of keys)field(name).value=["addTrigger","takeProfit"].includes(name)?values[name]*100:values[name];
+    liveFieldsVersion=version;
+   }
+   return;
+  }
+  if(version!==liveFieldsVersion){
+   liveFieldsVersion=version;
+   const values=(liveChoice===snapshot.strategy?snapshot.settings:null)||profile?.defaults;
+   $("liveParameterFields").replaceChildren(...(profile?.fields||[]).map(f=>{
+    const label=node("label",f.label),input=document.createElement(f.options?"select":"input");
+    input.name="live_"+f.key;
+    if(f.options)input.replaceChildren(...f.options.map(value=>{const o=node("option",{long:"只做多",short:"只做空",both:"双向"}[value]||value);o.value=value;return o;}));
+    else{input.type="number";input.step="any";input.required=true;}
+    input.value=f.percent?values[f.key]*100:values[f.key];
+    label.append(input);
+    if(f.percent)label.append(node("small","输入百分比，例如 0.5 表示 0.5%。"));
+    return label;
+   }));
+  }
+  for(const input of $("liveParameterFields").querySelectorAll("input,select"))input.disabled=!editable;
+ }
+ $("liveStrategySelect").onchange=()=>{
+  liveChoice=$("liveStrategySelect").value;liveFieldsVersion="";state.dirty=true;render();
+ };
  async function load() {
   const ticket = ++state.request;
   try {
@@ -606,9 +701,11 @@
    try{
     const review=await api("/api/v4/desk/preflight?id="+encodeURIComponent(account.id));
     if(!review.allowed){message(review.blockers.join("；"));return;}
-    const c=review.settings;
-    const accepted=await JustDialogs.show({title:"启动 "+account.name+" 的经典实盘补仓？",
-     message:account.symbol+"/"+account.quoteAsset+" · "+(c.side==="long"?"做多":"做空")+" · "+c.leverage+"×。首仓最多 "+c.baseAmount+" "+account.quoteAsset+" 名义金额，每次补仓最多 "+c.addAmount+"，最多 "+c.maxAdds+" 次。确认后，策略可在下一次轮询提交真实委托。",
+    const c=review.settings,selected=state.data.snapshot;
+    const detail=(selected.strategy||"classic")==="classic"?"首仓最多 "+c.baseAmount+" "+account.quoteAsset+" 名义金额，每次补仓最多 "+c.addAmount+"，最多 "+c.maxAdds+" 次。":
+     selected.strategyLabel+" · 每笔计划风险 "+format(c.riskPerTrade*100)+"%。";
+    const accepted=await JustDialogs.show({title:"启动 "+account.name+" 的实盘策略？",
+     message:account.symbol+"/"+account.quoteAsset+" · "+({long:"做多",short:"做空",both:"双向"}[c.side||c.direction])+" · 启动时设定 "+c.leverage+"×。"+detail+"确认后，策略可在有效条件下提交真实委托。",
      action:"确认启动实盘",danger:true});
     if(!accepted||state.id!==account.id)return;
     settingsHash=review.settingsHash;
@@ -626,7 +723,7 @@
   if(action==="close"){
    const p=state.data.snapshot.position;
    const title=a.liveStrategy?"市价平掉 "+a.name+" 的策略实盘仓？":"平掉 "+a.name+" 的模拟仓位？";
-   const detail=a.liveStrategy?trade.side(p.side).action+" · "+format(p.qty)+" 张 · "+a.symbol+"/"+a.quoteAsset+"。提交后暂停新增，实际成交价以 Hotcoin 回报为准。":"平仓后暂停策略。";
+   const detail=a.liveStrategy?trade.side(p.side).action+" · "+format(p.qty)+" "+(p.qtyUnit||a.symbol)+" · "+a.symbol+"/"+a.quoteAsset+"。提交后暂停新增，实际成交价以交易所回报为准。":"平仓后暂停策略。";
    if(!await JustDialogs.show({title,message:detail,action:a.liveStrategy?"确认实盘平仓":"确认模拟平仓",danger:true}))return;
    if(state.data?.selected.id!==a.id)return;
   }
@@ -642,7 +739,8 @@
   event.preventDefault();
   if(!form.reportValidity())return;
   const andStart=event.submitter?.id==="deskSaveTop";
-  if(!await mutate("settings",{settings:settingsValues()},"经典参数已保存。"))return;
+  const live=state.data?.selected.liveStrategy;
+  if(!await mutate("settings",{settings:settingsValues(),...(live?{strategy:liveChoice,expectedHash:state.data.snapshot.settingsHash}:{})},live?"实盘策略参数已保存。":"经典参数已保存。"))return;
   await closeDrawer();
   if(andStart)startClassic();
  };
