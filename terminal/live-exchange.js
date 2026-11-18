@@ -20,12 +20,19 @@ function create({request=fetch,hlClient,keyAddress,extendedOrder}={}) {
   async function json(url,options={}) {
     try {
       const response=await request(url,{...options,redirect:"error",signal:AbortSignal.timeout(10000)});
-      if(!response.ok)throw Error();
       const data=JSON.parse(await response.text(),(key,value,context)=>
         ["id","oid","orderId","algoId","positionId"].includes(key)&&typeof value==="number"&&/^\d+$/.test(context?.source||"")?context.source:value);
-      if(data?.code<0||data?.status==="ERROR")throw Error();
+      if(data?.code<0||data?.status==="ERROR"){
+        if(options.method==="POST"&&[-1100,-1101,-1102,-1111,-2010,-2014,-2015,-2018,-2019,-2021,-2022,-2027,-2028,-4028].includes(Number(data.code)))
+          throw Object.assign(Error("交易所明确拒绝委托，请核对交易权限、资金或参数"),{code:"ORDER_REJECTED"});
+        throw Error();
+      }
+      if(!response.ok)throw Error();
       return data;
-    }catch{throw Error("交易所原生接口未确认结果，请核对连接或委托");}
+    }catch(error){
+      if(error.code==="ORDER_REJECTED")throw error;
+      throw Error("交易所原生接口未确认结果，请核对连接或委托");
+    }
   }
   const info=(type,params={})=>json("https://api.hyperliquid.xyz/info",{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify({type,...params})});
@@ -44,11 +51,13 @@ function create({request=fetch,hlClient,keyAddress,extendedOrder}={}) {
   }
   async function hyperSnapshot(a) {
     if(!/^0x[\da-f]{40}$/i.test(a.address||"")||!a.privateKey)throw Error("Hyperliquid 缺少真实账户地址或签名私钥");
+    let signer;
+    try{signer=keyAddress(a.privateKey).toLowerCase();}
+    catch{throw Error("Hyperliquid 签名私钥格式无效，请检查账户连接");}
     const [meta,state,active,book,orders,fees,role]=await Promise.all([
       info("meta"),info("clearinghouseState",{user:a.address}),info("activeAssetData",{user:a.address,coin:a.symbol}),
       info("l2Book",{coin:a.symbol}),info("frontendOpenOrders",{user:a.address}),
-      info("userFees",{user:a.address}),info("userRole",{user:keyAddress(a.privateKey)})]);
-    const signer=keyAddress(a.privateKey).toLowerCase();
+      info("userFees",{user:a.address}),info("userRole",{user:signer})]);
     if(signer!==a.address.toLowerCase()&&!(role.role==="agent"&&role.data?.user?.toLowerCase()===a.address.toLowerCase())) {
       throw Error("Hyperliquid 签名账户与真实账户授权不匹配");
     }
@@ -129,6 +138,7 @@ function create({request=fetch,hlClient,keyAddress,extendedOrder}={}) {
         c:"0x"+intent.localId.replaceAll("-",""),t:{limit:{tif:"Ioc"}}}],grouping:"na",
         ...(intent.vault?{vaultAddress:intent.vault}:{})});
       const status=result?.response?.data?.statuses?.[0];
+      if(status?.error)throw Object.assign(Error("Hyperliquid 明确拒绝委托，请核对资金、权限或合约规格"),{code:"ORDER_REJECTED"});
       return id(status?.filled?.oid??status?.resting?.oid);
     }
     if(a.platform==="binance") {
@@ -144,7 +154,7 @@ function create({request=fetch,hlClient,keyAddress,extendedOrder}={}) {
     if(a.platform==="hotcoin")return hotcoin.order(a,orderId);
     const closing=pending.kind==="close",expected=(closing?"close_":"open_")+pending.side;
     if(a.platform==="hyperliquid") {
-      const [response,fills]=await Promise.all([info("orderStatus",{user:a.address,oid:orderId}),
+      const [response,fills]=await Promise.all([info("orderStatus",{user:a.address,oid:"0x"+pending.localId.replaceAll("-","")}),
         info("userFillsByTime",{user:a.address,startTime:pending.submittedAt-1000,endTime:Date.now()})]);
       const status=response.order?.status,raw=response.order?.order;
       if(response.status!=="order"||id(raw?.oid)!==orderId||raw.coin!==a.symbol||!Array.isArray(fills)||fills.length>=2000)throw Error("Hyperliquid 委托状态无法核对");
@@ -154,6 +164,8 @@ function create({request=fetch,hlClient,keyAddress,extendedOrder}={}) {
       if(side!==(closing?(pending.side==="long"?"short":"long"):pending.side))throw Error("Hyperliquid 委托方向不一致");
       const done=status==="filled"?2:status==="open"?0:/canceled|rejected/i.test(status)?-1:null;
       if(done===null)throw Error("Hyperliquid 委托状态未知");
+      const expected=Number(raw.origSz)-Number(raw.sz);
+      if(!Number.isFinite(expected)||Math.abs(expected-contracts)>1e-9)throw Error("Hyperliquid 成交明细尚未齐全");
       return {contracts,status:done,side:expected,price:contracts?matching.reduce((sum,f)=>sum+Number(f.sz)*Number(f.px),0)/contracts:0,
         fee:matching.every(f=>f.feeToken==="USDC"&&n(f.fee)!==null)?matching.reduce((sum,f)=>sum+Number(f.fee),0):null};
     }

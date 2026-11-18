@@ -49,7 +49,7 @@ function decide(account,book,snapshot,research,time,manual,permit=()=>({allowed:
   const shell={schema:1,balance:snapshot.balance,realized:0,running:book.running,riskLock:false,
     position:active,pending:null,orders:[],trades:[],lastSignalAt:book.lastSignalAt||0,lastQuoteTime:0,
     lastSetupAt:book.lastSetupAt||0,day:book.day||null};
-  const data={quote,candles:research.rows,funding:[],fundingFrom:0,rules:{
+  const data={quote,executionCost:cost,candles:research.rows,funding:[],fundingFrom:0,rules:{
     step:snapshot.spec.step*snapshot.spec.unit,minQty:(snapshot.spec.minQty||snapshot.spec.step)*snapshot.spec.unit,
     maxQty:Math.max(snapshot.limits.long||0,snapshot.limits.short||0)*snapshot.spec.unit,
     minNotional:snapshot.spec.minNotional||0}};

@@ -178,7 +178,11 @@ function create({directory, exchange, now = Date.now, conflict = () => false,per
     try {
       const exchangeId = await exchange.place(account, pending);
       commit(account, {...next,pending:{...pending,exchangeId}});
-    } catch {
+    } catch (error) {
+      if(error.code==="ORDER_REJECTED"){
+        commit(account,{...next,pending:null,running:false,lastAction:error.message});
+        throw error;
+      }
       commit(account, {...next,running:false,lastAction:"交易所委托未确认，已暂停新增，请核对委托"});
       throw Error("交易所委托未确认，已暂停新增，请核对委托");
     }
@@ -314,7 +318,7 @@ function create({directory, exchange, now = Date.now, conflict = () => false,per
     const pending = book?.pending;
     const positions = fresh ? s.positions.map(p=>({...p,notional:p.qty*s.spec.unit*(s.bid+s.ask)/2,
       qtyUnit:p.qtyUnit|| (account.platform==="hotcoin"?"张":account.symbol)})) : native.positions || [];
-    const selected = positions.filter(p => p.market === account.symbol+"USDT");
+    const selected = positions.filter(p => p.symbol === account.symbol&&(!p.quoteAsset||p.quoteAsset===account.quoteAsset));
     const position = selected.length === 1 ? selected[0] : null;
     const mark = fresh ? (s.bid+s.ask)/2 : native.mark ?? null;
     const plan = book && (book.strategy||"classic")==="classic" && !blocked ? Classic.tradePlan({...book,cost:{slippage:0,exitFee:0}}, mark, now()) : null;

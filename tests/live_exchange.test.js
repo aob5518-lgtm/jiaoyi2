@@ -16,7 +16,7 @@ test("Hyperliquid adapter sends the selected real account and native reduce-only
    activeAssetData:{coin:"ETH",leverage:{value:5,type:"cross"},maxTradeSzs:["10","10"]},
    l2Book:{time:Date.now(),levels:[[{px:"2000",sz:"3"}],[{px:"2000.1",sz:"3"}]]},
    frontendOpenOrders:[],userFees:{userCrossRate:".00045"},userRole:{role:"user"},
-   orderStatus:{status:"order",order:{status:"filled",order:{oid:"553",coin:"ETH",side:"A"}}},
+   orderStatus:{status:"order",order:{status:"filled",order:{oid:"553",coin:"ETH",side:"A",origSz:".1",sz:"0"}}},
    userFillsByTime:[{oid:"553",sz:".1",px:"2000",fee:".09",feeToken:"USDC"}]
   }[q.type];
   return response(payload);
@@ -31,6 +31,7 @@ test("Hyperliquid adapter sends the selected real account and native reduce-only
  assert.equal(orders[0].orders[0].t.limit.tif,"Ioc");
  const fill=await api.order({...A,platform:"hyperliquid"},"553",pending);
  assert.equal(fill.contracts,.1);assert.equal(fill.price,2000);assert.equal(fill.fee,.09);
+ assert.equal(calls.find(q=>q.type==="orderStatus").oid,"0x12345678123412341234123456789abc");
  assert.ok(calls.filter(q=>q.user).every(q=>q.user===user));
 });
 
@@ -110,4 +111,11 @@ test("Binance snapshots include native algo orders and missing native fee eviden
  assert.deepEqual(s.working,["algo:90071992547409935"]);
  missingFee=true;
  await assert.rejects(api.snapshot(a),/原生账户数据失效/);
+});
+test("Documented business rejections are recoverable while ambiguous venue errors retain unknown-order protection",async()=>{
+ const a={...A,platform:"binance"},pending={kind:"open",side:"long",contracts:.05,price:"2000.00",localId:"real-intent"};
+ for(const [code,expected] of [[-2019,"ORDER_REJECTED"],[-1007,undefined],[-1001,undefined]]){
+  const api=create({request:async()=>({ok:false,text:async()=>JSON.stringify({code,msg:"test"})})});
+  await assert.rejects(api.place(a,pending),error=>error.code===expected);
+ }
 });

@@ -28,9 +28,14 @@ async function send(url, request, {signal, method = "GET", payload} = {}) {
     const json = response.text ? JSON.parse(await response.text(), (key, value, context) =>
       ["id","orderId","positionId"].includes(key) && typeof value === "number" && /^\d+$/.test(context?.source || "")
         ? context.source : value) : await response.json();
-    if (json && Object.hasOwn(json, "code") && String(json.code) !== "200") throw Error();
+    if (json && Object.hasOwn(json, "code") && String(json.code) !== "200") {
+      if(method==="POST"&&[400,401,403,422].includes(Number(json.code)))
+        throw Object.assign(Error("Hotcoin 明确拒绝委托，请核对交易权限、资金或参数"),{code:"ORDER_REJECTED"});
+      throw Error();
+    }
     return json && Object.hasOwn(json, "code") ? json.data : json;
-  } catch {
+  } catch (error) {
+    if(error.code==="ORDER_REJECTED")throw error;
     throw Error(method === "GET" ? "Hotcoin 原生查询失败，请检查 API 读取权限和网络" : "Hotcoin 未确认委托结果，请核对交易所");
   }
 }

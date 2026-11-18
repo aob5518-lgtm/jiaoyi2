@@ -26,7 +26,7 @@ function protection(price, quote, side, atr, entry, config, cost) {
 }
 function plan(b,a,c,data,analysis,profile=C){
  const side=analysis.side,q=data.quote,entry=analysis.entry;
- const cost=require("../../trade_cost").getEstimatedTradeCost({...a,paper:true},entry?"range_reversal":"turtle_breakout");
+ const cost=data.executionCost||require("../../trade_cost").getEstimatedTradeCost({...a,paper:true},entry?"range_reversal":"turtle_breakout");
  const price=(side==="long"?q.ask:q.bid)*(1+(side==="long"?1:-1)*cost.estimatedEntrySlippage),budget=b.balance*c.riskPerTrade;
  const levels=entry?(profile.protection||protection)(price,q,side,analysis.atr,entry,c,cost):null;
  const distance=levels?.distance??analysis.atr*c.stopAtr,leverage=c.leverage??1;

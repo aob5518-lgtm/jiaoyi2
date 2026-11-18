@@ -93,6 +93,19 @@ test("An acknowledgement timeout is persisted before sending and never resubmits
   assert.equal((await recovered.preflight(account)).allowed,false);
   assert.equal(submissions,1);
 });
+test("An explicit exchange rejection pauses the strategy and clears only the rejected intent so configuration can recover",async t=>{
+ const x=fixture(t);
+ x.live.configure(x.account,{leverage:2});
+ await x.live.start(x.account);
+ x.exchange.place=async()=>{throw Object.assign(Error("交易所明确拒绝委托"),{code:"ORDER_REJECTED"});};
+ await assert.rejects(x.live.tick(x.account),/明确拒绝/);
+ assert.equal(x.live.get(x.account.id).pending,null);
+ assert.equal(x.live.get(x.account.id).running,false);
+ assert.equal(x.live.get(x.account.id).position,null);
+ const recovered=x.make();
+ recovered.configure(x.account,{leverage:2,baseAmount:50});
+ assert.equal(recovered.get(x.account.id).settings.baseAmount,50);
+});
 
 test("Native preflight rejects leverage mismatch, foreign exposure, working orders and sub-contract sizing",async t=>{
   const {account,market,live,intents}=fixture(t);
@@ -236,4 +249,17 @@ test("Confirmed start changes native leverage and rechecks it before authorizing
  assert.equal(x.market.leverage.long,5);
  assert.equal(x.live.get(x.account.id).running,true);
  assert.equal(x.intents.length,0);
+});
+test("Each venue shows its actual position using native market names, including Hyperliquid and Extended",async t=>{
+ const x=fixture(t);
+ for(const [platform,quoteAsset,market] of [["hotcoin","USDT","ETHUSDT"],["hyperliquid","USDC","ETH"],
+   ["extended","USD","ETH-USD"],["binance","USDT","ETHUSDT"]]){
+  const account={...x.account,id:platform,platform,quoteAsset};
+  x.market.positions=[{symbol:"ETH",market,quoteAsset,qty:3,side:"short",entry:2345.6,leverage:20}];
+  await x.live.inspect(account);
+  const view=x.live.view(account);
+  assert.equal(view.position.side,"short",platform);
+  assert.equal(view.position.entry,2345.6,platform);
+  assert.equal(view.position.leverage,20,platform);
+ }
 });
