@@ -310,7 +310,7 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
   results.push({scenario:"save-only",startRequests:0});
   for(const [width,height] of [[1440,900],[390,844]]){
    await call("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:width<800});
-   await call("Page.navigate",{url:"http://127.0.0.1:"+port+"/?scenario=classic-live"});
+   await call("Page.navigate",{url:"http://127.0.0.1:"+port+"/?scenario=classic-live&strategy=history"});
    await until("document.querySelector('#deskPrimaryAction').textContent==='配置实盘参数'");
    await click("#deskPrimaryAction");
    await until("document.querySelector('#deskConfigHint').textContent.includes('多 2× / 空 3×')");

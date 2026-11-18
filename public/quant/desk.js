@@ -577,6 +577,8 @@
    const get = id => api("/api/v4/desk" + (id ? "?id=" + encodeURIComponent(id) : ""));
    let data = await get(state.id);
    if (ticket !== state.request) return;
+   if(data.selected.liveStrategy&&!data.selected.archivedAt&&!state.mode)state.mode="classic";
+   if(data.selected.liveStrategy&&!data.selected.archivedAt&&state.mode==="history")state.mode="classic";
    if(!state.mode){
     const selectedMode=fromAccount(data.selected);
     state.mode=selectedMode!=="history"?selectedMode:accountsFor("classic",data.accounts).length?"classic":(Object.keys(paperStrategies).find(mode=>accountsFor(mode,data.accounts).length)||"classic");
