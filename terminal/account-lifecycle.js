@@ -50,6 +50,8 @@ async function review(a,d){
   if(v!==undefined&&v!==null&&(!Number.isFinite(Number(v))||Math.abs(Number(v))>0))block(k,"仍有持仓或数量未知："+k);
  }
  const classic=d.classicPaper?.get(a.id);
+ const live=d.classicLive?.get(a.id);
+ if(live?.running||live?.position||live?.pending)block("classic.live","经典实盘仍在运行或有仓位、委托待核对");
  if(classic?.running)block("classic.running","经典模拟仍在运行");
  if(classic?.position)block("classic.position","请先结清经典模拟持仓");
  if(d.classicPaper?.corrupt())block("classic.ledger","经典模拟账本无法核对");

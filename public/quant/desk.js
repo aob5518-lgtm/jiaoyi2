@@ -74,7 +74,7 @@
   $("deskPriceLabel").textContent = state.offline || !(snapshot.mark > 0) && price > 0 ? "上次价格" : "最新价格";
   $("deskPriceUnit").textContent = account.quoteAsset;
   $("deskOpenPrice").textContent = format(plan?.first.price ?? plan?.first.reference, 6);
-  $("deskOpenStatus").textContent = plan ? p ? plan.first.price == null ? "旧记录未采集首仓价" : "实际首仓成交价" : plan.first.reference ? "当前报价估算，启动后市价模拟成交" : plan.first.status : "保存参数后生成开仓计划";
+  $("deskOpenStatus").textContent = plan ? p && plan.first.price != null ? "实际首仓成交价" : account.paper && plan.first.reference ? "当前报价估算，启动后市价模拟成交" : plan.first.status : "保存参数后生成开仓计划";
   $("deskOpenAmount").textContent = amount(plan?.first.amount);
   $("deskAverage").textContent = format(p?.entry, 6);
   $("holdingEntry").textContent=p?format(p.entry,6):"当前空仓";
@@ -82,7 +82,7 @@
   $("holdingLeverage").textContent=p?.leverage>0?format(p.leverage,2)+"×":p?"待核验":"无持仓";
   $("holdingLeverageHint").textContent=p?.leverage>0?(account.paper?"本轮锁定配置":"交易所原生读取"):"下一轮设置不代表当前持仓杠杆";
   $("holdingSize").textContent=p?format(p.qty,8)+" "+(p.qtyUnit||account.symbol):snapshot.native?"—":"0 "+account.symbol;
-  $("holdingNotional").textContent=p?.qtyUnit?"交易所合约张数":p&&price>0?"当前名义金额 "+amount(p.qty*price):"持仓金额随行情更新";
+  $("holdingNotional").textContent=p?.notional>0?"当前名义金额 "+amount(p.notional):p?.qtyUnit?"交易所合约张数":p&&price>0?"当前名义金额 "+amount(p.qty*price):"持仓金额随行情更新";
   if(snapshot.native&&(snapshot.positions?.length>1||!p&&snapshot.positions?.length)){
    $("holdingEntryHint").textContent="共有 "+snapshot.positions.length+" 笔原生持仓，逐笔明细见下方";
    if(!p){
@@ -101,7 +101,7 @@
   $("deskAddPrice").dataset.tone = !state.offline && plan?.add.price > 0 ? "warning" : "";
   $("deskAddStatus").textContent = plan?.add.status || "等待经典参数";
   $("deskAddAmount").textContent = amount(plan?.add.amount);
-  $("deskAddQty").textContent = plan?.add.quantity == null ? "—" : format(plan.add.quantity, 8) + " " + account.symbol + "（估算）";
+  $("deskAddQty").textContent = plan?.add.contracts != null ? format(plan.add.contracts)+" 张（估算）" : plan?.add.quantity == null || !account.paper ? "—" : format(plan.add.quantity, 8) + " " + account.symbol + "（估算）";
   $("deskTargetPrice").textContent = format(plan?.exit.price, 6);
   $("deskTargetPrice").dataset.tone = !state.offline && plan?.exit.price > 0 ? "target" : "";
   $("deskExitStatus").textContent = plan?.exit.status || "暂无计划";
@@ -324,7 +324,7 @@
   }
   picker.value=state.id||picker.options[0]?.value||"";
   picker.disabled=blocked||!list.length;
-  picker.labels[0].textContent=historical?"历史账户":"模拟账户";
+  picker.labels[0].textContent=historical?"真实与历史账户":turtle?"模拟账户":"交易账户";
   for(const button of document.querySelectorAll("[data-strategy]")){
    button.disabled=blocked;
    button.setAttribute("aria-pressed",String(button.dataset.strategy===state.mode));
@@ -359,12 +359,12 @@
    hint=!paper?"正在同步"+strategies[state.mode]+"…":paper.riskLock?"该模拟账户当前风控锁定。":paper.pending?"当前有待核对记录。":state.turtle.dirty?"请先保存参数。":paper.running?"运行中 · "+watching:"已暂停 · 点击「启动模拟」恢复监控";
   }else{
    const startControl=document.querySelector('[data-action="start"]'),pauseControl=document.querySelector('[data-action="pause"]');
-   primary.textContent=account.ready?"启动模拟":"配置并启动";
+   primary.textContent=account.ready?(account.liveStrategy?(account.running?"实盘运行中":"启动实盘"):"启动模拟"):account.liveStrategy?"配置实盘参数":"配置并启动";
    primary.onclick=()=>account.ready?startControl.click():openDrawer("parameters");
    primary.disabled=blocked||(account.ready?startControl.disabled:snapshot.blocked||state.data.ledgerBlocked);
    pause.disabled=blocked||pauseControl.disabled;
    pause.onclick=()=>pauseControl.click();
-   hint=snapshot.blocked?"当前账户暂时锁定。":state.dirty?"请先保存参数。":account.running?"运行中 · 经典模拟正在监控":account.ready?"已暂停 · 点击「启动模拟」恢复监控":"填写经典参数后即可启动。";
+   hint=snapshot.pendingOrder?snapshot.notice:snapshot.blocked?"当前账户暂时锁定。":state.dirty?"请先保存参数。":account.running?"运行中 · 经典补仓正在监控":account.ready?"已暂停 · 可从此处恢复监控":"填写经典参数后即可启动。";
   }
   $("deskStarterHint").textContent=state.offline?"工作台尚未同步。":hint;
   $("deskStarterHint").hidden=!$("deskStarterHint").textContent;
@@ -422,7 +422,7 @@
   $("page-trading").hidden=false;
   $("deskAccount").textContent = a.name;
   $("deskInstrument").textContent = (labels[a.platform] || a.platform) + " · " + a.symbol + " / " + unit;
-  $("deskMode").textContent = a.paper ? "Paper · 模拟" : "Live · 原账户";
+  $("deskMode").textContent = a.paper ? "Paper · 模拟" : a.liveStrategy ? "Live · 实盘" : "Live · 原账户";
   const locked = s.blocked || a.eligible && data.ledgerBlocked;
   const runText = locked ? "风控待核对" : a.error ? "当前异常" :
     !a.eligible ? (a.paper ? "只读" : a.running ? "原策略监控中" : "真实账户连接") : a.running ? "运行中" : a.ready ? "已暂停" : "待配置";
@@ -436,6 +436,7 @@
   money("deskEquity", s.equity, unit);
   money("deskFloating", s.floating, unit, true);
   money("deskRealized", s.realized, unit, true);
+  $("deskRealized").nextElementSibling.textContent=a.liveStrategy?"本策略已平仓损益，扣交易费，未计资金费":"已结算交易";
   money("deskAvailable", s.available, unit);
   $("deskEquity").previousElementSibling.textContent=s.valuationBasis==="native_balance"?"交易所账户余额":s.valuationBasis==="native_equity"?"交易所账户权益":"账户权益";
   $("deskFloating").previousElementSibling.textContent=s.floatingBasis==="native_unrealized"?"交易所未实现盈亏":"浮动净盈亏";
@@ -448,15 +449,19 @@
   $("deskSetupPrompt").hidden = true;
   for (const button of document.querySelectorAll("[data-action]")) {
    const action = button.dataset.action;
-   button.hidden=!a.eligible||!a.ready||(action==="start"?a.running:action==="pause"?!a.running:!p);
-   button.disabled = state.busy || state.switching || state.offline || !a.ready || (action === "pause" ? !a.running :
-     action === "start" && state.dirty ||
-     !a.eligible || s.blocked || (action === "start" ? a.running : !p));
+   const canClose = !!p && (!a.liveStrategy || s.managedPosition);
+   if(action==="start")button.textContent=a.liveStrategy?"启动实盘":"启动模拟";
+   if(action==="close")button.textContent=a.liveStrategy?"平掉策略实盘仓":"平掉模拟仓";
+   button.hidden=!a.eligible||!a.ready||(action==="start"?a.running:action==="pause"?!a.running:!canClose);
+   button.disabled = button.hidden || state.busy || state.switching || state.offline ||
+     action !== "pause" && (s.blocked || !!s.pendingOrder || action === "start" && state.dirty);
   }
   $("deskConfigAccount").textContent = a.name + " · " + a.symbol + " / " + unit;
-  const editable = !state.offline && !state.busy && !state.switching && a.eligible && !a.running && !p && !s.blocked && !data.ledgerBlocked;
+  const editable = !state.offline && !state.busy && !state.switching && a.eligible && !a.running && !p && !s.managedPosition && !s.pendingOrder && !s.blocked && !data.ledgerBlocked;
   $("deskConfigHint").textContent = state.offline ? "连接中断，暂不能保存。已填写的参数仍保留，请恢复连接后重试。" : data.ledgerBlocked || s.blocked ? "当前账户暂时锁定，不能修改参数。" : !a.eligible ? "当前账户只读，不能在这里修改策略。请选择左侧标有「可配置」的模拟账户，或新增一个模拟账户。" :
-   p ? "当前有模拟持仓，结清后可修改参数。" : a.running ? "暂停新增后可编辑参数。" : "填写 1 表示 1%。保存后可检查并确认启动。";
+   s.pendingOrder ? "委托待核对，确认后可修改参数。" : p || s.managedPosition ? (a.paper?"当前有模拟持仓，结清后可修改参数。":"当前有实盘持仓，结清后可修改参数。") : a.running ? "暂停新增后可编辑参数。" :
+   a.liveStrategy ? (s.nativeLeverage ? "Hotcoin 当前杠杆 · 多 "+s.nativeLeverage.long+"× / 空 "+s.nativeLeverage.short+"×。策略杠杆需与所选方向一致。" : "保存后，启动前会核对 Hotcoin 的实际杠杆和合约规格。") :
+   "填写 1 表示 1%。保存后可检查并确认启动。";
   $("deskConfigHint").classList.toggle("locked", !editable);
   if (!state.dirty) {
    const settings = s.settings || data.defaultSettings;
@@ -466,6 +471,7 @@
   for (const name of keys) field(name).disabled = !editable;
   $("deskSave").disabled = !editable;
   $("deskSaveTop").disabled = !editable;
+  $("deskSaveTop").textContent = a.liveStrategy ? "保存并核对实盘" : "保存并启动模拟";
   renderList();
   renderStarter(a,s);
  }
@@ -590,9 +596,26 @@
   const link = node("a"), url = URL.createObjectURL(new Blob(["\uFEFF" + rows.map(row => row.map(cell).join(",")).join("\r\n")], {type: "text/csv;charset=utf-8"}));
   link.href = url;link.download = "just-agent-trades.csv";link.click();setTimeout(() => URL.revokeObjectURL(url), 1000);
  };
- function startClassic(){
+ async function startClassic(){
   const account=state.data?.selected;
   if(state.mode!=="classic"||!account?.eligible||!account.ready||account.running||state.busy||state.dirty||state.switching||state.offline)return;
+  if(account.liveStrategy){
+   if(state.data.snapshot.pendingOrder||state.data.snapshot.blocked)return;
+   let settingsHash;
+   state.busy=true;render();
+   try{
+    const review=await api("/api/v4/desk/preflight?id="+encodeURIComponent(account.id));
+    if(!review.allowed){message(review.blockers.join("；"));return;}
+    const c=review.settings;
+    const accepted=await JustDialogs.show({title:"启动 "+account.name+" 的经典实盘补仓？",
+     message:account.symbol+"/"+account.quoteAsset+" · "+(c.side==="long"?"做多":"做空")+" · "+c.leverage+"×。首仓最多 "+c.baseAmount+" "+account.quoteAsset+" 名义金额，每次补仓最多 "+c.addAmount+"，最多 "+c.maxAdds+" 次。确认后，策略可在下一次轮询提交真实委托。",
+     action:"确认启动实盘",danger:true});
+    if(!accepted||state.id!==account.id)return;
+    settingsHash=review.settingsHash;
+   }catch(error){message(error.message);return;}
+   finally{state.busy=false;render();}
+   return mutate("control",{action:"start",confirm:true,settingsHash},"实盘已启动，等待原生委托回报。");
+  }
   message("正在核对行情并启动 "+account.name+"…","neutral");
   return mutate("control",{action:"start"},"已启动经典模拟，等待有效行情。");
  }
@@ -601,10 +624,13 @@
   if (!a || button.disabled) return;
   if(action==="start")return startClassic();
   if(action==="close"){
-   if(!await JustDialogs.show({title:"平掉 "+a.name+" 的模拟仓位？",message:"平仓后暂停策略。",action:"确认模拟平仓",danger:true}))return;
+   const p=state.data.snapshot.position;
+   const title=a.liveStrategy?"市价平掉 "+a.name+" 的策略实盘仓？":"平掉 "+a.name+" 的模拟仓位？";
+   const detail=a.liveStrategy?trade.side(p.side).action+" · "+format(p.qty)+" 张 · "+a.symbol+"/"+a.quoteAsset+"。提交后暂停新增，实际成交价以 Hotcoin 回报为准。":"平仓后暂停策略。";
+   if(!await JustDialogs.show({title,message:detail,action:a.liveStrategy?"确认实盘平仓":"确认模拟平仓",danger:true}))return;
    if(state.data?.selected.id!==a.id)return;
   }
-  mutate("control", {action, ...(action === "close" ? {confirm: true} : {})}, action === "pause" ? "已暂停新增交易。" : "模拟仓位已平，策略已暂停。");
+  mutate("control", {action, ...(action === "close" ? {confirm: true} : {})}, action === "pause" ? "已暂停新增交易。" : a.liveStrategy ? "已提交平仓请求，等待交易所成交核对。" : "模拟仓位已平，策略已暂停。");
  };
  form.oninput = () => {state.dirty=true;render();};
  $("deskResetDraft").onclick = async () => {
@@ -650,7 +676,7 @@
  document.addEventListener("just-accounts-updated",()=>load());
  document.addEventListener("just-connection-checked",()=>load());
  document.addEventListener("just-account-selected",event=>{
-  const fromConnection=event.account?{...event.account,eligible:event.account.tradeMode==="simulation"&&event.account.simulationEnabled&&event.account.connectionOnly}:null;
+  const fromConnection=event.account?{...event.account,eligible:event.account.liveStrategy||event.account.tradeMode==="simulation"&&event.account.simulationEnabled&&event.account.connectionOnly}:null;
   const account=state.data?.accounts.find(a=>a.id===event.detail)||fromConnection;
   state.filter="all";$("deskSearch").value="";
   for(const button of document.querySelectorAll("[data-filter]"))button.setAttribute("aria-pressed",String(button.dataset.filter==="all"));

@@ -308,6 +308,30 @@ async function check({browser=process.env.CHROME_PATH||"C:/Program Files/Google/
   await until("!document.querySelector('#page-parameters').open && document.querySelector('#deskMessage').textContent.includes('已保存')");
   if(server.controls.length||server.submissions.at(-1)?.settings.baseAmount!==560)throw Error("Save-only triggered a start or saved incorrect parameters");
   results.push({scenario:"save-only",startRequests:0});
+  for(const [width,height] of [[1440,900],[390,844]]){
+   await call("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:width<800});
+   await call("Page.navigate",{url:"http://127.0.0.1:"+port+"/?scenario=classic-live"});
+   await until("document.querySelector('#deskPrimaryAction').textContent==='配置实盘参数'");
+   await click("#deskPrimaryAction");
+   await until("document.querySelector('#deskConfigHint').textContent.includes('多 2× / 空 3×')");
+   await fitDialogs();
+   await click("#deskSave");
+   await until("document.querySelector('#deskPrimaryAction').textContent==='启动实盘'");
+   if(server.controls.length)throw Error("Live parameter save must leave strategy stopped");
+   await click("#deskPrimaryAction");
+   await until("document.querySelector('.site-dialog-message')?.textContent.includes('真实委托')");
+   await respond(false);
+   await until("!document.querySelector('#deskPrimaryAction').disabled");
+   if(server.controls.length)throw Error("Cancelled Live start sent a control request");
+   await click("#deskPrimaryAction");
+   await respond();
+   await until("document.querySelector('#deskPrimaryAction').textContent==='实盘运行中'");
+   if(server.controls.length!==1||server.controls[0].confirm!==true)throw Error("Confirmed Live start did not send explicit confirmation");
+   await click("#deskPauseAction");
+   await until("document.querySelector('#deskPrimaryAction').textContent==='启动实盘'");
+   await screenshot(width+"x"+height+"-classic-live");
+   results.push({width,height,scenario:"classic-live-configure-confirm-start-pause",...await fit()});
+  }
   fs.writeFileSync(path.join(directory,"results.json"),JSON.stringify(results,null,2));return results;
  }finally{if(ws)ws.close();child.kill();await new Promise(r=>server.close(r));}
 }

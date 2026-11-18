@@ -4,6 +4,7 @@ const secrets = ["privateKey", "apiKey", "apiSecret", "starkPrivateKey", "public
 const platforms = new Set(["hyperliquid", "binance", "extended", "hotcoin"]);
 const filled = value => typeof value === "string" && value.trim().length > 0;
 const Lifecycle=require("./account-lifecycle");
+const Live=require("./classic-live");
 
 function project(account, running = false) {
   const result = {
@@ -11,7 +12,7 @@ function project(account, running = false) {
     quoteAsset: account.quoteAsset, address: account.address || "",
     tradeMode: account.tradeMode, simulationEnabled: account.simulationEnabled === true,
     simulationBalance: account.simulationBalance, running: !!running,
-    connectionOnly: account.strategyType === "connection_only",archivedAt:account.archivedAt||null,lifecycleVersion:Lifecycle.version(account)
+    connectionOnly: account.strategyType === "connection_only",liveStrategy:Live.eligible(account),archivedAt:account.archivedAt||null,lifecycleVersion:Lifecycle.version(account)
   };
   for (const key of secrets) result["has" + key[0].toUpperCase() + key.slice(1)] = filled(account[key]);
   return result;
@@ -46,7 +47,7 @@ async function handle(req, res, parsed, d) {
   const send = (code, data) => d.json(res, code, data);
   const route = parsed.pathname;
   if (req.method === "GET" && route === "/api/v4/connections") {
-    return send(200, {ok: true, currentAccountId: d.getCurrentAccount()?.id, accounts: d.accounts().map(account => project(account, d.classicPaper?.get(account.id)?.running ?? d.state(account.id)?.running))});
+    return send(200, {ok: true, currentAccountId: d.getCurrentAccount()?.id, accounts: d.accounts().map(account => project(account, d.classicLive?.get(account.id)?.running ?? d.classicPaper?.get(account.id)?.running ?? d.state(account.id)?.running))});
   }
   if (req.method !== "POST" || !["/api/v4/connections/create", "/api/v4/connections/update", "/api/v4/connections/check","/api/v4/connections/archive-preview","/api/v4/connections/archive","/api/v4/connections/restore"].includes(route)) {
     return send(405, {ok: false, error: "连接管理操作不支持"});
@@ -134,6 +135,9 @@ async function handle(req, res, parsed, d) {
     if (!lock) throw Error("账户正在执行，请稍后重试");
     st.terminalMutating = mutating = true;
     const patch = credentialPatch(input);
+    if (d.classicLive?.get(account.id) && Object.keys(patch).some(key=>patch[key]!==account[key])) {
+      throw Error("该连接已绑定实盘账本。更换凭据请建立对应的新连接，并保留原账本");
+    }
     if (account.platform === "hotcoin" && Object.keys(patch).length) {
       if (account.strategyType !== "connection_only") throw Error("Hotcoin 仅支持只读连接");
       checkHotcoinCredentials(patch, account);

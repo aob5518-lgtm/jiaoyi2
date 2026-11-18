@@ -18,7 +18,9 @@ function start(port = 0) {
   id: "sample-" + i, name: i === 0 ? "经典模拟 · ETH" : i === 1 ? "超长账户名称测试".repeat(9) : "模拟账户 " + (i + 1),
   symbol: i % 2 ? "BTC" : "ETH", quoteAsset: "USDT", platform: "binance", paper: true, eligible: !(i===0 && scenario==="readonly"),
   ready: i === 0 && scenario!=="readonly", running: i === 0 && !scenario, hasPosition: i === 0 && !scenario, strategy: i === 0 && scenario==="readonly"?"归档账户":i === 0 ? "经典补仓" : "未绑定",
-  strategyType:i===0&&scenario==="readonly"?"trend_only_v3":"classic"
+  strategyType:i===0&&scenario==="readonly"?"trend_only_v3":"classic",
+  ...(i===0&&scenario==="classic-live"?{name:"Hotcoin 实盘样本",platform:"hotcoin",paper:false,
+   strategyType:"connection_only",strategy:"经典补仓 · 实盘",liveStrategy:true,ready:false}:{}),
  }));
  accounts = makeAccounts();
  let selected = accounts[0].id;
@@ -129,6 +131,7 @@ function start(port = 0) {
    return requestBody().then(input=>{
     const a=accounts.find(x=>x.id===input.id);
     if(!a?.eligible||!a.ready)return json(409,{ok:false,error:"当前账户不能启动"});
+    if(a.liveStrategy&&input.action==="start"&&(input.confirm!==true||input.settingsHash!=="live-fixture-hash"))return json(400,{ok:false,error:"请明确确认"});
     if(input.action==="start"&&scenario==="blocked")return json(400,{ok:false,error:"模拟行情报价暂不可用"});
     controls.push(input);a.running=input.action==="start";return json(200,{ok:true});
    }).catch(()=>json(400,{ok:false,error:"测试输入错误"}));
@@ -138,7 +141,7 @@ function start(port = 0) {
   if(url.pathname==="/api/v4/desk/preflight"){
    const a=accounts.find(x=>x.id===url.searchParams.get("id"));
    const allowed=!!(a?.eligible&&a.ready&&scenario!=="blocked");
-   return json(200,{ok:true,allowed,settings:saved.get(a?.id),blockers:allowed?[]:["模拟行情报价暂不可用"]});
+   return json(200,{ok:true,allowed,settings:saved.get(a?.id),settingsHash:a?.liveStrategy?"live-fixture-hash":null,blockers:allowed?[]:["模拟行情报价暂不可用"]});
   }
   if (url.pathname === "/api/v4/desk/leverage") return json(200,{ok:true,spec:{market:"USDⓈ-M",maxLeverage:150,
    tiers:[{floor:0,cap:10000,maxLeverage:150},{floor:10000,cap:null,maxLeverage:25}]}});
@@ -149,7 +152,8 @@ function start(port = 0) {
    const snapshot = a.hasPosition ? {equity:10140.35,floating:-12.45,realized:152.8,available:9889.35,margin:251,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:"等待补仓或止盈条件",lastAction:"模拟补仓 #1",settings:cfg,position:{side:"long",entry:2562.31,leverage:2,qty:.2008,adds:1,nextAdd:2470.15,takeProfit:2588.19}} :
     {equity:10000,realized:0,floating:0,available:10000,margin:0,mark:2500.46,updatedAt:Date.now(),market:"行情正常",notice:a.ready?"等待启动":"保存经典参数后，可启动模拟交易",settings:a.ready?cfg:undefined,position:null};
    if (a.hasPosition) snapshot.plan = {first:{price:2530,amount:cfg.baseAmount,status:"已成交"},add:{price:2470.15,amount:200,quantity:200/2470.15,lastPrice:2495,done:1,limit:3,status:"等待触发"},exit:{price:2588.19,status:"监测止盈"},fills:[{at:Date.now()-100000,kind:"open",price:2530,qty:.1,notional:253},{at:Date.now()-30000,kind:"add",price:2495,qty:.1008,notional:251.496}]};
-   if(!a.paper){const p=nativePosition(a);
+   if(a.liveStrategy)Object.assign(snapshot,{native:true,nativeLeverage:{long:2,short:3},positions:[],valuationBasis:"native_equity",floatingBasis:"native_unrealized"});
+   else if(!a.paper){const p=nativePosition(a);
     Object.assign(snapshot,{native:true,valuationBasis:a.platform==="hotcoin"?"native_equity":"native_balance",floatingBasis:"native_unrealized",equity:25000,realized:null,floating:4,
      position:p,positions:[p],updatedAt:Date.now(),market:"原生账户已同步",notice:"真实账户连接，未自动启动策略"});}
    if(!a.paper&&server.nativeSnapshotMode==="dual")Object.assign(snapshot,{position:null,positions:[snapshot.position,{...snapshot.position,side:"short"}]});

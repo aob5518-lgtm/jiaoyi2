@@ -55,12 +55,21 @@ function tradePlan(book, price, now = Date.now()) {
     cooldown, fills: p?.fills || []
   };
 }
+function nextAction(book, mark, now, manual = false, entryPrice = mark) {
+  const p = book.position, c = book.settings, target = targets(book, mark);
+  if (p && (manual || target.gross >= target.margin * c.takeProfit)) return "close";
+  if (!book.running || manual) return null;
+  if (!p) return now - book.lastActionAt >= 45000 ? "open" : null;
+  const sign = c.side === "long" ? 1 : -1;
+  return target.nextAdd !== null && sign * (entryPrice - target.nextAdd) <= 0 && now - book.lastActionAt >= 60000 ? "add" : null;
+}
 function step(book, mark, now, manual = false, marketLeverage) {
   if (!num(mark, Number.MIN_VALUE, Number.MAX_VALUE)) throw Error("行情价格无效");
   const next = structuredClone(book), c = next.settings, p = next.position;
   const sign = c.side === "long" ? 1 : -1;
   const t = targets(next, mark);
-  if (p && (manual || t.gross >= t.margin * c.takeProfit)) {
+  const action = nextAction(book, mark, now, manual);
+  if (action === "close") {
     const exit = mark * (1 - sign * next.cost.slippage), fee = p.fee + exit * p.qty * next.cost.exitFee;
     const gross = (exit - p.entry) * p.qty * sign, net = money(gross - fee);
     next.balance = money(next.balance + net);
@@ -69,8 +78,7 @@ function step(book, mark, now, manual = false, marketLeverage) {
     next.position = null;
     if (manual) next.running = false;
     next.lastAction = manual ? "已手动平掉模拟仓位" : "已完成模拟止盈";
-  } else if (next.running && !manual && (!p ? now - next.lastActionAt >= 45000 :
-             t.nextAdd !== null && sign * (mark - t.nextAdd) <= 0 && now - next.lastActionAt >= 60000)) {
+  } else if (action) {
     const amount = p ? c.addAmount : c.baseAmount;
     const fill = mark * (1 + sign * next.cost.slippage), qty = amount / mark;
     const fee = fill * qty * next.cost.entryFee;
@@ -170,4 +178,4 @@ function create(directory) {
   }
   return {get, configure, control, mark, view, corrupt: () => corrupt};
 }
-module.exports = {create, eligible, defaults, normalize, totalNotional, targets, step, tradePlan};
+module.exports = {create, eligible, defaults, normalize, totalNotional, targets, step, tradePlan, nextAction};

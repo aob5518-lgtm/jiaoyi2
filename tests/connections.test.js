@@ -142,7 +142,6 @@ test("Hotcoin creation stays stopped and read-only, and rotation verifies the re
 
 test("Hotcoin reads use signed GET requests and keep contracts distinct from base quantity",async()=>{
  const {createHmac}=require("node:crypto"), Hotcoin=require("../terminal/hotcoin");
- const stamp=Date.parse("2026-11-16T04:00:12.123Z");
  const acc={symbol:"ETH",quoteAsset:"USDT",apiKey:"read&+key",apiSecret:"read-only-secret"};
  let num=0;
  const request=async(raw,options)=>{
@@ -151,21 +150,20 @@ test("Hotcoin reads use signed GET requests and keep contracts distinct from bas
   assert.equal(url.origin,"https://api-ct.hotcoin.fit");
   assert.equal(options.method,"GET");assert.equal(options.redirect,"error");
   const response=value=>({ok:true,json:async()=>value});
-  if(path.endsWith("/public/time"))return response({timestamp:stamp});
   const [query]=url.search.slice(1).split("&Signature=");
-  assert.equal(url.searchParams.get("Timestamp"),"2026-11-16T04:00:12.123Z");
+  assert.ok(Math.abs(Date.now()-Date.parse(url.searchParams.get("Timestamp")))<5_000);
   assert.equal(url.searchParams.get("AccessKeyId"),acc.apiKey);
-  assert.equal(url.searchParams.get("Signature"),createHmac("sha256",acc.apiSecret).update("GET\n"+url.host+"\n"+path+"\n"+query).digest("base64"));
+  assert.equal(url.searchParams.get("Signature"),createHmac("sha256",acc.apiSecret).update("GET\nperpetual.hotcoinex.io\n"+path+"\n"+query).digest("base64"));
   if(path.endsWith("/assets/ethusdt"))return response({code:200,data:{currencyCode:"usdt",env:0,accountRights:"25000",availableMargin:"24150",unRealizedSurplus:"-35.2"}});
   if(path.endsWith("/position/list-all")){
-   assert.equal(url.searchParams.get("env"),"0");
+   assert.equal(url.searchParams.get("env"),null);
    return response([{contractCode:"ethusdt",quote:"usdt",amount:"15",size:"0.15",side:"long",price:"2460.5",lever:"5"},{amount:0}]);
   }
   assert.match(path,/products\/ethusdt\/list$/);
   return response([{status:0},{status:1},{status:2},{status:-1}]);
  };
  const data=await Hotcoin.readAccount(acc,request);
- assert.equal(num,4);
+ assert.equal(num,3);
  assert.deepEqual({balance:data.balance,free:data.available,pnl:data.unrealizedPnl,orders:data.openOrderCount,scope:data.ordersMarket,positions:data.positionCount},
   {balance:25000,free:24150,pnl:-35.2,orders:2,scope:"ETHUSDT",positions:1});
  assert.deepEqual(data.positions[0],{symbol:"ETH",market:"ETHUSDT",quoteAsset:"USDT",side:"long",qty:15,qtyUnit:"张",entry:2460.5,leverage:5,leverageSource:"native_exchange",mark:null,margin:null,unrealizedPnl:null});

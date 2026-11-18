@@ -12,8 +12,8 @@
   const a=state.accounts.find(a=>a.id===state.editing),inactive=!a||!!a.archivedAt;
   $("checkConnection").disabled=state.busy||inactive;$("selectConnection").disabled=state.busy||inactive;
   if($("deleteConnection"))$("deleteConnection").disabled=state.busy||!a;
-  if($("connectionToSettings"))$("connectionToSettings").disabled=state.busy||inactive||a?.tradeMode==="live";
-  if($("connectionToSettings"))$("connectionToSettings").textContent=a?.tradeMode==="live"?"当前研究策略未开放实盘执行":"配置该账户策略 →";
+  if($("connectionToSettings"))$("connectionToSettings").disabled=state.busy||inactive||a?.tradeMode==="live"&&!a.liveStrategy;
+  if($("connectionToSettings"))$("connectionToSettings").textContent=a?.liveStrategy?"配置经典实盘 →":a?.tradeMode==="live"?"查看真实账户":"配置该账户策略 →";
   $("checkConnection").textContent=a?.tradeMode==="live"?"读取真实账户与持仓":"测试已保存连接";
   form.querySelector('[type="submit"]').disabled=state.busy||!!a?.archivedAt;
  }
@@ -205,7 +205,7 @@
    message(data.message);
   } catch (error) {message(error.message);}
   finally {state.busy = false;buttons();}
-  if(desk&&createdId&&await chooseCurrent(createdId)&&!live)document.dispatchEvent(new CustomEvent("just-go-page",{detail:"parameters"}));
+  if(desk&&createdId&&await chooseCurrent(createdId)&&(!live||state.accounts.find(a=>a.id===createdId)?.liveStrategy))document.dispatchEvent(new CustomEvent("just-go-page",{detail:"parameters"}));
  };
  $("checkConnection").onclick = async () => {
   if (!state.editing || state.busy) return;

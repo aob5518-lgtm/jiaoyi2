@@ -10,6 +10,8 @@ smart_runtime.json
 trend_only_runtime.json
 compound_4h_runtime.json
 classic_paper_runtime.json
+classic_live_runtime.json
+classic_live_runtime.json.tmp
 turtle_4h_paper.json
 reversal_4h_paper.json
 funding_carry_paper.json

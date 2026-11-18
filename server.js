@@ -3413,6 +3413,16 @@ const chartSwingPaper = require("./strategy/turtle_4h/runtime").create({
 const paperEngines = new Map([[Turtle.ID,turtlePaper],[Reversal.ID,reversalPaper],[Carry.ID,carryPaper],[Pullback.ID,pullbackPaper],[ChartSwing.ID,chartSwingPaper]]);
 const independentPaperEngine = account => paperEngines.get(account.strategyType);
 const classicPaper = require("./terminal/classic-paper").create(__dirname);
+const LiveClassic = require("./terminal/classic-live");
+const classicLive = LiveClassic.create({
+  directory: __dirname,
+  exchange: require("./terminal/hotcoin-execution").create(fetch),
+  conflict: account => config.accounts.some(other => {
+    if (other.id === account.id || other.platform !== account.platform || other.symbol !== account.symbol) return false;
+    const book = classicLive.get(other.id);
+    return book?.running || book?.position || book?.pending;
+  })
+});
 function verifyDeskLegacyFlat(account, st) {
   const trend = account.strategyType === "classic" ? trendRuntime.get(account) : {};
   if (account.running || st.running || Number(st.positionQty) || Number(st.realPositionSize) ||
@@ -3482,11 +3492,11 @@ function deskReadOnlyStatus(account, st) {
 
 async function tickAccount(acc) {
   const st = stateMap[acc.id];
-  if (!st || acc.platform==="hotcoin") return;
+  if (!st || acc.platform==="hotcoin" && !classicLive.get(acc.id)) return;
   if(st.terminalMutating)return;
   if (st.tickRunning) return;
   const activeStrategyType = getStrategyType(acc);
-  const needsLock = activeStrategyType !== "classic" || !!classicPaper.get(acc.id);
+  const needsLock = acc.platform === "hotcoin" || activeStrategyType !== "classic" || !!classicPaper.get(acc.id);
   const tradeLock = needsLock ? acquireAccountTradeLock(acc.id) : null;
   if (needsLock && !tradeLock) return;
   st.tickRunning = true;
@@ -3495,6 +3505,7 @@ async function tickAccount(acc) {
   try {
     // 每轮只清除“当前异常”；lastError 保留最近一次错误供排查。
     st.activeError = "";
+    if (acc.platform === "hotcoin") {await classicLive.tick(acc);return;}
     if(activeStrategyType===Turtle.ID){await turtlePaper.tick(acc,st);return;}
     if(activeStrategyType===Reversal.ID){await reversalPaper.tick(acc,st);return;}
     if(activeStrategyType===Carry.ID){await carryPaper.tick(acc,st);return;}
@@ -4978,7 +4989,7 @@ const server = http.createServer((req, res) => {
   if (classicOnly && pathname === "/intelligent-trend.html") return redirect(res, "/");
   if (pathname === "/safety-console.html") {
     const account = getAccountById(String(parsed.query.account || getCurrentAccount()?.id || ""));
-    if (account && classicPaper.get(account.id)) return redirect(res, "/?account=" + encodeURIComponent(account.id) + "#overview");
+    if (account && (classicPaper.get(account.id) || LiveClassic.eligible(account))) return redirect(res, "/?account=" + encodeURIComponent(account.id) + "#overview");
   }
   if(pathname==="/compound.html"||pathname==="/mobile.html"){
     const id=String(parsed.query.id||""),valid=id&&getAccountById(id);
@@ -5039,7 +5050,7 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/v4/desk" || pathname.startsWith("/api/v4/desk/")) {
     if (!isAuthenticated(req)) return jsonRes(res, 401, {ok: false, error: "请先登录"});
     return require("./terminal/desk").handle(req, res, parsed, {
-      classicPaper, getAccountById, getCurrentAccount, accounts: () => config.accounts, state: id => stateMap[id],
+      classicPaper, classicLive, getAccountById, getCurrentAccount, accounts: () => config.accounts, state: id => stateMap[id],
       json: jsonRes, verifyLegacyFlat: verifyDeskLegacyFlat, readOnlyStatus: deskReadOnlyStatus,readNative:readNativeConnection,
       legacyHistory: account => isCompound(account) ? compoundRuntime.get(account).history.filter(row => row.filledQty > 0) : stateMap[account.id]?.profitHistory,
       price: getMarketPrice, lock: acquireAccountTradeLock, unlock: releaseAccountTradeLock, leverageRules
@@ -5047,7 +5058,7 @@ const server = http.createServer((req, res) => {
   }
   if(pathname.startsWith("/api/v4/")){
     if(!isAuthenticated(req))return jsonRes(res,401,{ok:false,error:"请先登录"});
-    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,classicPaper,classicOnly,independentEngine:independentPaperEngine,connectionChanged:invalidateConnectionRead,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:readNativeConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
+    require("./terminal/api").handle(req,res,parsed,{directory:__dirname,classicPaper,classicLive,classicOnly,independentEngine:independentPaperEngine,connectionChanged:invalidateConnectionRead,accounts:()=>config.accounts,state:id=>stateMap[id],simulationOrders:id=>simulationOrdersMap[id]||[],trend:trendRuntime,compound:compoundRuntime,getCurrentAccount,getAccountById,sanitize:sanitizeAccountForDashboard,json:jsonRes,save:cfg=>{saveConfig(cfg);config=cfg;ensureAccountStates();},configuration:()=>loadConfig(),running:persistAccountRunning,price:getFreshMarketPrice,verifyLiveFlat:verifyLegacyLiveFlat,checkConnection:readNativeConnection,lock:acquireAccountTradeLock,unlock:releaseAccountTradeLock});return;
   }
 
   if(pathname.startsWith("/api/compound")){
@@ -5348,7 +5359,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/api/config" && req.method === "POST") {
-    if (classicPaper.get(getCurrentAccount()?.id)) return jsonRes(res, 409, {ok: false, error: "请在量化后台修改经典策略参数"});
+    if (classicPaper.get(getCurrentAccount()?.id) || classicLive.get(getCurrentAccount()?.id)) return jsonRes(res, 409, {ok: false, error: "请在量化后台修改经典策略参数"});
     let body = "";
     req.on("data", chunk => body += chunk);
     req.on("end", async () => {
@@ -5361,7 +5372,7 @@ const server = http.createServer((req, res) => {
         if (idx === -1) return jsonRes(res, 404, { ok: false, error: "当前账户不存在" });
 
         const current = cfg.accounts[idx];
-        if (classicPaper.get(current.id)) throw Error("请在量化后台修改经典策略参数");
+        if (classicPaper.get(current.id) || classicLive.get(current.id)) throw Error("请在量化后台修改经典策略参数");
         if (isIndependentPaper(current.strategyType) || isIndependentPaper(next.strategyType)) throw Error("独立模拟账户请在工作台修改参数");
         require("./terminal/migration-audit").authorize({account:current,next});
         const currentState = stateMap[current.id];
@@ -5589,6 +5600,9 @@ const server = http.createServer((req, res) => {
 
   if (pathname === "/api/stop-all" && req.method === "POST") {
     const cfg = loadConfig();
+    if (cfg.accounts.some(account=>classicLive.get(account.id)?.running)) {
+      return jsonRes(res,409,{ok:false,error:"有经典实盘正在运行，请先在交易工作台暂停实盘"});
+    }
     ensureAccountStates();
 
     for (const current of cfg.accounts || []) {
@@ -5693,6 +5707,7 @@ const server = http.createServer((req, res) => {
 
   if (pathname === "/api/stop" && req.method === "POST") {
     const current = getCurrentAccount();
+    if (classicLive.get(current.id)) return jsonRes(res,409,{ok:false,error:"请在交易工作台暂停经典实盘"});
     if(isIndependentPaper(current.strategyType)){independentPaperEngine(current).control(current,stateMap[current.id],"pause");return jsonRes(res,200,{ok:true,message:"已暂停模拟新开仓，持仓保护继续"});}
     if (classicPaper.get(current.id)) classicPaper.control(current, "pause");
     stateMap[current.id].running = false;
@@ -5708,6 +5723,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/api/manual-order" && req.method === "POST") {
+    if (classicLive.get(getCurrentAccount()?.id)) return jsonRes(res,409,{ok:false,error:"请在交易工作台管理经典实盘持仓"});
     if(isIndependentPaper(getCurrentAccount()?.strategyType))return jsonRes(res,409,{ok:false,error:"独立模拟仓位请使用工作台的持仓操作"});
     if (classicPaper.get(getCurrentAccount()?.id)) return jsonRes(res, 409, {ok: false, error: "经典模拟仓位请在量化后台管理"});
     let body = "";
@@ -5716,6 +5732,7 @@ const server = http.createServer((req, res) => {
       try {
         const current = getCurrentAccount();
         const data = JSON.parse(body || "{}");
+        if (classicLive.get(current.id)) throw Error("请在交易工作台管理经典实盘持仓");
         if (classicPaper.get(current.id)) throw Error("经典模拟仓位请在量化后台管理");
         if (classicOnly && data.reduceOnly !== true) return jsonRes(res, 410, {ok: false, error: "旧手动开仓入口已退役"});
         if(isCompound(current))return jsonRes(res,400,{ok:false,error:"4H独立Paper策略禁止手动加仓，请使用4H工作台"});
