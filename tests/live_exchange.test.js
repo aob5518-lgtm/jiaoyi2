@@ -85,3 +85,29 @@ test("Hotcoin candle parser uses official low/high/open/close ordering and Exten
  assert.deepEqual(hot,ext);
  assert.equal(hot[0].open,100);assert.equal(hot[0].low,98);
 });
+
+test("Binance snapshots include native algo orders and missing native fee evidence cannot look executable",async()=>{
+ let missingFee=false;
+ const api=create({request:async(raw)=>{
+  const route=new URL(raw).pathname;
+  const data={
+   "/fapi/v2/account":{totalMarginBalance:"1000",totalWalletBalance:"1000",availableBalance:"900",totalUnrealizedProfit:"0"},
+   "/fapi/v2/positionRisk":[{symbol:"ETHUSDT",positionAmt:"0",leverage:"5"}],
+   "/fapi/v1/openOrders":[],
+   "/fapi/v1/openAlgoOrders":[{algoId:"90071992547409935"}],
+   "/fapi/v1/positionSide/dual":{dualSidePosition:false},
+   "/fapi/v1/commissionRate":missingFee?{}:{takerCommissionRate:".0005"},
+   "/fapi/v1/leverageBracket":[{brackets:[{initialLeverage:125}]}],
+   "/fapi/v1/ticker/bookTicker":{bidPrice:"2000",askPrice:"2000.1",bidQty:"1",askQty:"1",time:Date.now()},
+   "/fapi/v1/exchangeInfo":{symbols:[{symbol:"ETHUSDT",status:"TRADING",contractType:"PERPETUAL",filters:[
+    {filterType:"LOT_SIZE",stepSize:".001",minQty:".001",maxQty:"100"},
+    {filterType:"PRICE_FILTER",tickSize:".01"},{filterType:"MIN_NOTIONAL",notional:"5"}]}]}
+  }[route];
+  assert.ok(data,route);
+  return response(data);
+ }});
+ const a={...A,platform:"binance",quoteAsset:"USDT"},s=await api.snapshot(a);
+ assert.deepEqual(s.working,["algo:90071992547409935"]);
+ missingFee=true;
+ await assert.rejects(api.snapshot(a),/原生账户数据失效/);
+});

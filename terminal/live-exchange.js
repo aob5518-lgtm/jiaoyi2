@@ -22,7 +22,7 @@ function create({request=fetch,hlClient,keyAddress,extendedOrder}={}) {
       const response=await request(url,{...options,redirect:"error",signal:AbortSignal.timeout(10000)});
       if(!response.ok)throw Error();
       const data=JSON.parse(await response.text(),(key,value,context)=>
-        ["id","oid","orderId","positionId"].includes(key)&&typeof value==="number"&&/^\d+$/.test(context?.source||"")?context.source:value);
+        ["id","oid","orderId","algoId","positionId"].includes(key)&&typeof value==="number"&&/^\d+$/.test(context?.source||"")?context.source:value);
       if(data?.code<0||data?.status==="ERROR")throw Error();
       return data;
     }catch{throw Error("交易所原生接口未确认结果，请核对连接或委托");}
@@ -70,19 +70,20 @@ function create({request=fetch,hlClient,keyAddress,extendedOrder}={}) {
   }
   async function binanceSnapshot(a) {
     const market=a.symbol+"USDT";
-    const [state,positions,orders,mode,fee,metadata,book,tiers]=await Promise.all([
+    const [state,positions,orders,mode,fee,metadata,book,tiers,conditional]=await Promise.all([
       binance(a,"/fapi/v2/account"),binance(a,"/fapi/v2/positionRisk",{symbol:market}),
       binance(a,"/fapi/v1/openOrders",{symbol:market}),binance(a,"/fapi/v1/positionSide/dual"),
       binance(a,"/fapi/v1/commissionRate",{symbol:market}),json("https://fapi.binance.com/fapi/v1/exchangeInfo"),
-      json("https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol="+market),binance(a,"/fapi/v1/leverageBracket",{symbol:market})]);
+      json("https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol="+market),binance(a,"/fapi/v1/leverageBracket",{symbol:market}),
+      binance(a,"/fapi/v1/openAlgoOrders",{symbol:market})]);
     const row=metadata.symbols?.find(v=>v.symbol===market&&v.status==="TRADING"&&v.contractType==="PERPETUAL");
     const lot=row?.filters?.find(v=>v.filterType==="LOT_SIZE"),tick=row?.filters?.find(v=>v.filterType==="PRICE_FILTER");
     const leverage=n(positions.find(p=>p.symbol===market)?.leverage);
-    if(!Array.isArray(orders)||typeof mode.dualSidePosition!=="boolean"||!(n(lot?.stepSize)>0&&n(tick?.tickSize)>0))throw Error("Binance 账户模式或合约规格无法核对");
+    if(!Array.isArray(orders)||!Array.isArray(conditional)||typeof mode.dualSidePosition!=="boolean"||!(n(lot?.stepSize)>0&&n(tick?.tickSize)>0))throw Error("Binance 账户模式、条件委托或合约规格无法核对");
     return {balance:n(state.totalMarginBalance),available:n(state.availableBalance),unrealizedPnl:n(state.totalUnrealizedProfit),
       positions:Native.summarize(a,{positions,balance:state.totalWalletBalance,available:state.availableBalance}).positions
         .filter(p=>p.symbol===a.symbol).map(p=>({...p,id:market+":"+p.side,qtyUnit:a.symbol})),
-      working:orders.map(o=>id(o.orderId)),mode:mode.dualSidePosition?1:0,
+      working:[...orders.map(o=>id(o.orderId)),...conditional.map(o=>"algo:"+id(o.algoId))],mode:mode.dualSidePosition?1:0,
       leverage:{long:leverage,short:leverage},limits:{long:Math.min(n(lot.maxQty),n(book.askQty)),short:Math.min(n(lot.maxQty),n(book.bidQty))},
       bid:n(book.bidPrice),ask:n(book.askPrice),bidSize:n(book.bidQty),askSize:n(book.askQty),quoteTime:n(book.time),
       feeRate:n(fee.takerCommissionRate),spec:{unit:1,step:n(lot.stepSize),minQty:n(lot.minQty),tick:n(tick.tickSize),
@@ -112,7 +113,7 @@ function create({request=fetch,hlClient,keyAddress,extendedOrder}={}) {
   async function snapshot(a) {
     const start=Date.now(),s=a.platform==="hotcoin"?await hotcoin.snapshot(a):a.platform==="hyperliquid"?await hyperSnapshot(a):
       a.platform==="binance"?await binanceSnapshot(a):a.platform==="extended"?await extendedSnapshot(a):null;
-    if(!s||!(s.bid>0&&s.ask>=s.bid&&s.bidSize>0&&s.askSize>0&&s.feeRate>=0&&s.balance!==null&&s.available!==null)||
+    if(!s||!(s.bid>0&&s.ask>=s.bid&&s.bidSize>0&&s.askSize>0&&Number.isFinite(s.feeRate)&&s.feeRate>=0&&s.balance!==null&&s.available!==null)||
       Date.now()-start>12000||s.quoteTime&&(Date.now()-s.quoteTime>15000||s.quoteTime>Date.now()+2000))throw Error("实盘行情或原生账户数据失效");
     return {...s,at:Date.now(),source:a.platform+"_perpetual_native"};
   }

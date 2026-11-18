@@ -35,7 +35,7 @@
   state.drawer="";
   return true;
  }
- async function openDrawer(page, {newAccount=false}={}) {
+ async function openDrawer(page, {newAccount=false,live=false}={}) {
   if (!["parameters","accounts","history"].includes(page)) return;
   if(state.busy||state.switching||state.turtle?.busy)return;
   if(state.drawer===page)return;
@@ -54,7 +54,7 @@
   if(page==="accounts")document.dispatchEvent(new CustomEvent("workspacepage",{detail:"connections"}));
   if(page==="parameters")loadLeverage();
   if(page==="history"){state.offset=0;loadTrades();}
-  if(newAccount)$("newConnection").click();
+  if(newAccount)$(live?"newLiveConnection":"newConnection").click();
  }
  async function api(route, body) {
   const result = await fetch(route, {credentials: "same-origin", cache: "no-store",
@@ -351,7 +351,8 @@
   create.hidden=historical||state.empty;
   edit.disabled=blocked||turtle&&!paper;
   create.disabled=blocked||turtle&&!state.turtle?.loaded;
-  const openNew=()=>turtle?turtleDesk?.openCreate():openDrawer("accounts",{newAccount:true});
+  const openNew=()=>turtle?turtleDesk?.openCreate():openDrawer("accounts",{newAccount:true,live:account.liveStrategy});
+  create.textContent=account.liveStrategy?"新增实盘账户":"新建模拟账户";
   create.onclick=openNew;
   let hint="";
   if(historical){
