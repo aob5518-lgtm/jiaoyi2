@@ -1,0 +1,530 @@
+[
+  {
+    "width": 1920,
+    "height": 1080,
+    "count": 64,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 6250,
+    "listClient": 799,
+    "overlap": false,
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "count": 100,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 9770,
+    "listClient": 799,
+    "overlap": false,
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "count": 150,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 14658,
+    "listClient": 799,
+    "overlap": false,
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "scenario": "save-check-start-pause",
+    "percentUnits": true,
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "scenario": "active-snapshot-edit",
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "scenario": "pending",
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "scenario": "save-failure-retains-draft",
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "scenario": "native-outage-block",
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "scenario": "create-paper-stopped",
+    "client": 1905,
+    "scroll": 1905,
+    "main": 1655
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "count": 64,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 6250,
+    "listClient": 619,
+    "overlap": false,
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "count": 100,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 9770,
+    "listClient": 619,
+    "overlap": false,
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "count": 150,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 14658,
+    "listClient": 619,
+    "overlap": false,
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "scenario": "save-check-start-pause",
+    "percentUnits": true,
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "scenario": "active-snapshot-edit",
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "scenario": "pending",
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "scenario": "save-failure-retains-draft",
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "scenario": "native-outage-block",
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "scenario": "create-paper-stopped",
+    "client": 1585,
+    "scroll": 1585,
+    "main": 1335
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "count": 64,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 6250,
+    "listClient": 619,
+    "overlap": false,
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "count": 100,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 9770,
+    "listClient": 619,
+    "overlap": false,
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "count": 150,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 14658,
+    "listClient": 619,
+    "overlap": false,
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "scenario": "save-check-start-pause",
+    "percentUnits": true,
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "scenario": "active-snapshot-edit",
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "scenario": "pending",
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "scenario": "save-failure-retains-draft",
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "scenario": "native-outage-block",
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "scenario": "create-paper-stopped",
+    "client": 1425,
+    "scroll": 1425,
+    "main": 1175
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "count": 64,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 6250,
+    "listClient": 487,
+    "overlap": false,
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "count": 100,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 9770,
+    "listClient": 487,
+    "overlap": false,
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "count": 150,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 14658,
+    "listClient": 487,
+    "overlap": false,
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "scenario": "save-check-start-pause",
+    "percentUnits": true,
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "scenario": "active-snapshot-edit",
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "scenario": "pending",
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "scenario": "save-failure-retains-draft",
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "scenario": "native-outage-block",
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "scenario": "create-paper-stopped",
+    "client": 1351,
+    "scroll": 1351,
+    "main": 1101
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "count": 64,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 6250,
+    "listClient": 563,
+    "overlap": false,
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "count": 100,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 9770,
+    "listClient": 563,
+    "overlap": false,
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "count": 150,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 14658,
+    "listClient": 563,
+    "overlap": false,
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "scenario": "save-check-start-pause",
+    "percentUnits": true,
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "scenario": "active-snapshot-edit",
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "scenario": "pending",
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "scenario": "save-failure-retains-draft",
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "scenario": "native-outage-block",
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "scenario": "create-paper-stopped",
+    "client": 390,
+    "scroll": 390,
+    "main": 390
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "count": 64,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 6250,
+    "listClient": 531,
+    "overlap": false,
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "count": 100,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 9770,
+    "listClient": 531,
+    "overlap": false,
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "count": 150,
+    "scenario": "accounts",
+    "cardHeight": 90.765625,
+    "listScroll": 14658,
+    "listClient": 531,
+    "overlap": false,
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "scenario": "save-check-start-pause",
+    "percentUnits": true,
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "scenario": "active-snapshot-edit",
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "scenario": "pending",
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "scenario": "save-failure-retains-draft",
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "scenario": "native-outage-block",
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  },
+  {
+    "width": 375,
+    "height": 812,
+    "scenario": "create-paper-stopped",
+    "client": 375,
+    "scroll": 375,
+    "main": 375
+  }
+]

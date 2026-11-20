@@ -1,6 +1,6 @@
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("fs"),path=require("path"),vm=require("vm");
 const base=path.resolve(__dirname,".."),read=file=>fs.readFileSync(path.join(base,file),"utf8");
-const html=read("public/index.html"),moduleText=fs.readdirSync(path.join(base,"public/terminal")).filter(f=>f.endsWith(".js")).map(f=>read("public/terminal/"+f)).join("\n"),css=read("public/terminal/terminal.css");
+const html=read("public/safety-console.html"),moduleText=fs.readdirSync(path.join(base,"public/terminal")).filter(f=>f.endsWith(".js")).map(f=>read("public/terminal/"+f)).join("\n"),css=read("public/terminal/terminal.css");
 function pure(){const window={};vm.runInNewContext(read("public/terminal/core.js"),{window,location:{search:"",hash:""},URLSearchParams,URL,Number});vm.runInNewContext(read("public/terminal/layout.js"),{window});return window.SA;}
 
 test("信号回放统计正确区分等待、追单、CHOP、高周期与风控阻断", () => {

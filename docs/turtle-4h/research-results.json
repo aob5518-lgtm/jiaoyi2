@@ -1,0 +1,103 @@
+{
+  "kind": "retrospective_research_previously_seen_history",
+  "protocol": "docs/turtle-4h/PROTOCOL.md",
+  "config": {
+    "entryBars": 55,
+    "exitBars": 20,
+    "atrPeriod": 20,
+    "stopAtr": 2,
+    "riskPerTrade": 0.005,
+    "leverage": 1,
+    "direction": "both"
+  },
+  "configHash": "076348c83b024f8f08c526636367bcfb3d5110d72a702507ed129a616b5e9e50",
+  "revision": "TURTLE_4H_PAPER_V1_20261115",
+  "sources": [
+    {
+      "symbol": "ETHUSDT",
+      "source": "Binance USD-M public monthly archives",
+      "sha256": "fad55bbb2372e0add267186f1de33207466ff7419c2967cda42485855c7f6e76",
+      "fundingMarkLimitation": "Actual historical rates; settlement mark estimated by official mark-price hourly open at funding boundary, not claimed exact settlement mark."
+    },
+    {
+      "symbol": "BTCUSDT",
+      "source": "Binance USD-M public monthly archives",
+      "sha256": "1d5accfd946058c7cff88e5a2d78b099b7a32eb9a0f3d2d28af812cc031db449",
+      "fundingMarkLimitation": "Actual historical rates; settlement mark estimated by official mark-price hourly open at funding boundary, not claimed exact settlement mark."
+    }
+  ],
+  "results": [
+    {
+      "symbol": "ETHUSDT",
+      "year": 2024,
+      "from": "2024-01-01T00:00:00.000Z",
+      "to": "2025-01-01T00:00:00.000Z",
+      "hours": 8784,
+      "signalCount": 117,
+      "trades": 36,
+      "netPnl": 271.0170556327,
+      "netExpectancy": 7.528251545352778,
+      "profitFactor": 1.2207376174264706,
+      "winRate": 0.3333333333333333,
+      "maxDrawdown": 0.0921123206584528,
+      "worstTrade": -91.45848487041621,
+      "fees": 47.67874325212585,
+      "funding": -70.76599221939603,
+      "openPosition": null
+    },
+    {
+      "symbol": "ETHUSDT",
+      "year": 2025,
+      "from": "2025-01-01T00:00:00.000Z",
+      "to": "2026-01-01T00:00:00.000Z",
+      "hours": 8760,
+      "signalCount": 105,
+      "trades": 37,
+      "netPnl": -161.7844570002,
+      "netExpectancy": -4.372552891897297,
+      "profitFactor": 0.8828170850614337,
+      "winRate": 0.24324324324324326,
+      "maxDrawdown": 0.07296526718126316,
+      "worstTrade": -80.23262781677431,
+      "fees": 43.94522950026861,
+      "funding": -18.96626028086699,
+      "openPosition": null
+    },
+    {
+      "symbol": "BTCUSDT",
+      "year": 2024,
+      "from": "2024-01-01T00:00:00.000Z",
+      "to": "2025-01-01T00:00:00.000Z",
+      "hours": 8784,
+      "signalCount": 120,
+      "trades": 36,
+      "netPnl": -215.4521525792,
+      "netExpectancy": -5.984782016088889,
+      "profitFactor": 0.8500988687521437,
+      "winRate": 0.25,
+      "maxDrawdown": 0.09185743939545712,
+      "worstTrade": -177.91913074259557,
+      "fees": 54.734563439468886,
+      "funding": -75.88737769421047,
+      "openPosition": null
+    },
+    {
+      "symbol": "BTCUSDT",
+      "year": 2025,
+      "from": "2025-01-01T00:00:00.000Z",
+      "to": "2026-01-01T00:00:00.000Z",
+      "hours": 8760,
+      "signalCount": 111,
+      "trades": 38,
+      "netPnl": -782.7425079401,
+      "netExpectancy": -20.598487051055265,
+      "profitFactor": 0.41936431779795524,
+      "winRate": 0.2894736842105263,
+      "maxDrawdown": 0.10023197161579483,
+      "worstTrade": -80.85735103198787,
+      "fees": 71.64251871767367,
+      "funding": -10.014793285386704,
+      "openPosition": null
+    }
+  ]
+}

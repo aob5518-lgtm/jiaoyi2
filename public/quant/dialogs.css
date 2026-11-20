@@ -1,0 +1,26 @@
+.site-dialog,.account-batch-dialog{box-sizing:border-box;color:#e4ecf5;background:#111923;border:1px solid #34465b;border-radius:14px;width:min(550px,calc(100% - 24px));max-width:none;max-height:calc(100dvh - 32px);padding:22px;overflow:auto}
+.account-batch-dialog{width:min(670px,calc(100% - 24px))}
+.site-dialog::backdrop,.account-batch-dialog::backdrop{background:#030812c8}
+.site-dialog h2,.account-batch-dialog h2{margin:0 0 12px;font-size:20px;line-height:1.4}
+.site-dialog-message{color:#b7c5d6;white-space:pre-line;overflow-wrap:anywhere}
+.site-dialog-actions,.batch-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:16px}
+.site-dialog-actions button,.batch-actions button,.batch-tools button{border:1px solid #34465b;border-radius:8px;min-height:42px;padding:8px 13px;color:#e4ecf5;background:#1b2836;cursor:pointer;font:inherit}
+.site-dialog-actions button.primary,.batch-actions button.primary{background:#60cbe2;color:#071924;border-color:#60cbe2;font-weight:600}
+.site-dialog-actions button.exit-button,.batch-actions button.exit-button{color:#ffd3da;background:#502b38;border-color:#945368}
+.site-dialog-actions button:disabled,.batch-actions button:disabled{opacity:.55;cursor:default}
+.site-dialog-actions button:focus-visible,.batch-actions button:focus-visible,.batch-tools :focus-visible,.batch-row input:focus-visible{outline:2px solid #60cbe2;outline-offset:2px}
+.batch-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.batch-tools label{flex:1 1 155px;min-width:0}
+.batch-tools input[type=search],.batch-tools select{width:100%;box-sizing:border-box;min-width:0;padding:9px;background:#162231;border:1px solid #34465b;border-radius:8px;color:#e4ecf5;font:inherit}
+.batch-tools select{flex:0 1 145px}
+.batch-list,.batch-results{max-height:min(42dvh,360px);overflow:auto;margin:12px 0;padding:0;list-style:none}
+.batch-row{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px;border-bottom:1px solid #253244;cursor:pointer}
+.batch-row input,.batch-all input{flex:0 0 18px;width:18px;height:18px;min-height:auto;accent-color:#60cbe2}
+.batch-row>span{min-width:0;overflow-wrap:anywhere}
+.batch-row strong,.batch-row small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.batch-row small,.batch-summary{color:#9bacc0}
+.batch-all{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:13px}
+.batch-results li{padding:8px 0;border-bottom:1px solid #253244;overflow-wrap:anywhere}
+.batch-results small{display:block;color:#afbdce}
+.connection-tools #openAccountBatch,.connection-tools label{grid-column:1/-1}
+@media(max-width:600px){.site-dialog,.account-batch-dialog{padding:16px}.batch-tools select{flex:1 1 115px}}

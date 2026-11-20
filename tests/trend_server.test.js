@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os'),vm=require('vm'),{EventEmitter}=require('events'),{createRequire}=require('module');
 const base=path.resolve(__dirname,'..');
-function setup(t,env={}){
+function setup(t,env={},leverageSource){
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'trend-server-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
  const acc={id:'legacy',name:'legacy',platform:'hyperliquid',address:'0xabc',privateKey:'0x'+'1'.repeat(64),apiKey:'key',apiSecret:'secret',starkPrivateKey:'stark-secret',publicKey:'pub',vault:'vault',symbol:'ETH',quoteAsset:'USDC',side:'long',strategyType:'classic',tradeMode:'simulation',simulationEnabled:true,simulationBalance:10000,leverage:5,baseAmount:100,addAmount:100,takeProfit:.01,addTrigger:.01,maxAdds:2,interval:15000,running:false};
  fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify({currentAccountId:acc.id,accounts:[acc]}));
@@ -8,7 +8,8 @@ function setup(t,env={}){
  fs.writeFileSync(path.join(directory,'simulation_orders.json'),JSON.stringify({legacy:[]}));
  const raw=fs.readFileSync(path.join(base,'server.js'),'utf8').split('\ninitSdk()')[0];
  let handler;const req=createRequire(path.join(base,'server.js'));
- const ctx={require:n=>n==='http'?{createServer:fn=>{handler=fn;return{close(){}};}}:req(n),__dirname:directory,console,Buffer,URL,URLSearchParams,AbortController,fetch:()=>{throw Error('禁止测试访问网络');},setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{},process:{...process,env:{...process.env,...env},on(){}}};
+ const ctx={require:n=>n==='http'?{createServer:fn=>{handler=fn;return{close(){}};}}:
+  n==="./market_leverage"&&leverageSource?{create:()=>({load:leverageSource})}:req(n),__dirname:directory,console,Buffer,URL,URLSearchParams,AbortController,fetch:()=>{throw Error('禁止测试访问网络');},setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{},process:{...process,env:{...process.env,...env},on(){}}};
  vm.createContext(ctx);vm.runInContext(raw,ctx);vm.runInContext('ensureAccountStates()',ctx);
  async function call(url,body,auth=true){
   const sid=auth?vm.runInContext('createSession("test")',ctx):'';
@@ -17,14 +18,294 @@ function setup(t,env={}){
  }
  return{ctx,call,directory};
 }
+
+test("图示波段认证接口创建独立停止 Paper 账本、保存自身参数并防止旧接口或凭据混入",async t=>{
+ const C=require("../strategy/chart_swing_1h/config"),f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"});
+ const before=vm.runInContext("JSON.stringify(config.accounts[0])",f.ctx),route="/api/v4/swing";
+ for(const path of ["/accounts","/status?id=x","/history?id=x"])assert.equal((await f.call(route+path,undefined,false)).code,401);
+ assert.equal((await f.call(route+"/accounts",{name:"Invalid",symbol:"ETH",apiKey:"x"})).code,400);
+ const created=await f.call(route+"/accounts",{name:"Chart ETH",symbol:"ETH",initialEquity:10000});
+ assert.equal(created.code,200);const id=created.data.id;
+ const s=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(s.running,false);assert.equal(s.allowLive,false);assert.equal(s.realOrderPermission,false);
+ assert.equal(s.strategyType,C.ID);assert.equal(s.configHash,C.hash(C.defaults));
+ assert.equal((await f.call("/api/v4/desk?id="+id)).data.selected.strategy,"图示波段 1H");
+ assert.equal((await f.call("/api/v4/turtle/status?id="+id)).code,400);
+ assert.equal((await f.call("/api/v4/connections/update",{id,apiKey:"x"})).code,400);
+ assert.equal((await f.call("/api/config",{id,strategyType:"classic",tradeMode:"live"})).code,410);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:s.configHash,config:{riskPerTrade:.004,channelBars:24}})).code,200);
+ const saved=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(saved.config.channelBars,24);assert.equal(saved.config.riskPerTrade,.004);assert.equal(saved.running,false);
+ assert.equal((await f.call(route+"/control",{id,action:"start",confirm:true,expectedHash:s.configHash})).code,400);
+ assert.equal((await f.call(route+"/history?id="+id)).data.total,0);
+ assert.equal(vm.runInContext("JSON.stringify(config.accounts[0])",f.ctx),before);
+ assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
+});
+test("Native account reads are shared, invalidated on credential changes and never publish late old positions",async t=>{
+ const f=setup(t);
+ vm.runInContext('let nativeCalls=0,nativeRelease;checkAccountConnection=async()=>{nativeCalls++;return new Promise(resolve=>nativeRelease=resolve);};',f.ctx);
+ const one=vm.runInContext('readNativeConnection(config.accounts[0]).catch(()=>null)',f.ctx);
+ const two=vm.runInContext('readNativeConnection(config.accounts[0]).catch(()=>null)',f.ctx);
+ assert.equal(vm.runInContext("nativeCalls",f.ctx),1);
+ vm.runInContext('invalidateConnectionRead("legacy");nativeRelease({balance:100,positions:[{entry:111,leverage:2}]})',f.ctx);
+ assert.equal(await one,null);assert.equal(await two,null);
+ assert.equal(vm.runInContext('connectionSnapshots.has("legacy")',f.ctx),false);
+ vm.runInContext('checkAccountConnection=async()=>({balance:200,checkedAt:Date.now(),positions:[{entry:222,leverage:7}]});',f.ctx);
+ const result=await vm.runInContext('readNativeConnection(config.accounts[0])',f.ctx);
+ assert.equal(result.positions[0].leverage,7);
+ f.ctx.setTimeout=callback=>setImmediate(callback);f.ctx.clearTimeout=clearImmediate;
+ vm.runInContext('invalidateConnectionRead("legacy");checkAccountConnection=()=>new Promise(()=>{});',f.ctx);
+ assert.equal(await vm.runInContext('readNativeConnection(config.accounts[0]).catch(()=>null)',f.ctx),null);
+ assert.equal(vm.runInContext('connectionSnapshots.get("legacy").summary===undefined',f.ctx),true);
+});
+
+test("Live connection creation and Paper archive/restore use real authenticated routes without granting trading or changing books",async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"}),route="/api/v4/connections",before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ assert.equal((await f.call(route+"/archive-preview",{id:"legacy"},false)).code,401);
+ const live=await f.call(route+"/create",{name:"Native ETH",platform:"binance",symbol:"ETH",accountMode:"live",confirmLive:true,apiKey:"fake-key",apiSecret:"fake-secret"});
+ assert.equal(live.code,200);
+ const a=JSON.parse(fs.readFileSync(path.join(f.directory,"config.json"))).accounts.find(a=>a.id===live.data.account.id);
+ assert.equal(a.tradeMode,"live");assert.equal(a.simulationEnabled,false);assert.equal(a.strategyType,"connection_only");assert.equal(a.running,false);
+ const status=(await f.call("/api/v4/desk?id="+a.id)).data;
+ assert.equal(status.snapshot.equity,null);assert.equal(status.snapshot.position,null);assert.equal(status.snapshot.native,true);
+ assert.equal((await f.call("/api/v4/control",{id:a.id,action:"start"})).code,410);
+ assert.doesNotMatch(JSON.stringify((await f.call(route)).data),/fake-secret|fake-key/);
+ const created=await f.call("/api/v4/swing/accounts",{name:"Archive Paper",symbol:"ETH"});
+ const id=created.data.id,file=path.join(f.directory,"chart_swing_1h_paper.json"),book=fs.readFileSync(file,"utf8");
+ const p=(await f.call(route+"/archive-preview",{id})).data.review;assert.equal(p.allowed,true,JSON.stringify(p));
+ const archived=await f.call(route+"/archive",{id,confirm:true,expectedVersion:p.version});assert.equal(archived.code,200);
+ assert.equal((await f.call("/api/account/select",{id})).code,409);
+ assert.equal((await f.call("/api/v4/turtle/accounts")).data.accounts.some(account=>account.id===id),false);
+ assert.equal((await f.call(route)).data.accounts.some(account=>account.id===id&&account.archivedAt),true);
+ assert.equal((await f.call("/api/v4/swing/control",{id,action:"start",confirm:true})).code,400);
+ assert.equal(fs.readFileSync(file,"utf8"),book);
+ assert.equal((await f.call(route+"/restore",{id,confirm:true,expectedVersion:archived.data.account.lifecycleVersion})).code,200);
+ assert.equal((await f.call("/api/v4/turtle/accounts")).data.accounts.some(account=>account.id===id),true);
+ assert.equal(fs.readFileSync(file,"utf8"),book);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),before);
+});
+
+test("海龟 4H 真实服务器路由要求登录，创建独立停止账户且保留原配置",async t=>{
+ const f=setup(t),before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ assert.equal((await f.call('/api/v4/turtle/accounts',undefined,false)).code,401);
+ assert.equal((await f.call('/api/v4/turtle/control',{action:'start'},false)).code,401);
+ const created=await f.call('/api/v4/turtle/accounts',{name:'Turtle ETH',symbol:'ETH',initialEquity:10000});assert.equal(created.code,200);
+ const id=created.data.id,status=await f.call('/api/v4/turtle/status?id='+id);assert.equal(status.code,200);assert.equal(status.data.snapshot.running,false);assert.equal(status.data.snapshot.allowLive,false);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),before);
+ assert.equal((await f.call('/api/v4/desk?id='+id)).data.selected.strategy,'海龟趋势 4H');
+ assert.equal((await f.call('/api/v4/control',{id,action:'start'})).code,400);
+});
+test("海龟 Paper 账户不能从原连接入口添加密钥或通过兼容参数接口改策略",async t=>{
+ const f=setup(t),id=(await f.call('/api/v4/turtle/accounts',{name:'Turtle ETH',symbol:'ETH'})).data.id;
+ const before=vm.runInContext('JSON.stringify(config.accounts.find(a=>a.id==='+JSON.stringify(id)+'))',f.ctx);
+ assert.equal((await f.call('/api/v4/connections/update',{id,apiKey:'forbidden',apiSecret:'forbidden'})).code,400);
+ assert.equal((await f.call('/api/v4/config',{id,strategyType:'classic',config:{}})).code,400);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts.find(a=>a.id==='+JSON.stringify(id)+'))',f.ctx),before);
+});
+test("找底摸顶使用独立认证路由、策略配置和完整分页账本，禁止接入旧账户或真实凭据",async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"}),route="/api/v4/reversal",C=require("../strategy/reversal_4h/config");
+ const before=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ assert.equal((await f.call(route+"/accounts",undefined,false)).code,401);
+ assert.equal((await f.call(route+"/history?id=legacy",undefined,false)).code,401);
+ assert.equal((await f.call(route+"/accounts",{name:"Rejected",symbol:"ETH",apiKey:"test"})).code,400);
+ const created=await f.call(route+"/accounts",{name:"Reversal ETH",symbol:"ETH",initialEquity:10000});
+ assert.equal(created.code,200);
+ const {id}=created.data;
+ const s=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(s.running,false);
+ assert.equal(s.realOrderPermission,false);
+ assert.equal(s.strategyType,C.ID);
+ assert.equal((await f.call("/api/v4/desk?id="+id)).data.selected.strategy,"找底摸顶 4H");
+ assert.equal((await f.call("/api/v4/turtle/status?id="+id)).code,400);
+ assert.equal((await f.call(route+"/status?id=legacy")).code,400);
+ assert.equal((await f.call(route+"/control",{id,action:"start",confirm:true,expectedHash:"stale"})).code,400);
+ assert.equal((await f.call("/api/v4/connections/update",{id,apiKey:"test"})).code,400);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:s.configHash,config:{...C.defaults,riskPerTrade:.006}})).code,200);
+ assert.equal((await f.call(route+"/status?id="+id)).data.snapshot.config.riskPerTrade,.006);
+ assert.equal((await f.call(route+"/history?id="+id+"&offset=30")).data.total,0);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),before);
+ assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
+ assert.equal(fs.existsSync(path.join(f.directory,"turtle_4h_paper.json")),false);
+});
+test("资金费率对冲仅创建独立且停止的 Paper 账户，拒绝凭据与跨策略路由，支持保存和读取历史",async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"}),route="/api/v4/carry",C=require("../strategy/funding_carry/config");
+ assert.equal((await f.call(route+"/accounts",undefined,false)).code,401);
+ assert.equal((await f.call(route+"/accounts",{name:"Carry",symbol:"BTC",tradeMode:"live"})).code,400);
+ const created=await f.call(route+"/accounts",{name:"Carry",symbol:"BTC"});
+ assert.equal(created.code,200);
+ const id=created.data.id;
+ const status=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(status.running,false);
+ assert.equal(status.allowLive,false);
+ assert.equal(status.carry.phase,"flat");
+ assert.equal((await f.call("/api/v4/desk?id="+id)).data.selected.strategy,"资金费率对冲");
+ assert.equal((await f.call("/api/v4/connections/update",{id,apiSecret:"test"})).code,400);
+ assert.equal((await f.call("/api/v4/reversal/status?id="+id)).code,400);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:status.configHash,config:{allocationPct:.25}})).code,200);
+ assert.equal((await f.call(route+"/history?id="+id)).data.total,0);
+ assert.equal((await f.call(route+"/status?id="+id)).data.snapshot.configHash,C.hash({allocationPct:.25}));
+ assert.ok(fs.existsSync(path.join(f.directory,"funding_carry_paper.json")));
+});
+test("短线顺势回踩分离模拟账户、参数、历史与旧策略权限",async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"}),route="/api/v4/pullback",C=require("../strategy/pullback_15m/config");
+ assert.equal((await f.call(route+"/accounts",undefined,false)).code,401);
+ assert.equal((await f.call(route+"/accounts",{name:"Pullback",symbol:"BTC",tradeMode:"live"})).code,400);
+ const account=await f.call(route+"/accounts",{name:"Pullback",symbol:"BTC"});
+ assert.equal(account.code,200);
+ const id=account.data.id, current=(await f.call(route+"/status?id="+id)).data.snapshot;
+ assert.equal(current.running,false);
+ assert.equal(current.realOrderPermission,false);
+ assert.equal((await f.call("/api/v4/connections/update",{id,apiKey:"test"})).code,400);
+ assert.equal((await f.call("/api/v4/desk?id="+id)).data.selected.strategy,"短线顺势回踩");
+ assert.equal((await f.call("/api/v4/turtle/status?id="+id)).code,400);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:current.configHash,config:{minNetR:1.4}})).code,400);
+ assert.equal((await f.call(route+"/config",{id,expectedHash:current.configHash,config:{riskPerTrade:.004}})).code,200);
+ assert.equal((await f.call(route+"/status?id="+id)).data.snapshot.configHash,C.hash({riskPerTrade:.004}));
+ assert.equal((await f.call(route+"/history?id="+id)).data.total,0);
+ assert.ok(fs.existsSync(path.join(f.directory,C.ledgerName)));
+});
+test("五种工作台策略保存杠杆按具体交易所档位核验，保留旧档位和模式",async t=>{
+ let unavailable=false;
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"},async a=>{
+  if(unavailable)throw Error("no market evidence");
+  const max=a.platform==="hyperliquid"?25:150;
+  return {market:a.symbol,source:"test",maxLeverage:max,tiers:[{floor:0,cap:10000,maxLeverage:max},{floor:10000,cap:null,maxLeverage:10}]};
+ });
+ const desk="/api/v4/desk";
+ assert.equal((await f.call(desk+"/leverage?id=legacy",undefined,false)).code,401);
+ assert.equal((await f.call(desk+"/leverage?id=legacy")).data.spec.maxLeverage,25);
+ const classic={side:"long",leverage:25,maxAdds:1,baseAmount:100,addAmount:100,takeProfit:.01,addTrigger:.01};
+ assert.equal((await f.call(desk+"/settings",{id:"legacy",settings:classic})).code,200);
+ const denied=await f.call(desk+"/settings",{id:"legacy",settings:{...classic,baseAmount:9950}});
+ assert.match(denied.data.error,/最高 10 倍/);
+ assert.equal((await f.call(desk+"?id=legacy")).data.snapshot.settings.leverage,25);
+ for(const mode of ["turtle","reversal","carry","pullback"]){
+  const route="/api/v4/"+mode;
+  const created=await f.call(route+"/accounts",{name:"Leverage "+mode,symbol:"ETH"});
+  assert.equal(created.code,200);
+  const {id}=created.data;
+  const snapshot=async()=>(await f.call(route+"/status?id="+id)).data.snapshot;
+  const initial=await snapshot();
+  assert.equal(initial.config.leverage,1);
+  const payload={id,expectedHash:initial.configHash,config:{...initial.config,leverage:125}};
+  assert.equal((await f.call(route+"/config",payload)).code,200);
+  const saved=await snapshot();
+  assert.equal(saved.config.leverage,125);
+  assert.equal(saved.realOrderPermission,false);
+  assert.equal(saved.running,false);
+  const bad={...payload,expectedHash:saved.configHash,config:{...saved.config,leverage:151}};
+  assert.match((await f.call(route+"/config",bad)).data.error,/最高 150 倍/);
+  unavailable=true;
+  assert.match((await f.call(route+"/config",{...bad,config:{...saved.config,leverage:100}})).data.error,/暂未取得/);
+  unavailable=false;
+  assert.equal((await snapshot()).configHash,saved.configHash);
+ }
+});
+test("经典后台在真实 tick 入口执行模拟首仓和止盈，暂停及重启保留账本", async t => {
+ const f=setup(t), route="/api/v4/desk", settings={side:"long",leverage:1,baseAmount:100,addAmount:100,maxAdds:1,addTrigger:.01,takeProfit:.01};
+ fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");
+ assert.equal((await f.call(route,undefined,false)).code,401);
+ assert.equal((await f.call(route+"/settings",{id:"legacy",settings})).code,200);
+ assert.equal((await f.call(route)).data.selected.running,false);
+ vm.runInContext('getMarketPrice=async()=>100',f.ctx); // Startup now validates a quote before granting execution.
+ assert.equal((await f.call(route+"/control",{id:"legacy",action:"start"})).code,200);
+ await vm.runInContext('getMarketPrice=async()=>100;tickAccount(config.accounts[0])',f.ctx);
+ const open=(await f.call(route)).data.snapshot;
+ assert.equal(open.position.qty,1);assert.ok(open.position.takeProfit>100);
+ assert.equal((await f.call('/api/manual-order',{reduceOnly:true,confirm:true,size:1})).code,409);
+ assert.equal((await f.call(route+"/settings",{id:"legacy",settings})).code,400);
+ assert.equal((await f.call(route+"/control",{id:"legacy",action:"close"})).code,400);
+ const stored=require("../terminal/classic-paper").create(f.directory);
+ assert.equal(stored.get("legacy").position.qty,1);
+ await f.call("/api/stop",{});
+ await vm.runInContext('getMarketPrice=async()=>98;tickAccount(config.accounts[0])',f.ctx);
+ assert.equal((await f.call(route)).data.snapshot.position.adds,0);
+ await vm.runInContext('getMarketPrice=async()=>103;tickAccount(config.accounts[0])',f.ctx);
+ const closed=(await f.call(route)).data.snapshot;
+ assert.equal(closed.position,null);assert.equal(closed.running,false);assert.ok(closed.realized>0);
+ const history=(await f.call(route+"/history")).data;
+ assert.equal(history.total,1);assert.equal(history.items[0].reason,"策略止盈");
+ assert.equal(JSON.parse(fs.readFileSync(path.join(f.directory,"simulation_orders.json"),"utf8")).legacy.length,0);
+});
+test("经典模拟后台拒绝模式不明确或有旧订单证据的账户接入",async t=>{
+ for(const condition of ["ambiguous","ledger"]){
+  const f=setup(t);fs.writeFileSync(path.join(f.directory,"profit_history.json"),"{}");
+  if(condition==="ambiguous")vm.runInContext('config.accounts[0].simulationEnabled=false',f.ctx);
+  if(condition==="ledger")fs.writeFileSync(path.join(f.directory,"simulation_orders.json"),'{"legacy":[{"status":"UNKNOWN"}]}');
+  const result=await f.call("/api/v4/desk/settings",{id:"legacy",settings:{}});assert.equal(result.code,400,condition);
+  assert.equal(fs.existsSync(path.join(f.directory,"classic_paper_runtime.json")),false);
+ }
+});
+test("真实账户保存独立实盘参数，保留历史配置并要求明确启动",async t=>{
+ const f=setup(t);
+ vm.runInContext('Object.assign(config.accounts[0],{tradeMode:"live",simulationEnabled:false})',f.ctx);
+ const original=vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx);
+ const saved=await f.call("/api/v4/desk/settings",{id:"legacy",strategy:"turtle_4h_v1",settings:{}});
+ assert.equal(saved.code,200);
+ assert.equal(fs.existsSync(path.join(f.directory,"classic_paper_runtime.json")),false);
+ const state=JSON.parse(fs.readFileSync(path.join(f.directory,"classic_live_runtime.json")));
+ assert.equal(state.books.legacy.strategy,"turtle_4h_v1");
+ assert.equal(state.books.legacy.running,false);
+ assert.equal(state.books.legacy.position,null);
+ assert.equal(vm.runInContext('JSON.stringify(config.accounts[0])',f.ctx),original);
+ assert.equal((await f.call("/api/v4/desk/control",{id:"legacy",action:"start"})).code,400);
+});
+test("经典模拟固定金额补仓、次数上限及双向成交成本",()=>{
+ const C=require("../terminal/classic-paper"), start=Date.now();
+ for(const side of ["long","short"]){
+  const book={settings:{...C.defaults,side,maxAdds:1},cost:{entryFee:.0005,exitFee:.0005,slippage:.0005},running:true,balance:10000,realized:0,lastActionAt:0,position:null,trades:[]};
+  const opened=C.step(book,100,start).book;
+  const adverse=side==="long"?98:102;
+  assert.equal(C.step(opened,adverse,start+59999).book,opened);
+  const added=C.step(opened,adverse,start+60000).book;assert.equal(added.position.adds,1);
+  assert.ok(Math.abs((added.position.qty-opened.position.qty)*adverse-100)<1e-7);
+  assert.equal(C.step(added,side==="long"?95:105,start+120000).book,added);
+  const closed=C.step(added,100,start+121000,true).book;
+  assert.equal(closed.running,false);assert.equal(closed.position,null);assert.ok(closed.trades[0].tradingFee>0);
+  assert.equal(closed.realized,closed.trades[0].netPnl);
+ }
+});
+test("经典单页计划保留首仓成交与逐笔补仓，旧记录不伪造首仓价",()=>{
+ const C=require("../terminal/classic-paper"), start=Date.now();
+ for(const side of ["long","short"]){
+  const book={settings:{...C.defaults,side,maxAdds:2},cost:{entryFee:.0005,exitFee:.0005,slippage:.0005},running:true,balance:10000,realized:0,lastActionAt:0,position:null,trades:[]};
+  const opened=C.step(book,100,start).book;
+  const added=C.step(opened,side==="long"?98:102,start+60000).book;
+  const p=C.tradePlan(added,100,start+61000);
+  assert.equal(p.first.price,opened.position.entry);assert.equal(p.fills.length,2);assert.equal(p.add.amount,100);
+  assert.equal(p.add.lastPrice,added.position.lastFill);assert.equal(p.add.done,1);
+  assert.ok(Math.abs(p.add.quantity*p.add.price-100)<1e-8);
+  added.running=false;
+  const stopped=C.tradePlan(added,100,start+62000);
+  assert.equal(stopped.add.status,"已暂停");assert.equal(stopped.add.price,p.add.price);
+  delete added.position.firstFill;delete added.position.fills;
+  assert.equal(C.tradePlan(added,100).first.price,null);
+  assert.equal(C.step(added,101,start+63000,true).book.trades[0].firstFill,null);
+ }
+});
+test("仅经典模式关闭所有旧创建启动入口，保留只读核对和退出能力", async t=>{
+ const f=setup(t,{JUST_AGENT_CLASSIC_ONLY:"1"});
+ for(const route of ["/api/start","/api/start-all","/api/account/create","/api/config","/api/v4/accounts","/api/v4/config","/api/v4/shadow","/api/v4/migrate","/api/compound/start","/api/compound/create","/api/compound/config","/api/trend-only/config","/api/trend-only/confirm"]){
+  assert.equal((await f.call(route,{})).code,410,route);
+  assert.equal((await f.call(route,{},false)).code,401,route);
+ }
+ assert.equal((await f.call("/api/v4/control",{id:"legacy",action:"start"})).code,410);
+ assert.equal((await f.call("/api/v5/status")).code,410);
+ assert.equal((await f.call("/api/v4/desk")).code,200);
+ assert.equal((await f.call("/api/v4/connections")).code,200);
+ assert.equal((await f.call("/intelligent-trend.html")).headers.Location,"/");
+ assert.equal(vm.runInContext("stateMap.legacy.positionQty",f.ctx),0);
+ assert.equal((await f.call("/api/v4/control",{id:"legacy",action:"pause"})).code,200);
+});
 test('危险删除接口永久拒绝，不修改Legacy账户、历史、Smart或模拟账本',async t=>{const f=setup(t);vm.runInContext('historyMap.legacy=[{id:"retained",netPnl:8}];smartRuntimeMap.legacy={riskLock:true};simulationOrdersMap.legacy=[{status:"UNKNOWN"}]',f.ctx);const before=vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx);const r=await f.call('/api/account/delete',{id:'legacy',force:true});assert.equal(r.code,410);assert.equal(r.data.code,'ACCOUNT_DELETE_DISABLED');assert.equal(vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx),before);assert.equal((await f.call('/api/account/delete',{},false)).code,401);});
+test('V5研究接口必须登录，读取不会改生产账户/运行时/历史',async t=>{const f=setup(t),before=vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx);assert.equal((await f.call('/api/v5/status',undefined,false)).code,401);for(const page of ['/legacy-terminal.html','/safety-console.html','/intelligent-trend.html'])assert.match((await f.call(page,undefined,false)).headers.Location,/login/);assert.equal((await f.call('/api/v4/connections',undefined,false)).code,401);const connections=await f.call('/api/v4/connections');assert.equal(connections.code,200);assert.equal(connections.data.accounts[0].hasPrivateKey,true);assert.equal(JSON.stringify(connections.data).includes('stark-secret'),false);const r=await f.call('/api/v5/status');assert.equal(r.code,200);assert.equal(r.data.allowLive,false);assert.equal(r.data.accounts.length,0);assert.equal(vm.runInContext('JSON.stringify({config,historyMap,smartRuntimeMap,simulationOrdersMap,stateMap})',f.ctx),before);assert.equal(fs.existsSync(path.join(f.directory,'.v5-research')),false);});
 async function migrate(f,config){const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,200,r.text);return config?f.call('/api/trend-only/config',{accountId:'legacy',strategyType:'trend_only_v3',config}):r;}
 // Historical V1/V2 status/recovery fixtures are seeded directly, never created through a retired upgrade API.
 function seedLegacy(f,version){f.ctx.seedVersion=version;vm.runInContext('Object.assign(config.accounts[0],{strategyType:"trend_only_"+seedVersion,strategyMode:"Trend Only "+seedVersion.toUpperCase(),trendOnlyConfig:require(seedVersion==="v1"?"./trend_only":"./trend_only_v2").normalizeConfig({}),leverage:10,maxAdds:0});saveConfig(config);trendRuntime.resetForStrategySwitch(config.accounts[0],"trend_only_"+seedVersion)',f.ctx);}
 test('V4全部终端接口要求登录且不返回密钥',async t=>{const f=setup(t);for(const route of ['terminal','history','analysis'])assert.equal((await f.call('/api/v4/'+route,undefined,false)).code,401);assert.equal((await f.call('/api/v4/control',{action:'start'},false)).code,401);const r=await f.call('/api/v4/terminal');assert.equal(r.code,200);for(const value of ['stark-secret','0x'+'1'.repeat(64),'"apiSecret"','"privateKey"'])assert.equal(r.text.includes(value),false);assert.equal(r.data.account.hasPrivateKey,true);assert.equal(r.data.overview.policy.status,'LEGACY_RESTRICTED');});
 test('V4未知策略不回退经典引擎，创建和启动均阻断',async t=>{const f=setup(t);vm.runInContext('config.accounts[0].strategyType="unrecognized_bot"',f.ctx);assert.equal(vm.runInContext('getStrategyType(config.accounts[0])',f.ctx),'unrecognized_bot');const r=await f.call('/api/v4/terminal');assert.equal(r.data.overview.status,'UNSUPPORTED_STRATEGY');assert.equal((await f.call('/api/start',{})).code,400);assert.equal((await f.call('/api/v4/control',{id:'legacy',action:'start'})).code,400);assert.equal((await f.call('/api/v4/accounts',{strategyType:'classic'})).code,400);});
 test('V4三策略能力如实展示，新建V3/4H可用，Short-Term不能伪造独立Paper账户',async t=>{const f=setup(t),r=await f.call('/api/v4/terminal');assert.equal(r.data.catalog.length,3);assert.equal(r.data.catalog.find(v=>v.id==='short_term_v1').mode,'Shadow');assert.equal(r.data.catalog.find(v=>v.id==='short_term_v1').independentAccount,false);assert.equal((await f.call('/api/v4/accounts',{strategyType:'short_term_v1'})).code,400);for(const strategyType of ['trend_only_v3','compound_4h_v1']){const created=await f.call('/api/v4/accounts',{strategyType,name:'V4 test'});assert.equal(created.code,200,created.text);const status=await f.call('/api/v4/terminal?id='+created.data.id);assert.equal(status.data.account.strategyType,strategyType);assert.equal(status.data.account.tradeMode,'simulation');assert.equal(status.data.overview.health.running,false);assert.equal(status.data.account.hasApiKey,false);}});
-test('V4旧4H链接认证跳转保留有效账户ID，不创建或启动账户',async t=>{const f=setup(t),before=vm.runInContext('config.accounts.length',f.ctx);const r=await f.call('/compound.html?id=legacy');assert.equal(r.code,302);assert.equal(r.headers.Location,'/?account=legacy#strategies');assert.equal((await f.call('/compound.html?id=missing')).headers.Location,'/#strategies');assert.match((await f.call('/compound.html?id=legacy',undefined,false)).headers.Location,/login/);assert.equal(vm.runInContext('config.accounts.length',f.ctx),before);assert.equal(vm.runInContext('stateMap.legacy.running',f.ctx),false);});
+test('V4旧4H链接认证跳转保留有效账户ID，不创建或启动账户',async t=>{const f=setup(t),before=vm.runInContext('config.accounts.length',f.ctx);const r=await f.call('/compound.html?id=legacy');assert.equal(r.code,302);assert.equal(r.headers.Location,'/safety-console.html?account=legacy#strategies');assert.equal((await f.call('/compound.html?id=missing')).headers.Location,'/safety-console.html#strategies');assert.match((await f.call('/compound.html?id=legacy',undefined,false)).headers.Location,/login/);assert.equal(vm.runInContext('config.accounts.length',f.ctx),before);assert.equal(vm.runInContext('stateMap.legacy.running',f.ctx),false);});
 test('V4旧账户有仓位或订单时不能迁移，未知订单仍保留',async t=>{for(const kind of ['position','pending','exit','shadow']){const f=setup(t);vm.runInContext(kind==='position'?'stateMap.legacy.positionQty=1':kind==='pending'?'trendRuntime.get(config.accounts[0]).pendingOrder={status:"unknown_order_state"}':kind==='exit'?'stateMap.legacy.smartExitSignalTime=Date.now()':'trendRuntime.get(config.accounts[0]).shortTermBooks={x:{position:{positionSize:1}}}',f.ctx);const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,400,kind);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'classic');}});
 test('V4显式迁移与回滚保留旧历史、参数和账本，产生私有审计',async t=>{const f=setup(t);vm.runInContext('stateMap.legacy.simBalance=10008;stateMap.legacy.profitHistory=[{strategyVersion:"classic",netPnl:8,id:"old-trade"}];trendRuntime.get(config.accounts[0]).simBalance=10008',f.ctx);assert.equal((await f.call('/api/v4/migrate',{target:'trend_only_v3'})).code,400);const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,200,r.text);assert.ok(r.data.migrationId);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'trend_only_v3');assert.equal(vm.runInContext('trendRuntime.get(config.accounts[0]).simBalance',f.ctx),10008);const history=await f.call('/api/v4/history?id=legacy');assert.equal(history.data.items[0].strategyVersion,'classic');assert.equal(history.data.items[0].netPnl,8);const rollback=await f.call('/api/v4/migrate/rollback',{id:'legacy',migrationId:r.data.migrationId,confirm:true});assert.equal(rollback.code,200,rollback.text);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'classic');assert.equal(vm.runInContext('stateMap.legacy.profitHistory[0].netPnl',f.ctx),8);assert.ok(fs.existsSync(path.join(f.directory,'backups/v4-migrations',r.data.migrationId+'.json')));});
 test('V4迁移不得绕过风险锁或无法核验的Live挂单',async t=>{for(const kind of ['risk','live']){const f=setup(t);vm.runInContext(kind==='risk'?'trendRuntime.get(config.accounts[0]).riskLock=true':'Object.assign(config.accounts[0],{tradeMode:"live",simulationEnabled:false})',f.ctx);const r=await f.call('/api/v4/migrate',{id:'legacy',target:'trend_only_v3',confirm:true});assert.equal(r.code,400,kind);assert.equal(vm.runInContext('config.accounts[0].strategyType',f.ctx),'classic');if(kind==='risk')assert.equal(vm.runInContext('trendRuntime.get(config.accounts[0]).riskLock',f.ctx),true);}});

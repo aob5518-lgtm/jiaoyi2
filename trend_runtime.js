@@ -775,7 +775,7 @@ function createTrendRuntime(d) {
     };
   }
   return {
-    get, save, tick, publish, confirm, signalJournal,
+    get, peek: id => states[id], save, tick, publish, confirm, signalJournal,
     syncProtection: (acc, st, force = true) => syncProtectiveStop(acc, st, force),
     reconcileProtection: (acc, remote = { openOrders: [] }) => reconcileOrphanStops(acc, get(acc), remote),
     enforcePostFillRisk: acc => applyPostFillRiskLock(acc),

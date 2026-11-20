@@ -7,7 +7,7 @@ const catalog=()=>[
 ];
 const type=a=>a.strategyType||"classic";
 const restricted=a=>!CORE.has(type(a));
-function assertEntry(a,reduceOnly=false){if(!reduceOnly&&restricted(a))throw Error(LEGACY.has(type(a))?"LEGACY_RESTRICTED：旧策略只管理已有仓位，禁止新开与补仓":"UNSUPPORTED_STRATEGY：未知策略禁止新开仓");if(!CORE.has(type(a))&&!LEGACY.has(type(a)))throw Error("UNSUPPORTED_STRATEGY：无法推断未知引擎的订单语义");}
+function assertEntry(a,reduceOnly=false){if(a.archivedAt&&!reduceOnly)throw Error("ACCOUNT_ARCHIVED：账户已移出列表，禁止新增风险");if(!reduceOnly&&restricted(a))throw Error(LEGACY.has(type(a))?"LEGACY_RESTRICTED：旧策略只管理已有仓位，禁止新开与补仓":"UNSUPPORTED_STRATEGY：未知策略禁止新开仓");if(!CORE.has(type(a))&&!LEGACY.has(type(a)))throw Error("UNSUPPORTED_STRATEGY：无法推断未知引擎的订单语义");}
 function classify(a,st={},runtime={}){
  const id=type(a),legacy=LEGACY.has(id),unsupported=!legacy&&!CORE.has(id),busy=!!st.legacyLedgerBlocked||!!st.tickRunning||Math.abs(Number(st.positionQty))>0||Math.abs(Number(st.realPositionSize))>0||!!st.pendingOrder||!!st.placingOrder||!!runtime.position||!!runtime.pendingOrder||!!st.smartExitPending||Object.values(runtime.shortTermBooks||{}).some(b=>b.position||b.pendingOrder);
  const restrictionReasons=[];

@@ -1,0 +1,111 @@
+body {
+ --bg:#0b1119;
+ --surface:#111923;
+ --line:#253244;
+ --text:#e4ecf5;
+ --muted:#9bacc0;
+ --accent:#60cbe2;
+ font-family:Inter,system-ui,"Microsoft YaHei",sans-serif;
+}
+.trade-shell {grid-template-columns:254px minmax(0,1fr)}
+.account-rail {background:#0f1722}
+.desk-header {padding:16px 26px}
+main {padding:18px 26px}
+.desk-starter {
+ display:grid;
+ grid-template-columns:minmax(150px,1fr) auto;
+ align-items:end;
+ gap:12px 18px;
+ margin-bottom:18px;
+ padding:18px 20px;
+ border:1px solid #305363;
+ border-radius:13px;
+ background:#13222e;
+}
+.strategy-chooser {display:flex;align-items:center;justify-content:space-between;gap:8px;grid-column:1/-1}
+.strategy-tabs {display:inline-flex;flex-wrap:wrap;min-width:0;gap:4px;padding:4px;background:#0d171f;border:1px solid #2c4152;border-radius:10px}
+.strategy-tabs button {border:1px solid transparent;background:transparent;min-height:37px;padding:5px 13px;white-space:nowrap;font-weight:600}
+.strategy-tabs [aria-pressed="true"] {background:#1e3d4c;border-color:#3d6f81;color:#a3edff}
+.strategy-account {min-width:0;display:grid;gap:5px}
+.strategy-account label {font-size:12px;color:var(--muted)}
+.strategy-account select {width:100%;min-width:0}
+.desk-starter p {grid-column:1/-1;margin:0;color:var(--muted);font-size:13px}
+.starter-actions {display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.starter-actions button {min-height:44px;white-space:normal}
+.starter-actions .primary,.desk-dialog .primary {background:var(--accent);color:#071924;border-color:transparent}
+.production-grid {display:grid;grid-template-columns:minmax(0,1fr) 245px;gap:14px;align-items:start}
+.production-grid.single-column {grid-template-columns:minmax(0,1fr)}
+.production-primary,.production-inspector {min-width:0}
+.production-controls h2 {margin-top:0;font-size:16px}
+.production-controls button {width:100%}
+.trade-shell [hidden],dialog [hidden] {display:none!important}
+.desk-dialog {
+ box-sizing:border-box;
+ inset:0 0 0 auto;
+ margin:0;
+ width:min(640px,100vw);
+ max-width:100vw;
+ height:100dvh;
+ max-height:100dvh;
+ padding:20px;
+ border:1px solid var(--line);
+ background:var(--surface);
+ color:var(--text);
+ overflow:auto;
+}
+.desk-dialog::backdrop {background:#030812b8}
+.desk-dialog-head {display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
+.desk-dialog-head>div {flex:1;min-width:0}
+.desk-dialog-head>button {flex:0 0 auto}
+.desk-dialog-head h2 {font-size:19px;margin:0 0 4px;overflow-wrap:anywhere}
+.desk-dialog-head p {font-size:12px;color:var(--muted);margin:0;overflow-wrap:anywhere}
+.desk-dialog .parameter-layout,.desk-dialog .connections-grid {display:block}
+.desk-dialog .parameter-preview {display:block;position:static}
+.desk-dialog .parameter-preview>.panel:last-child {display:none}
+.desk-dialog .parameter-group {padding:12px 14px;margin-bottom:12px}
+.desk-dialog .parameter-group legend {font-size:15px}
+.desk-dialog .parameter-group legend span {display:none}
+.desk-dialog .field-grid {gap:10px 12px}
+.desk-dialog .group-intro {margin:0 0 8px}
+.desk-dialog .field-grid small {font-size:11px}
+.desk-dialog .field-grid label,.desk-dialog .field-grid .input-unit,.desk-dialog fieldset {min-width:0}
+.desk-dialog .save-bar {position:sticky;bottom:0;z-index:2;padding:10px;gap:8px}
+.desk-dialog .save-bar button {margin:0}
+.desk-dialog .parameter-preview .panel {padding:12px}
+.desk-dialog .config-hint {margin:0 0 14px}
+.desk-dialog .desk-inline-error {color:#ffb0b8}
+.desk-history-dialog {width:min(1000px,calc(100% - 24px))}
+.history-tools {display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}
+.history-tools small {display:block;color:var(--muted);margin-bottom:4px}
+.history-tools strong {font-size:22px;font-variant-numeric:tabular-nums}
+#deskHistoryStatus:empty {display:none}
+.desk-notice[data-tone="success"] {background:#142923;color:#a9e3ca;border-color:#2c5849}
+.desk-account-dialog {width:min(550px,100vw)}
+.connection-credentials {grid-column:1/-1;border-top:1px solid var(--line);padding:8px 0}
+.connection-credentials summary {cursor:pointer;padding:5px 0;color:var(--accent)}
+.connection-credentials label {margin-top:10px}
+#deskTurtlePane {min-width:0}
+@media(max-width:1050px){
+ .production-grid {grid-template-columns:minmax(0,1fr)}
+ .production-inspector {grid-row:1}
+}
+@media(max-width:760px){
+ .trade-shell {display:block}
+ .desk-header {padding:12px 14px;gap:8px}
+ .desk-title h1 {font-size:18px}
+ .desk-top-actions {flex:0 0 auto;gap:8px}
+ main {padding:12px}
+ .desk-starter {grid-template-columns:minmax(0,1fr);margin-bottom:12px;padding:13px;gap:10px}
+ .strategy-tabs button {font-size:13px;padding:4px 8px}
+ .strategy-chooser>.text-button {white-space:nowrap;font-size:12px;padding-inline:4px}
+ .strategy-account select {font-size:16px}
+ .starter-actions {width:100%}
+ .starter-actions button {flex:1 1 auto;min-width:0;padding:7px;font-size:13px}
+ .desk-dialog {padding:14px}
+ .desk-dialog .field-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .desk-dialog .field-grid .field-wide {grid-column:1/-1}
+ .desk-dialog .save-bar {display:flex;flex-wrap:wrap}
+ .desk-dialog .save-bar>div {flex:0 0 100%}
+ .desk-dialog .save-bar button {font-size:12px;min-height:44px;padding:6px}
+ .desk-dialog .field-grid input,.desk-dialog .field-grid select {min-height:44px;font-size:16px}
+}

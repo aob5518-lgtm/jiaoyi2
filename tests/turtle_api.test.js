@@ -1,0 +1,41 @@
+"use strict";
+const {test}=require("node:test"),A=require("node:assert/strict"),fs=require("fs"),os=require("os"),path=require("path"),http=require("http");
+const API=require("../terminal/turtle-api"),R=require("../strategy/turtle_4h/runtime"),C=require("../strategy/turtle_4h/config"),B=require("../strategy/turtle_4h/book"),Desk=require("../terminal/desk"),F=require("./turtle_fixture");
+async function setup(t){const directory=fs.mkdtempSync(path.join(os.tmpdir(),"turtle-api-"));let config={accounts:[F.account(),F.account({id:"old",strategyType:"classic",apiSecret:"must-not-leak"})]},fail=false,clock=F.NOW,locks=0;const st={};const engine=R.create({directory,now:()=>clock,provider:{load:async()=>F.market(clock)},permit:()=>({allowed:true})});engine.commit(config.accounts[0],B.initial(config.accounts[0]));const d={engine,accounts:()=>config.accounts,getAccountById:id=>config.accounts.find(a=>a.id===id),state:id=>st[id]||=( {}),configuration:()=>structuredClone(config),save:n=>{if(fail)throw Error("save failed");config=n;},lock:()=>{locks++;return {};},unlock:()=>locks--,json:(res,code,v)=>{res.writeHead(code,{"Content-Type":"application/json"});res.end(JSON.stringify(v));}};const server=http.createServer((req,res)=>API.handle(req,res,new URL(req.url,"http://localhost"),d));await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));t.after(async()=>{await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});});const call=async(route,input,headers={})=>{const res=await fetch("http://127.0.0.1:"+server.address().port+"/api/v4/turtle/"+route,input?{method:"POST",headers:{"Content-Type":"application/json",...headers},body:JSON.stringify(input)}:{});return {status:res.status,data:await res.json()};};return {call,d,config:()=>config,fail:()=>fail=true,locks:()=>locks};}
+test("Account listing exposes no keys and never migrates existing accounts",async t=>{const x=await setup(t),r=await x.call("accounts");A.equal(r.status,200);A.equal(r.data.accounts.length,2);A.doesNotMatch(JSON.stringify(r),/must-not-leak/);A.equal(x.config().accounts[1].strategyType,"classic");});
+test("Dedicated creation defaults to Paper stopped with no credentials and independent equity",async t=>{const x=await setup(t),r=await x.call("accounts",{name:"BTC Turtle",symbol:"BTC",initialEquity:20000});A.equal(r.status,200);const a=x.config().accounts.find(a=>a.id===r.data.id);A.equal(a.tradeMode,"simulation");A.equal(a.simulationEnabled,true);A.equal(a.running,false);A.equal(a.quoteAsset,"USDT");A.equal(a.apiSecret,undefined);A.equal(x.d.engine.get(a).initialEquity,20000);A.equal(x.config().accounts[0].simulationBalance,10000);});
+test("Create rejects Live, imported credentials, old-account IDs and non-native quote selection",async t=>{const x=await setup(t);for(const extra of [{tradeMode:"live"},{apiKey:"bad"},{id:"old"},{quoteAsset:"USDC"},{strategyType:"classic"}])A.equal((await x.call("accounts",{name:"bad",symbol:"ETH",...extra})).status,400);A.equal(x.config().accounts.length,2);});
+test("Starting requires explicit confirmation and saved configuration hash, creates no immediate order",async t=>{const x=await setup(t);A.equal((await x.call("control",{id:"turtle-test",action:"start"})).status,400);const check=await x.call("preflight",{id:"turtle-test"});A.equal(check.data.preflight.allowed,true);const r=await x.call("control",{id:"turtle-test",action:"start",confirm:true,expectedHash:C.hash(C.defaults)});A.equal(r.status,200);A.equal(x.d.engine.get(x.config().accounts[0]).running,true);A.equal(x.d.engine.get(x.config().accounts[0]).pending,null);A.equal(x.locks(),0);});
+test("Risk or unknown orders prevent start and remain unchanged",async t=>{const x=await setup(t);x.d.state("turtle-test").riskLock=true;A.equal((await x.call("control",{id:"turtle-test",action:"start",confirm:true,expectedHash:C.hash(C.defaults)})).status,400);A.equal(x.d.state("turtle-test").riskLock,true);x.d.state("turtle-test").riskLock=false;x.d.state("turtle-test").pendingOrder={id:"unknown"};A.equal((await x.call("preflight",{id:"turtle-test"})).data.preflight.allowed,false);});
+test("Config save is constrained, conflict-safe and does not automatically start",async t=>{const x=await setup(t);const n={...C.defaults,entryBars:60};A.equal((await x.call("config",{id:"turtle-test",config:n,expectedHash:"stale"})).status,400);A.equal((await x.call("config",{id:"turtle-test",config:n,expectedHash:C.hash(C.defaults)})).status,200);A.equal(x.config().accounts[0].turtleConfig.entryBars,60);A.equal(x.d.engine.get(x.config().accounts[0]).running,false);for(const extra of [{tradeMode:"live"},{initialEquity:100},{symbol:"BTC"}])A.equal((await x.call("config",{id:"turtle-test",config:n,expectedHash:C.hash(n),...extra})).status,400);});
+test("Failed save preserves prior configuration and financial book byte-for-byte",async t=>{const x=await setup(t),before=JSON.stringify(x.config()),book=JSON.stringify(x.d.engine.get(x.config().accounts[0]));x.fail();A.equal((await x.call("config",{id:"turtle-test",config:{...C.defaults,entryBars:60},expectedHash:C.hash(C.defaults)})).status,400);A.equal(JSON.stringify(x.config()),before);A.equal(JSON.stringify(x.d.engine.get(x.config().accounts[0])),book);A.equal(x.locks(),0);});
+test("Legacy and Live accounts cannot enter new control endpoints; cross-site writes rejected",async t=>{const x=await setup(t);A.equal((await x.call("control",{id:"old",action:"start",confirm:true})).status,400);A.equal((await x.call("preflight",{id:"turtle-test"},{"Origin":"https://other.example"})).status,403);});
+test("Close requires an actual position and a matching confirmation when a position ID is supplied",async t=>{
+ const x=await setup(t),input={id:"turtle-test",action:"close",confirm:true};
+ const flat=await x.call("control",input);
+ A.equal(flat.status,400);
+ A.match(flat.data.error,/无模拟持仓/);
+ const a=x.config().accounts[0];
+ const open=B.initial(a);
+ open.running=true;
+ const submitted=B.advance(open,F.event(),C.defaults);
+ const filled=B.advance(submitted,F.event({time:F.NOW+1000,data:F.market(F.NOW+1000)}),C.defaults);
+ x.d.engine.commit(a,filled);
+ const different=await x.call("control",{...input,positionId:"previous-position"});
+ A.equal(different.status,400);
+ A.match(different.data.error,/持仓已变化/);
+ A.equal(x.d.engine.get(a).running,true);
+ A.equal(x.d.engine.get(a).pending,null);
+});
+test("Repeated start preserves the current running book and pending order",async t=>{
+ const x=await setup(t),a=x.config().accounts[0],open=B.initial(a);
+ open.running=true;
+ const submitted=B.advance(open,F.event(),C.defaults);
+ x.d.engine.commit(a,submitted);
+ const retry=await x.call("control",{id:a.id,action:"start",confirm:true,expectedHash:C.hash(C.defaults)});
+ A.equal(retry.status,200);
+ A.equal(retry.data.snapshot.pending.id,submitted.pending.id);
+ A.deepEqual(x.d.engine.get(a),submitted);
+});
+test("Classic start preflight reports missing settings and unknown orders without mutating book",async()=>{let quotes=0;const a={strategyType:"classic",tradeMode:"simulation",simulationEnabled:true},b={settings:{side:"long"}};const d={classicPaper:{get:()=>b,corrupt:()=>false,view:()=>({blocked:false})},price:async()=>{quotes++;return 100;}};A.equal((await Desk.preflight(a,{pendingOrder:{}},d)).allowed,false);A.equal(quotes,0);A.equal((await Desk.preflight(a,{},d)).allowed,true);A.equal(quotes,1);A.deepEqual(b,{settings:{side:"long"}});});
+test("Server dispatch keeps independent Paper engines ahead of classic retirement; their APIs require login",()=>{const src=fs.readFileSync(path.join(__dirname,"../server.js"),"utf8");for(const type of ["Turtle","Reversal"])A.ok(src.indexOf("if(activeStrategyType==="+type+".ID)")<src.indexOf('if (classicOnly && acc.tradeMode === "simulation"'));const block=src.slice(src.indexOf('if (pathname.startsWith("/api/v4/turtle/")'),src.indexOf('if (pathname === "/api/v4/desk"'));A.match(block,/isAuthenticated/);A.doesNotMatch(fs.readFileSync(path.join(__dirname,"../strategy/turtle_4h/runtime.js"),"utf8"),/placeHyper|leverageSync|privateKey|signedRequest/);});
